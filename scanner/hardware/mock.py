@@ -52,6 +52,54 @@ _DUCK_BILL_RY  =  2.5
 _DUCK_BILL_RZ  =  9.0
 _DUCK_BILL_CY  = 22.0
 _DUCK_BILL_CZ  = -26.0  # well forward of head centre
+# "SCAN" text geometry — 5×7 bitmap font, each pixel = 2.5 mm
+# Letters defined as 7 rows of 5 bits (top to bottom), 1 = filled
+_SCAN_GLYPHS: dict[str, list[int]] = {
+    "S": [
+        0b01110,
+        0b10001,
+        0b10000,
+        0b01110,
+        0b00001,
+        0b10001,
+        0b01110,
+    ],
+    "C": [
+        0b01110,
+        0b10001,
+        0b10000,
+        0b10000,
+        0b10000,
+        0b10001,
+        0b01110,
+    ],
+    "A": [
+        0b01110,
+        0b10001,
+        0b10001,
+        0b11111,
+        0b10001,
+        0b10001,
+        0b10001,
+    ],
+    "N": [
+        0b10001,
+        0b11001,
+        0b10101,
+        0b10011,
+        0b10001,
+        0b10001,
+        0b10001,
+    ],
+}
+_SCAN_PX_MM = 3.5       # size of one bitmap pixel in mm
+_SCAN_LETTER_W = 5      # pixels per letter width
+_SCAN_LETTER_H = 7      # pixels per letter height
+_SCAN_GAP_PX = 2        # gap between letters in pixels
+_SCAN_TEXT_BUMP = 8.0    # how much taller letter pixels are vs cylinder top (mm)
+_SCAN_CYL_R = 38.0      # cylinder base radius (mm) — fits the text width
+_SCAN_CYL_H = 30.0      # cylinder half-height (mm)
+
 _IMAGE_WIDTH = 640
 _IMAGE_HEIGHT = 480
 
@@ -78,7 +126,8 @@ class MockCamera:
             standard camera fields:
 
             ``mock_shape`` (str): object shape — ``'sphere'`` (default),
-            ``'cylinder'``, ``'cube'``, or ``'duck'``.
+            ``'cylinder'``, ``'cube'``, ``'duck'``, ``'mushroom'``,
+            or ``'scan_text'`` (the word SCAN in relief, readable from above).
     """
 
     def __init__(self, config: dict) -> None:
@@ -289,6 +338,50 @@ class MockCamera:
                 candidates.append(y)
 
             return max(candidates) if candidates else None
+
+        # ------------------------------------------------------------------ #
+        # SCAN text  (cylinder with "SCAN" embossed on top, readable from Y+)
+        # ------------------------------------------------------------------ #
+        if self._shape == "scan_text":
+            r_xz = math.sqrt(x_w ** 2 + z_w ** 2)
+
+            # Outside cylinder → no surface
+            if r_xz > _SCAN_CYL_R:
+                return None
+
+            # Cylinder side wall (lower half visible when laser hits far from centre)
+            half_h = _SCAN_CYL_H
+
+            # Top surface: check if point falls on a letter pixel
+            word = "SCAN"
+            n_letters = len(word)
+            total_px_w = n_letters * _SCAN_LETTER_W + (n_letters - 1) * _SCAN_GAP_PX
+            total_px_h = _SCAN_LETTER_H
+            total_w_mm = total_px_w * _SCAN_PX_MM
+            total_h_mm = total_px_h * _SCAN_PX_MM
+
+            # Map x_w, z_w to pixel coordinates in the text bitmap
+            # x_w → column (left to right), z_w → row (top to bottom, -z = top)
+            px_col = (x_w + total_w_mm / 2.0) / _SCAN_PX_MM
+            px_row = (-z_w + total_h_mm / 2.0) / _SCAN_PX_MM
+
+            col_i = int(px_col)
+            row_i = int(px_row)
+
+            is_letter = False
+            if 0 <= row_i < _SCAN_LETTER_H and 0 <= col_i < total_px_w:
+                letter_stride = _SCAN_LETTER_W + _SCAN_GAP_PX
+                letter_idx = col_i // letter_stride
+                local_col = col_i % letter_stride
+
+                if letter_idx < n_letters and local_col < _SCAN_LETTER_W:
+                    glyph = _SCAN_GLYPHS.get(word[letter_idx])
+                    if glyph and (glyph[row_i] >> (_SCAN_LETTER_W - 1 - local_col)) & 1:
+                        is_letter = True
+
+            if is_letter:
+                return half_h + _SCAN_TEXT_BUMP  # raised letter surface
+            return half_h  # flat cylinder top
 
         return None
 

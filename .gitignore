@@ -21,5 +21,34 @@ config/platform.yaml
 /tmp/scans/
 /tmp/scan_frames/
 
+# LaTeX temporary files
+docs/rapport/*.aux
+docs/rapport/*.bcf
+docs/rapport/*.bbl
+docs/rapport/*.blg
+docs/rapport/*.fdb_latexmk
+docs/rapport/*.fls
+docs/rapport/*.lof
+docs/rapport/*.log
+docs/rapport/*.lot
+docs/rapport/*.out
+docs/rapport/*.run.xml
+docs/rapport/*.synctex.gz
+docs/rapport/*.toc
+docs/cahier_des_charges/*.aux
+docs/cahier_des_charges/*.bcf
+docs/cahier_des_charges/*.bbl
+docs/cahier_des_charges/*.blg
+docs/cahier_des_charges/*.fdb_latexmk
+docs/cahier_des_charges/*.fls
+docs/cahier_des_charges/*.lof
+docs/cahier_des_charges/*.log
+docs/cahier_des_charges/*.lot
+docs/cahier_des_charges/*.out
+docs/cahier_des_charges/*.run.xml
+docs/cahier_des_charges/*.synctex.gz
+docs/cahier_des_charges/*.toc
+.codex
+
 
 CLAUDE.md

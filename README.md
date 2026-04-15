@@ -57,7 +57,7 @@ scanner3d-pmd/
 ---
 
 ## Démarrage rapide
-
+      
 ### Prérequis
 
 - Python 3.11+
@@ -74,7 +74,7 @@ pip install -r requirements.txt
 ### Lancer l'interface web
 
 ```bash
-python -m scanner.interface.web
+python -m scanner.interface.web     
 # Interface disponible sur http://localhost:5000  (ou http://<ip-du-pi>:5000)
 ```
 
