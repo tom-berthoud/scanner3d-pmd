@@ -1,0 +1,9 @@
+# platform.example.yaml — Template de calibration plateforme
+# Copier en platform.yaml et remplir avec les vraies valeurs
+
+steps_per_revolution: 200   # pas moteur pour 360° (sans microstepping)
+microstepping: 1            # facteur de microstepping utilisé
+degrees_per_step: 1.8       # = 360 / (steps_per_revolution * microstepping)
+
+# Axe de rotation dans le repère caméra (vecteur unitaire)
+rotation_axis: [0.0, 1.0, 0.0]   # par défaut : axe Y (vertical)

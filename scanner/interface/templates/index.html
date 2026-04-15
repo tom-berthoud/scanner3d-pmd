@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block title %}Scanner 3D — Acquisition{% endblock %}
+
+{% block extra_head %}
+<script type="importmap">
+{
+  "imports": {
+    "three":          "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/":  "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+{% endblock %}
+
+{% block content %}
+
+<!-- ===================================================
+     KIOSK VIEW (shown on tiny screens / ?mode=kiosk)
+     =================================================== -->
+<div class="kiosk-scan-wrap">
+  <div class="kiosk-ring-wrap">
+    <svg class="kiosk-ring" viewBox="0 0 180 180">
+      <circle class="ring-bg" cx="90" cy="90" r="88" />
+      <circle class="ring-fill" cx="90" cy="90" r="88" />
+    </svg>
+    <button class="kiosk-btn" id="kiosk-btn" onclick="startScan()">
+      <i class="bi bi-play-fill"></i>SCAN
+    </button>
+  </div>
+  <div class="kiosk-status">
+    <div class="state" id="kiosk-state">{{ scan_state.state }}</div>
+    <div class="msg" id="kiosk-msg">{{ scan_state.message or 'Ready' }}</div>
+  </div>
+  <button class="kiosk-new-scan" id="kiosk-new-scan" style="display:none;" onclick="resetKiosk()">
+    NOUVEAU SCAN
+  </button>
+</div>
+
+<!-- ===================================================
+     DESKTOP / MOBILE VIEW
+     =================================================== -->
+<div class="desktop-content">
+<div class="scan-grid">
+
+  <!-- ===================================================
+       LEFT — CONTROLS
+       =================================================== -->
+  <div>
+
+    <!-- Status panel -->
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>System Status</span>
+        <span class="badge-live">&#9679; LIVE</span>
+      </div>
+      <div class="status-body">
+        <div class="state-row">
+          <div class="leds">
+            <div class="led" id="led-orange"></div>
+            <div class="led" id="led-red"></div>
+          </div>
+          <div class="state-name {{ scan_state.state | lower }}" id="state-label">
+            {{ scan_state.state }}
+          </div>
+        </div>
+        <div class="state-msg" id="state-message">{{ scan_state.message or 'Ready' }}</div>
+        <div class="prog-track">
+          <div class="prog-fill {% if scan_state.state == 'SCANNING' %}active{% endif %}"
+               id="progress-bar"
+               style="width:{{ scan_state.progress }}%"></div>
+        </div>
+        <div class="prog-row">
+          <span>PROGRESS</span>
+          <span id="progress-pct">{{ scan_state.progress }}%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trigger panel -->
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Acquisition</span>
+      </div>
+      <div class="trigger-body">
+        <button id="btn-scan"
+                class="btn-scan {% if scan_state.state in ['SCANNING','PROCESSING','EXPORTING'] %}active{% endif %}"
+                onclick="startScan()"
+                {% if scan_state.state in ['SCANNING','PROCESSING','EXPORTING'] %}disabled{% endif %}>
+          <span id="btn-scan-text">
+            {% if scan_state.state in ['SCANNING','PROCESSING','EXPORTING'] %}
+              &#11036;&nbsp;&nbsp;ACQUISITION...
+            {% else %}
+              &#9654;&nbsp;&nbsp;LANCER LE SCAN
+            {% endif %}
+          </span>
+        </button>
+        <a id="btn-download"
+           class="btn-dl {% if not scan_state.last_file %}off{% endif %}"
+           href="/scan/download">
+          <i class="bi bi-download"></i>
+          <span>Telecharger le maillage</span>
+        </a>
+        <button id="btn-usb"
+                class="btn-usb {% if not scan_state.last_file %}off{% endif %}"
+                onclick="if(typeof window.copyToUsb==='function')window.copyToUsb();">
+          <i class="bi bi-usb-drive"></i>
+          <span>Copier sur cle USB</span>
+        </button>
+        {% if scan_state.error %}
+        <div class="err-strip">
+          <i class="bi bi-exclamation-triangle me-1"></i>{{ scan_state.error }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Telemetry log -->
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Telemetry</span>
+      </div>
+      <div class="log-body" id="log-box"></div>
+    </div>
+
+  </div>
+
+  <!-- ===================================================
+       RIGHT — VISUALIZATION
+       =================================================== -->
+  <div class="viewer-col">
+
+    <!-- Live camera feed -->
+    <div class="pnl cam-pnl" id="frame-card">
+      <div class="pnl-head">
+        <span class="pip" style="background:var(--amber);box-shadow:0 0 5px var(--amber);"></span>
+        <span>Flux camera</span>
+        <span id="frame-label" style="margin-left:auto;font-size:8px;color:var(--txt-dim);">—</span>
+      </div>
+      <div class="cam-feed">
+        <img id="live-frame" src="" alt="" />
+        <span class="cam-tag tl">&#9679; REC</span>
+        <span class="cam-tag br" id="cam-step">—</span>
+      </div>
+    </div>
+
+    <!-- 3D mesh viewer -->
+    <div class="pnl viewer-pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Rendu 3D</span>
+        <span id="viewer-status" style="margin-left:auto;font-size:8px;color:var(--txt-dim);">EN ATTENTE</span>
+      </div>
+      <div class="viewer-canvas-wrap">
+        <div id="viewer-placeholder">
+          <div class="ph-icon"><i class="bi bi-box"></i></div>
+          <span>Lancez un scan pour voir le modele ici</span>
+        </div>
+        <canvas id="stl-canvas"></canvas>
+      </div>
+      <div class="viewer-hint">DRAG &middot; SCROLL &middot; RIGHT-CLICK &nbsp;|&nbsp; ROTATE &middot; ZOOM &middot; PAN</div>
+    </div>
+
+  </div>
+
+</div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/usb.js') }}"></script>
+<script>
+// ---- Kiosk helpers ----
+function resetKiosk() {
+  var kb = document.getElementById('kiosk-btn');
+  if (kb) {
+    kb.innerHTML = '<i class="bi bi-play-fill"></i>SCAN';
+    kb.classList.remove('usb-mode', 'complete', 'error', 'scanning');
+    kb.onclick = startScan;
+    kb.disabled = false;
+  }
+  var ns = document.getElementById('kiosk-new-scan');
+  if (ns) ns.style.display = 'none';
+  var kr = document.querySelector('.kiosk-ring .ring-fill');
+  if (kr) { kr.style.strokeDashoffset = 553; kr.className = 'ring-fill'; }
+}
+
+// ---- Init ----
+document.addEventListener('DOMContentLoaded', function() {
+  applyLeds('{{ scan_state.state }}');
+  log('Systeme pret.');
+  connectSSE();
+  // Init kiosk state
+  updateKiosk({
+    state: '{{ scan_state.state }}',
+    progress: {{ scan_state.progress }},
+    message: '{{ scan_state.message or "Ready" }}'
+  });
+  {% if scan_state.last_file %}
+  loadModel();
+  {% endif %}
+});
+</script>
+
+<!-- Three.js module -->
+<script type="module">
+import * as THREE from 'three';
+import { STLLoader }    from 'three/addons/loaders/STLLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+let _v = null;
+
+window._loadModel = async function() {
+  const vs = document.getElementById('viewer-status');
+  try {
+    const ph  = document.getElementById('viewer-placeholder');
+    const cvs = document.getElementById('stl-canvas');
+    if (!ph || !cvs) return;
+    ph.style.display   = 'none';
+    cvs.style.display  = 'block';
+
+    const H = 420;
+    const W = cvs.parentElement ? cvs.parentElement.clientWidth : 640;
+    cvs.width  = W;
+    cvs.height = H;
+
+    if (!_v) {
+      const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+      renderer.setSize(W, H);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setClearColor(0x000000);
+
+      const scene  = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 10000);
+      camera.position.set(0, 0, 300);
+
+      const ctrl = new OrbitControls(camera, cvs);
+      ctrl.enableDamping   = true;
+      ctrl.dampingFactor   = 0.07;
+      ctrl.autoRotate      = true;
+      ctrl.autoRotateSpeed = 1.2;
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+      const sun = new THREE.DirectionalLight(0xffffff, 1.3);
+      sun.position.set(100, 200, 150);
+      scene.add(sun);
+      const fill = new THREE.DirectionalLight(0x4488ff, 0.5);
+      fill.position.set(-150, -80, -100);
+      scene.add(fill);
+      const rim = new THREE.DirectionalLight(0x00d4ff, 0.25);
+      rim.position.set(0, -200, 50);
+      scene.add(rim);
+
+      (function loop() {
+        requestAnimationFrame(loop);
+        ctrl.update();
+        renderer.render(scene, camera);
+      })();
+
+      _v = { renderer, scene, camera, ctrl };
+    }
+
+    if (vs) vs.textContent = 'TELECHARGEMENT...';
+    const resp = await fetch('/scan/download');
+    if (!resp.ok) { if (vs) vs.textContent = 'ERREUR ' + resp.status; return; }
+    const buf = await resp.arrayBuffer();
+
+    if (vs) vs.textContent = 'PARSING...';
+    const { renderer, scene, camera, ctrl } = _v;
+
+    const geo = new STLLoader().parse(buf);
+    geo.computeVertexNormals();
+    geo.computeBoundingBox();
+    const ctr = new THREE.Vector3();
+    geo.boundingBox.getCenter(ctr);
+    geo.translate(-ctr.x, -ctr.y, -ctr.z);
+    geo.computeBoundingSphere();
+    const R = geo.boundingSphere.radius || 80;
+
+    camera.position.set(0, R * 0.5, R * 3.2);
+    camera.near = R * 0.01;
+    camera.far  = R * 100;
+    camera.updateProjectionMatrix();
+    ctrl.target.set(0, 0, 0);
+
+    scene.children.filter(o => o.isMesh).forEach(o => {
+      scene.remove(o); o.geometry.dispose(); o.material.dispose();
+    });
+    scene.add(new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+      color: 0x00e676, specular: 0x003311, shininess: 90, side: THREE.DoubleSide
+    })));
+
+    const W2 = cvs.parentElement ? cvs.parentElement.clientWidth : W;
+    renderer.setSize(W2, H);
+    camera.aspect = W2 / H;
+    camera.updateProjectionMatrix();
+
+    if (vs) vs.textContent = 'PRET';
+
+  } catch(err) {
+    console.error('STL viewer:', err);
+    if (vs) vs.textContent = 'ERREUR';
+  }
+};
+</script>
+{% endblock %}

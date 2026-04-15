@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Scanner 3D — Mode Manuel{% endblock %}
+
+{% block content %}
+<div class="scan-grid">
+  <div>
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Mode Manuel</span>
+      </div>
+      <div class="trigger-body">
+        <div class="state-msg" id="manual-state">
+          Etat scan: {{ scan_state.state }}{% if scan_state.state not in ['IDLE', 'COMPLETE', 'ERROR'] %} (commandes verrouillees){% endif %}
+        </div>
+        <div class="err-strip" style="display:block;">
+          Utiliser ce mode uniquement pour les tests. Le laser peut etre dangereux pour les yeux.
+        </div>
+        <button class="btn btn-outline-danger" id="btn-safe-off" onclick="manualSafeOff()">
+          <i class="bi bi-shield-x me-1"></i>Tout couper (laser + LEDs)
+        </button>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Laser</span>
+      </div>
+      <div class="trigger-body">
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-success" id="btn-laser-on" onclick="setLaser(true)">
+            <i class="bi bi-lightning-charge me-1"></i>Laser ON
+          </button>
+          <button class="btn btn-outline-secondary" id="btn-laser-off" onclick="setLaser(false)">
+            <i class="bi bi-power me-1"></i>Laser OFF
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Moteur</span>
+      </div>
+      <div class="trigger-body">
+        <label for="motor-steps" class="form-label mb-1">Nombre de pas</label>
+        <input id="motor-steps" class="form-control" type="number" min="1" max="5000" value="20" />
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-info" id="btn-motor-cw" onclick="jogMotor('clockwise')">
+            <i class="bi bi-arrow-clockwise me-1"></i>Horaire
+          </button>
+          <button class="btn btn-outline-info" id="btn-motor-ccw" onclick="jogMotor('counterclockwise')">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Anti-horaire
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Retour Camera</span>
+      </div>
+      <div class="trigger-body">
+        <img id="manual-camera-img" src="" alt="Retour camera" class="img-fluid rounded" style="background:#000;min-height:220px;object-fit:contain;" />
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary" id="btn-camera-refresh" onclick="refreshCameraFrame()">
+            <i class="bi bi-camera me-1"></i>Actualiser
+          </button>
+          <button class="btn btn-outline-secondary" id="btn-camera-toggle" onclick="toggleCameraAuto()">
+            <i class="bi bi-play-circle me-1"></i>Auto
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>LEDs</span>
+      </div>
+      <div class="trigger-body">
+        <div class="d-flex gap-2">
+          <select id="led-color" class="form-select">
+            <option value="orange">Orange</option>
+            <option value="red">Rouge</option>
+          </select>
+          <select id="led-mode" class="form-select">
+            <option value="on">ON</option>
+            <option value="off">OFF</option>
+            <option value="blink">BLINK</option>
+          </select>
+        </div>
+        <label for="led-freq" class="form-label mb-1">Frequence blink (Hz)</label>
+        <input id="led-freq" class="form-control" type="number" min="0.1" max="20" step="0.1" value="1.0" />
+        <button class="btn btn-outline-warning" id="btn-led-apply" onclick="setLed()">
+          <i class="bi bi-lightbulb me-1"></i>Appliquer
+        </button>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Journal Manuel</span>
+      </div>
+      <div class="log-body" id="manual-log"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function mlog(msg, cls) {
+  var box = document.getElementById('manual-log');
+  if (!box) return;
+  var ts = new Date().toLocaleTimeString('fr', { hour12: false });
+  var row = document.createElement('div');
+  row.className = cls || '';
+  row.innerHTML = '<span class="log-ts">' + ts + '</span><span class="log-msg">' + msg + '</span>';
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+}
+
+function setManualButtonsEnabled(enabled) {
+  ['btn-safe-off', 'btn-laser-on', 'btn-laser-off', 'btn-motor-cw', 'btn-motor-ccw', 'btn-led-apply', 'btn-camera-refresh']
+    .forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.disabled = !enabled;
+    });
+}
+
+async function refreshManualStatus() {
+  try {
+    var r = await fetch('/manual/status');
+    var d = await r.json();
+    var txt = 'Etat scan: ' + d.scan_state + (d.manual_allowed ? '' : ' (commandes verrouillees)');
+    var st = document.getElementById('manual-state');
+    if (st) st.textContent = txt;
+    setManualButtonsEnabled(!!d.manual_allowed);
+  } catch (e) {
+    mlog('Erreur status manuel: ' + e, 'log-err');
+  }
+}
+
+async function manualPost(url, payload, okMsg) {
+  var r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {})
+  });
+  var d = await r.json();
+  if (!r.ok) {
+    mlog(d.error || 'Erreur', 'log-err');
+    if (typeof showToast === 'function') showToast(d.error || 'Erreur', 'error');
+    await refreshManualStatus();
+    return;
+  }
+  mlog(okMsg + ' ' + JSON.stringify(d), 'log-ok');
+  if (typeof showToast === 'function') showToast(okMsg, 'success');
+}
+
+async function setLaser(state) {
+  await manualPost('/manual/laser', { state: !!state }, state ? 'Laser active' : 'Laser coupe');
+}
+
+async function jogMotor(direction) {
+  var steps = parseInt((document.getElementById('motor-steps') || {}).value || '0', 10);
+  if (!steps || steps < 1) {
+    mlog('Nombre de pas invalide', 'log-err');
+    return;
+  }
+  await manualPost('/manual/motor', { steps: steps, direction: direction }, 'Moteur deplace');
+}
+
+async function setLed() {
+  var color = (document.getElementById('led-color') || {}).value || 'orange';
+  var mode = (document.getElementById('led-mode') || {}).value || 'off';
+  var freq = parseFloat((document.getElementById('led-freq') || {}).value || '1');
+  await manualPost('/manual/led', { color: color, mode: mode, frequency_hz: freq }, 'LED mise a jour');
+}
+
+async function manualSafeOff() {
+  await manualPost('/manual/safe-off', {}, 'Sorties coupees');
+}
+
+let _camTimer = null;
+
+function refreshCameraFrame() {
+  var img = document.getElementById('manual-camera-img');
+  if (!img) return;
+  img.src = '/manual/camera/frame?t=' + Date.now();
+}
+
+function toggleCameraAuto() {
+  var btn = document.getElementById('btn-camera-toggle');
+  if (_camTimer) {
+    clearInterval(_camTimer);
+    _camTimer = null;
+    if (btn) btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Auto';
+    return;
+  }
+  refreshCameraFrame();
+  _camTimer = setInterval(refreshCameraFrame, 700);
+  if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Stop';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  refreshManualStatus();
+  setInterval(refreshManualStatus, 2000);
+  refreshCameraFrame();
+  mlog('Mode manuel pret.');
+});
+</script>
+{% endblock %}

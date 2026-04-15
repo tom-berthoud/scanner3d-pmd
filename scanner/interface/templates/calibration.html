@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Scanner 3D — Calibration{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Touch-friendly calibration overrides */
+  .calib-btn {
+    min-height: 48px;
+    font-size: 1rem;
+    padding: 12px 20px;
+  }
+  .form-control, .form-select {
+    min-height: 44px;
+    font-size: 0.95rem;
+  }
+  .form-control-sm {
+    min-height: 44px;
+    font-size: 0.9rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+  <!-- Camera intrinsic calibration -->
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-camera-fill text-info"></i>
+        <span>Calibration intrinseque camera</span>
+      </div>
+      <div class="card-body d-flex flex-column gap-3">
+
+        <div class="d-flex gap-3 align-items-start">
+          <span class="step-badge mt-1">1</span>
+          <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
+            Imprimez un damier, photographiez-le depuis au moins <strong style="color:#c9d1d9;">10 angles differents</strong>.
+            Le resultat est sauvegarde dans <code>config/camera_intrinsics.yaml</code>.
+          </p>
+        </div>
+        {% if not use_checkerboard %}
+        <div class="alert alert-warning py-2 mb-0">
+          Le mode damier est desactive dans <code>config/settings.yaml</code>
+          (<code>calibration.use_checkerboard: false</code>). Cette calibration est ignoree.
+        </div>
+        {% endif %}
+
+        <hr style="border-color:#30363d; margin:0;" />
+
+        <form id="form-camera" enctype="multipart/form-data" class="d-flex flex-column gap-3">
+
+          <div>
+            <label class="form-label">Images du damier</label>
+            <input
+              class="form-control"
+              type="file"
+              id="camera-images"
+              name="images"
+              accept="image/*"
+              multiple
+              required
+            />
+            <div class="form-text" style="color:#6e7681;">Formats acceptes : JPG, PNG</div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col">
+              <label class="form-label form-label-sm">Colonnes internes</label>
+              <input class="form-control form-control-sm" type="number"
+                     name="board_cols" value="9" min="3" max="20" />
+              <div class="form-text" style="color:#6e7681;">coins interieurs</div>
+            </div>
+            <div class="col">
+              <label class="form-label form-label-sm">Lignes internes</label>
+              <input class="form-control form-control-sm" type="number"
+                     name="board_rows" value="6" min="3" max="20" />
+              <div class="form-text" style="color:#6e7681;">coins interieurs</div>
+            </div>
+            <div class="col">
+              <label class="form-label form-label-sm">Taille case (mm)</label>
+              <input class="form-control form-control-sm" type="number"
+                     name="square_size_mm" value="25" min="1" step="0.5" />
+              <div class="form-text" style="color:#6e7681;">ex. 25 mm</div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary calib-btn" {% if not use_checkerboard %}disabled{% endif %}>
+            <i class="bi bi-cpu me-2"></i>Lancer la calibration camera
+          </button>
+        </form>
+
+        <div id="camera-result"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Laser plane calibration -->
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-rulers text-warning"></i>
+        <span>Calibration du plan laser</span>
+      </div>
+      <div class="card-body d-flex flex-column gap-3">
+
+        <div class="d-flex gap-3 align-items-start">
+          <span class="step-badge mt-1">1</span>
+          <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
+            Placez une planche blanche plane a des <strong style="color:#c9d1d9;">distances connues</strong> de la camera.
+            Prenez une image par distance avec le laser allume.
+          </p>
+        </div>
+        <div class="d-flex gap-3 align-items-start">
+          <span class="step-badge mt-1">2</span>
+          <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
+            Entrez les distances dans le meme ordre que les images (ex. <code>200,250,300</code>).
+            Le resultat est sauvegarde dans <code>config/laser_plane.yaml</code>.
+          </p>
+        </div>
+
+        <hr style="border-color:#30363d; margin:0;" />
+
+        <form id="form-laser" enctype="multipart/form-data" class="d-flex flex-column gap-3">
+
+          <div>
+            <label class="form-label">Images de reference <span style="color:#6e7681; font-weight:400;">(une par distance)</span></label>
+            <input
+              class="form-control"
+              type="file"
+              id="laser-images"
+              name="images"
+              accept="image/*"
+              multiple
+              required
+            />
+            <div class="form-text" style="color:#6e7681;">Laser allume, planche perpendiculaire a l'axe optique</div>
+          </div>
+
+          <div>
+            <label class="form-label">Distances en mm <span style="color:#6e7681; font-weight:400;">(separees par des virgules)</span></label>
+            <input
+              class="form-control"
+              type="text"
+              name="distances_mm"
+              placeholder="200,250,300"
+              required
+            />
+          </div>
+
+          <button type="submit" class="btn btn-warning text-dark calib-btn">
+            <i class="bi bi-bounding-box me-2"></i>Lancer la calibration laser
+          </button>
+        </form>
+
+        <div id="laser-result"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function submitCalibForm(formId, endpoint, resultId) {
+  var form   = document.getElementById(formId);
+  var result = document.getElementById(resultId);
+  var btn    = form.querySelector('button[type="submit"]');
+
+  result.innerHTML =
+    '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
+    '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
+    'Calibration en cours\u2026</div>';
+  btn.disabled = true;
+
+  var fd = new FormData(form);
+  try {
+    var resp = await fetch(endpoint, { method: 'POST', body: fd });
+    var data = await resp.json();
+    if (resp.ok) {
+      result.innerHTML =
+        '<div class="alert alert-success py-2 mb-0 mt-2">' +
+        '<i class="bi bi-check-circle-fill me-2"></i>' +
+        '<strong>Calibration reussie</strong>' +
+        '<pre class="mb-0 mt-2" style="font-size:0.75rem; color:#adbac7;">' + JSON.stringify(data, null, 2) + '</pre>' +
+        '</div>';
+      if (typeof showToast === 'function') showToast('Calibration reussie', 'success');
+    } else {
+      result.innerHTML =
+        '<div class="alert alert-danger py-2 mb-0 mt-2">' +
+        '<i class="bi bi-exclamation-triangle-fill me-2"></i>' +
+        (data.error || 'Erreur inconnue') +
+        '</div>';
+      if (typeof showToast === 'function') showToast(data.error || 'Erreur', 'error');
+    }
+  } catch (e) {
+    result.innerHTML =
+      '<div class="alert alert-danger py-2 mb-0 mt-2">' +
+      '<i class="bi bi-wifi-off me-2"></i>Erreur reseau : ' + e +
+      '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+var camForm = document.getElementById('form-camera');
+if (camForm) {
+  camForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    submitCalibForm('form-camera', '/calibration/camera', 'camera-result');
+  });
+}
+
+document.getElementById('form-laser').addEventListener('submit', function(e) {
+  e.preventDefault();
+  submitCalibForm('form-laser', '/calibration/laser', 'laser-result');
+});
+</script>
+{% endblock %}

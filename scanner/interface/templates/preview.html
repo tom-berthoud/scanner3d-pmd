@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Scanner 3D — Preview{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Touch-friendly slider */
+  .form-range::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
+  .form-range::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+  }
+  .form-range {
+    min-height: 48px;
+  }
+  .btn-play {
+    min-height: 48px;
+    min-width: 120px;
+    font-size: 1rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-8 mx-auto">
+
+    <div class="card mb-4">
+      <div class="card-header">Mock Camera Preview</div>
+      <div class="card-body text-center">
+        <img id="preview-img" src="/preview/frame?angle=0" class="img-fluid rounded mb-3"
+             style="max-height:480px; image-rendering: pixelated; border: 1px solid #30363d;" />
+
+        <div class="px-3">
+          <label for="angle-slider" class="form-label">
+            Rotation angle: <strong id="angle-label">0</strong>&deg;
+            (step <strong id="step-label">0</strong> / {{ n_steps }})
+          </label>
+          <input type="range" class="form-range" id="angle-slider"
+                 min="0" max="{{ n_steps - 1 }}" value="0" step="1" />
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header">Laser Line Extraction</div>
+      <div class="card-body text-center">
+        <img id="extraction-img" src="/preview/extraction?angle=0" class="img-fluid rounded"
+             style="max-height:480px; border: 1px solid #30363d;" />
+        <p class="text-muted mt-2 mb-0" style="font-size:0.85rem;">
+          Green = raw frame &middot; Red dots = detected laser line pixels
+        </p>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header">Animated Sequence</div>
+      <div class="card-body text-center">
+        <button id="btn-play" class="btn btn-success btn-play" onclick="togglePlay()">
+          <i class="bi bi-play-fill me-1"></i>Play
+        </button>
+        <span id="play-status" class="text-muted ms-2">Stopped</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+var nSteps = {{ n_steps }};
+var slider = document.getElementById('angle-slider');
+var angleLabel = document.getElementById('angle-label');
+var stepLabel = document.getElementById('step-label');
+var previewImg = document.getElementById('preview-img');
+var extractionImg = document.getElementById('extraction-img');
+var playing = false;
+var playTimer = null;
+
+function updateFrame(step) {
+  var angleDeg = Math.round(step * 360 / nSteps);
+  angleLabel.textContent = angleDeg;
+  stepLabel.textContent = step;
+  var angleRad = (step * 2 * Math.PI / nSteps).toFixed(4);
+  previewImg.src = '/preview/frame?angle=' + angleRad + '&t=' + Date.now();
+  extractionImg.src = '/preview/extraction?angle=' + angleRad + '&t=' + Date.now();
+}
+
+slider.addEventListener('input', function() {
+  updateFrame(parseInt(slider.value));
+});
+
+function togglePlay() {
+  playing = !playing;
+  var btn = document.getElementById('btn-play');
+  var status = document.getElementById('play-status');
+  if (playing) {
+    btn.innerHTML = '<i class="bi bi-pause-fill me-1"></i>Pause';
+    status.textContent = 'Playing...';
+    playTimer = setInterval(function() {
+      var step = parseInt(slider.value) + 1;
+      if (step >= nSteps) step = 0;
+      slider.value = step;
+      updateFrame(step);
+    }, 300);
+  } else {
+    btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Play';
+    status.textContent = 'Stopped';
+    clearInterval(playTimer);
+  }
+}
+</script>
+{% endblock %}

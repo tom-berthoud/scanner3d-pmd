@@ -1,0 +1,14 @@
+# camera_intrinsics.example.yaml — Template de calibration caméra
+# Copier en camera_intrinsics.yaml et remplir avec les vraies valeurs
+# après avoir effectué la calibration avec scanner/calibration/camera.py
+
+camera_matrix:
+  fx: 0.0    # focale en pixels (axe X)
+  fy: 0.0    # focale en pixels (axe Y)
+  cx: 0.0    # centre optique X (pixels)
+  cy: 0.0    # centre optique Y (pixels)
+
+dist_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]   # [k1, k2, p1, p2, k3]
+
+image_size: [1920, 1080]   # [width, height] utilisé lors de la calibration
+rms_error: 0.0             # erreur RMS de reprojection (objectif : < 0.5 pixels)

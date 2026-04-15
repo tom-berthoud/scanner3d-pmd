@@ -1,0 +1,55 @@
+# settings.yaml — Paramètres de scan du scanner3d-pmd
+# Modifier ces valeurs selon votre configuration matérielle.
+# Ne jamais committer les fichiers camera_intrinsics.yaml et laser_plane.yaml
+# avec de vraies valeurs — utiliser les .example.yaml comme templates.
+
+scan:
+  n_steps: 200              # nombre de pas pour 360° (1.8°/pas)
+  direction: clockwise      # sens de rotation : clockwise / counterclockwise
+
+camera:
+  resolution: [640, 480]    # [width, height] en pixels (mock: 640x480 = résolution de calibration)
+  mock_shape: duck            # forme simulée par le mock : sphere | cylinder | cube | duck
+  exposure_us: 5000         # temps d'exposition en microsecondes (court = ligne laser nette)
+  gain: 1.0                 # gain analogique (faible = moins de bruit)
+  awb_mode: off             # balance des blancs : off (fixe) pour cohérence entre frames
+  awb_gains: [1.5, 1.2]    # gains rouge/bleu si awb_mode = off
+
+laser:
+  gpio_pin: 16              # numéro de broche GPIO (BCM) pour le laser
+  warmup_ms: 50             # temps de stabilisation après allumage (ms)
+
+motor:
+  # Moteur : Generic 17HS3401 (NEMA 17, 1.8°/pas, 200 pas/tour, 1.5A)
+  # Driver : DM320T (microstepping STEP/DIR, 20V max)
+  step_pin: 26              # broche GPIO STEP
+  dir_pin: 20              # broche GPIO DIR
+  enable_pin: 21            # broche GPIO ENABLE (actif bas sur DM320T)
+  steps_per_rev: 200        # pas moteur par révolution (1.8°/pas)
+  microstepping: 1          # facteur de microstepping (1, 2, 4, 8, 16)
+  speed_rpm: 5              # vitesse de rotation (tours/min)
+  accel_steps: 20           # nombre de pas d'accélération/décélération
+
+processing:
+  laser_channel: green      # canal couleur à isoler : green (laser vert ~520nm)
+  laser_threshold: 180      # seuil de détection de la ligne (0-255)
+  min_line_pixels: 10       # nombre minimum de pixels pour valider une ligne
+  subpixel: true            # activer la détection sub-pixel (centroïde)
+
+reconstruction:
+  outlier_nb_neighbors: 20  # voisins pour filtrage outliers (Open3D)
+  outlier_std_ratio: 2.0    # ratio écart-type pour filtrage outliers
+
+calibration:
+  use_checkerboard: false    # false = desactive la calibration camera par damier et utilise des intrinsèques approx
+  approx_focal_scale: 1.25  # focale approx = largeur_image * facteur (640 px -> 800 px)
+
+export:
+  default_format: stl       # format par défaut : stl / obj
+  output_dir: /tmp/scans    # dossier de sortie des fichiers 3D
+
+interface:
+  web_host: 0.0.0.0         # écouter sur toutes les interfaces
+  web_port: 5000            # port du serveur Flask
+  display_type: none        # type d'écran : oled / lcd / none
+  display_i2c_address: 0x3C # adresse I2C de l'écran OLED (souvent 0x3C ou 0x3D)

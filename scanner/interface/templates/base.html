@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>{% block title %}Scanner 3D{% endblock %}</title>
+
+  <!-- Bootstrap 5 CDN -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
+    crossorigin="anonymous"
+  />
+  <!-- Bootstrap Icons -->
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+  />
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <!-- Scanner CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/scanner.css') }}" />
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+<script>
+  // Detect kiosk mode from URL parameter
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'kiosk') {
+      document.body.setAttribute('data-mode', 'kiosk');
+    }
+  })();
+</script>
+
+<!-- Toast container -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- ===== Desktop Navbar ===== -->
+<div class="nav-top">
+  <a class="brand" href="/">
+    <i class="bi bi-broadcast-pin text-success"></i>
+    Scanner 3D
+  </a>
+  <div class="nav-links">
+    <a href="/" {% if request.path == '/' %}class="active"{% endif %}>
+      <i class="bi bi-play-circle me-1"></i>Scan
+    </a>
+    <a href="/preview" {% if request.path.startswith('/preview') %}class="active"{% endif %}>
+      <i class="bi bi-eye me-1"></i>Preview
+    </a>
+    <a href="/calibration" {% if request.path.startswith('/calibration') %}class="active"{% endif %}>
+      <i class="bi bi-sliders me-1"></i>Calibration
+    </a>
+    <a href="/manual" {% if request.path.startswith('/manual') %}class="active"{% endif %}>
+      <i class="bi bi-tools me-1"></i>Manuel
+    </a>
+  </div>
+</div>
+
+<!-- ===== Kiosk Status Bar ===== -->
+<div class="kiosk-bar">
+  <span class="title">Scanner 3D</span>
+  <button class="kiosk-gear" onclick="toggleGearPanel()" aria-label="Settings">
+    <i class="bi bi-gear-fill"></i>
+  </button>
+</div>
+
+<!-- ===== Gear Slide Panel (kiosk/mobile) ===== -->
+<div id="gear-overlay" class="gear-panel-overlay" onclick="toggleGearPanel()"></div>
+<div id="gear-panel" class="gear-panel">
+  <button class="gear-close" onclick="toggleGearPanel()"><i class="bi bi-x-lg"></i></button>
+  <h6>Navigation</h6>
+  <a href="/"><i class="bi bi-play-circle"></i> Scan</a>
+  <a href="/preview"><i class="bi bi-eye"></i> Preview</a>
+  <a href="/calibration"><i class="bi bi-sliders"></i> Calibration</a>
+  <a href="/manual"><i class="bi bi-tools"></i> Manuel</a>
+  <div class="ip-info" id="ip-info">
+    Adresse : <strong id="scanner-ip">{{ request.host }}</strong>
+  </div>
+</div>
+
+<!-- ===== Mobile Bottom Tab Bar ===== -->
+<div class="tab-bar">
+  <a href="/" {% if request.path == '/' %}class="active"{% endif %}>
+    <i class="bi bi-play-circle"></i>
+    <span>Scan</span>
+  </a>
+  <a href="/preview" {% if request.path.startswith('/preview') %}class="active"{% endif %}>
+    <i class="bi bi-eye"></i>
+    <span>Preview</span>
+  </a>
+  <a href="/calibration" {% if request.path.startswith('/calibration') %}class="active"{% endif %}>
+    <i class="bi bi-sliders"></i>
+    <span>Calibration</span>
+  </a>
+  <a href="/manual" {% if request.path.startswith('/manual') %}class="active"{% endif %}>
+    <i class="bi bi-tools"></i>
+    <span>Manuel</span>
+  </a>
+  <a href="#" onclick="if(typeof window.copyToUsb==='function')window.copyToUsb();return false;">
+    <i class="bi bi-usb-drive"></i>
+    <span>USB</span>
+  </a>
+</div>
+
+<main class="container py-4">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="text-center text-muted py-3" style="font-size:0.8rem; border-top:1px solid #30363d;">
+  Scanner 3D &mdash; HEIG-VD PMD 2026
+</footer>
+
+<script
+  src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+  integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
+  crossorigin="anonymous"
+></script>
+<script src="{{ url_for('static', filename='js/scanner.js') }}"></script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

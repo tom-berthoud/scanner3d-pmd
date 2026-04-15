@@ -1,0 +1,30 @@
+"""scanner.calibration — Camera and laser plane calibration utilities.
+
+Exports:
+    CalibrationError: raised when calibration data is missing or invalid.
+    calibrate_camera: perform intrinsic camera calibration from checkerboard images.
+    load_camera_calibration: load camera matrix and dist_coeffs from YAML.
+    calibrate_laser_plane: fit the laser plane from reference measurements.
+    load_laser_plane: load the laser plane equation from YAML.
+"""
+
+from scanner.calibration.camera import (
+    approximate_camera_intrinsics,
+    calibrate_camera,
+    load_camera_calibration,
+)
+from scanner.calibration.laser_plane import calibrate_laser_plane, load_laser_plane
+
+
+class CalibrationError(Exception):
+    """Raised when calibration data is missing, corrupt or mathematically invalid."""
+
+
+__all__ = [
+    "CalibrationError",
+    "calibrate_camera",
+    "approximate_camera_intrinsics",
+    "load_camera_calibration",
+    "calibrate_laser_plane",
+    "load_laser_plane",
+]
