@@ -1,0 +1,92 @@
+\documentclass[a4paper,12pt,oneside]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{csquotes}
+\usepackage{lmodern}
+\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=2.5cm,right=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{float}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage[backend=biber,style=numeric,sorting=none]{biblatex}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+
+\input{chapitres/constantes.tex}
+
+\hypersetup{
+  colorlinks = true,
+  linkcolor  = black,
+  urlcolor   = blue,
+  citecolor  = black,
+  pdftitle   = {\projetNom - Rapport technique}
+}
+\addbibresource{references.bib}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.4em}
+\setlength{\headheight}{15pt}
+\onehalfspacing
+
+\fancypagestyle{rapport}{
+  \fancyhf{}
+  \fancyhead[L]{\projetNom}
+  \fancyhead[R]{Rapport technique - \versionDocument}
+  \fancyfoot[L]{\dateDocument}
+  \fancyfoot[R]{\thepage/\pageref{LastPage}}
+  \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\input{chapitres/premiere_page.tex}
+\clearpage
+
+\pagestyle{rapport}
+\pagenumbering{roman}
+\setcounter{page}{2}
+\hypersetup{pageanchor=true}
+
+\input{chapitres/01_historique.tex}
+\input{chapitres/02_references_normatives.tex}
+\input{chapitres/03_abreviations.tex}
+
+\clearpage
+\begingroup
+\setstretch{1.1}
+\tableofcontents
+\endgroup
+\clearpage
+\begingroup
+\setstretch{1.1}
+\listoffigures
+\endgroup
+\clearpage
+\begingroup
+\setstretch{1.1}
+\listoftables
+\endgroup
+\clearpage
+
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\input{chapitres/04_introduction.tex}
+\input{chapitres/05_conception_mecanique.tex}
+\input{chapitres/06_conception_electronique.tex}
+\input{chapitres/07_software.tex}
+\input{chapitres/08_systeme_electrique.tex}
+\input{chapitres/09_regulation.tex}
+\input{chapitres/10_prototype.tex}
+\input{chapitres/11_conclusion.tex}
+\input{chapitres/12_bibliographie.tex}
+\input{chapitres/13_annexes.tex}
+
+\end{document}
