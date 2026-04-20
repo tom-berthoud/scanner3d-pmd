@@ -1,7 +1,92 @@
-\section{Systeme electrique}
+\section{Système électrique}
 
-\subsection{Distribution et alimentation}
-Detail des alimentations, protections et interconnexions.
+\subsection{Architecture d'alimentation}
+
+Le scanner est alimenté depuis le secteur 230\,V\textsubscript{AC}
+(exigence \textbf{E20}) par un transformateur externe AC/DC 12\,V qui
+fournit le bus principal. Un convertisseur abaisseur DC/DC
+\texttt{HW-411} (buck, 1{,}3--35\,V, 2\,A) dérive le 5\,V nécessaire au
+Raspberry Pi et à l'électronique logique. L'architecture deux-rails
+isole la partie puissance (moteur) de la partie signal.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth,page=1]{assets/Schema_electrique_Scan3D.pdf}
+  \caption{Schéma électrique — étage d'alimentation.}
+  \label{fig:sch-alim}
+\end{figure}
+
+\subsection{Distribution et protection}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{3cm}p{3cm}p{7.5cm}@{}}
+    \toprule
+    \textbf{Rail} & \textbf{Source} & \textbf{Charges} \\
+    \midrule
+    12\,V\textsubscript{DC} & Transfo 230\,V$\rightarrow$12\,V & Moteur pas-à-pas (via DM320T), laser \\
+    5\,V\textsubscript{DC}  & HW-411 (buck 12$\rightarrow$5\,V) & Raspberry Pi 4, afficheur TFT, logique \\
+    3{,}3\,V                & Régulateur interne Pi & GPIO, capteur de porte \\
+    GND                     & Commun                & Tous les sous-systèmes \\
+    \bottomrule
+  \end{tabular}
+  \caption{Rails d'alimentation et répartition des charges.}
+  \label{tab:rails}
+\end{table}
+
+\paragraph{Protection utilisateur.}
+Le transformateur 230\,V est externe au boîtier ; seul le 12\,V pénètre
+dans la zone accessible, ce qui limite le risque de choc électrique
+(\textbf{E17, E18}). Un interrupteur principal sur le rail 12\,V permet
+la coupure complète de la machine.
+
+\paragraph{Terre de protection.}
+La broche PE de l'entrée secteur est connectée à la masse mécanique du
+boîtier. \emph{À confirmer après intégration finale.}
+
+\subsection{Bilan de consommation (estimation)}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{4cm}p{2.5cm}p{2.5cm}p{4.5cm}@{}}
+    \toprule
+    \textbf{Charge} & \textbf{Tension} & \textbf{Courant max} & \textbf{Remarques} \\
+    \midrule
+    Raspberry Pi 4      & 5\,V   & $\sim$1{,}2\,A & Pointe au démarrage \\
+    Afficheur TFT       & 5\,V   & $<$0{,}1\,A    & Rétroéclairage inclus \\
+    Laser ligne         & 5\,V   & $\sim$0{,}2\,A & \emph{à mesurer} \\
+    Moteur NEMA\,17     & 12\,V  & $\sim$1{,}5\,A/phase & Limité par DM320T \\
+    Marge               & ---    & ---            & \\
+    \midrule
+    \textbf{Total}      &        & \emph{à valider} & Mesure terrain nécessaire \\
+    \bottomrule
+  \end{tabular}
+  \caption{Bilan de consommation préliminaire.}
+  \label{tab:conso}
+\end{table}
 
 \subsection{Validation}
-Resultats de tests et conformite aux exigences.
+
+\emph{Squelette à compléter après assemblage :}
+\begin{itemize}
+  \item Mesure des tensions réelles sur chaque rail, charge maximale
+        appliquée.
+  \item Mesure du courant d'appel au démarrage (séquence de mise sous
+        tension).
+  \item Test de coupure : passage à \texttt{ERROR} $\Rightarrow$
+        vérification que le laser est hors tension (\textbf{E19}).
+  \item Test de l'interrupteur de porte : ouverture pendant un scan
+        $\Rightarrow$ comportement attendu documenté.
+  \item Température en régime établi du buck HW-411 et du driver DM320T.
+\end{itemize}
+
+\subsection{Points ouverts}
+
+\begin{itemize}
+  \item Séquence de mise sous tension définitive (ordre Pi / moteur /
+        laser) à figer pour éviter les pics de courant.
+  \item Choix d'un fusible ou d'une limitation de courant sur le rail
+        12\,V.
+  \item Remplacement éventuel du buck linéaire HW-411 par une solution
+        plus efficace si la thermique pose problème.
+\end{itemize}

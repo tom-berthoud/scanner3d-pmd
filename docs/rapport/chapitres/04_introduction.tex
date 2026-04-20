@@ -1,13 +1,121 @@
 \section{Introduction}
 
 \subsection{Contexte}
-Ici, presenter le contexte du projet, son cadre et ses contraintes principales.
 
-\subsection{Etat de l'art}
-Resumer les solutions existantes et la valeur ajoutee de votre approche.
+Ce projet s'inscrit dans le cadre de l'unité d'enseignement
+\uniteEnseignement{} (\filiere, HEIG-VD). Il consiste à concevoir et
+réaliser un scanner 3D destiné au \emph{MakeLab} de l'école, afin de
+mettre à disposition des étudiants, collaborateurs et enseignants un
+outil simple pour numériser des objets physiques en modèles 3D
+exploitables (STL ou OBJ).
+
+Le système repose sur la \textbf{triangulation laser} : un laser ligne
+projette un plan sur un objet en rotation sur un plateau motorisé, une
+caméra capture la déformation de la ligne, et un logiciel reconstruit un
+nuage de points puis un maillage. L'ensemble est intégré dans une boîte
+fermée pour contrôler la lumière ambiante et garantir la sécurité
+utilisateur vis-à-vis du laser.
+
+\subsection{État de l'art}
+
+Les solutions de numérisation 3D du marché se répartissent en trois
+familles : les scanners professionnels à structure de lumière
+(EinScan, Revopoint) offrant une précision élevée mais dont le prix
+dépasse largement le budget d'un projet étudiant, les scanners grand
+public (Creality CR-Scan, Matter and Form) plus abordables mais fermés
+et peu adaptables, et les projets \emph{open-source} à triangulation
+laser ou photogrammétrie.
+
+Le projet \textbf{OpenScan}~\cite{openscan}, en particulier sa déclinaison
+matérielle \textbf{OpenScan Mini}~\cite{openscanmini}, constitue la
+référence la plus proche de notre approche : Raspberry Pi, plateau
+rotatif, acquisition par caméra. Sa documentation détaillée et ses
+retours d'expérience sur la qualité des scans~\cite{openscanquality}
+orientent plusieurs choix techniques.
+
+La valeur ajoutée de notre approche tient à trois points : un coût
+contenu sous 300\,CHF, une intégration pensée pour un usage pédagogique
+(interface web, retour LED, prise en main rapide) et une architecture
+logicielle modulaire permettant le développement et la calibration sans
+matériel.
 
 \subsection{But et objectifs}
-Formuler la problematique puis lister les objectifs mesurables du projet (SMART).
+
+\paragraph{Problématique.}
+Comment concevoir et intégrer, dans un budget de 300\,CHF, un scanner 3D
+suffisamment simple pour être utilisé en autonomie au MakeLab, tout en
+garantissant la sécurité de l'utilisateur et une qualité de mesure
+exploitable ?
+
+\paragraph{Objectifs SMART.}
+Les objectifs mesurables dérivés du cahier des charges~\cite{cdc} sont
+les suivants :
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{1.2cm}p{12.5cm}@{}}
+    \toprule
+    \textbf{Réf.} & \textbf{Objectif} \\
+    \midrule
+    O1 & Numériser un objet de dimension maximale $150\times150\times150$\,mm (E3). \\
+    O2 & Produire un fichier exportable au format STL ou OBJ (E6). \\
+    O3 & Réaliser un cycle de scan complet en moins de 10 minutes (E4). \\
+    O4 & Garantir une prise en main inférieure à 10 minutes pour un nouvel utilisateur (E7). \\
+    O5 & Respecter un budget total inférieur ou égal à 300\,CHF (E16). \\
+    O6 & Assurer la protection de l'utilisateur vis-à-vis du rayonnement laser et des zones mobiles (E18, E19). \\
+    O7 & Fournir un retour visuel de l'état du système (LEDs et écran) (E5). \\
+    O8 & Offrir une interface de commande via USB ou web (E10, E11). \\
+    \bottomrule
+  \end{tabular}
+  \caption{Objectifs SMART du projet, alignés sur les exigences du cahier des charges.}
+  \label{tab:objectifs}
+\end{table}
 
 \subsection{Planification}
-Presenter la repartition du travail, les jalons et les livrables.
+
+Le projet est structuré en quatre phases principales, réparties sur
+16 semaines pour un effort total estimé à 322 heures (hors imprévus
+et gestion de projet) :
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{1cm}p{8.5cm}p{4cm}@{}}
+    \toprule
+    \textbf{Phase} & \textbf{Contenu} & \textbf{Fenêtre} \\
+    \midrule
+    T10 & Élaboration et vérification du concept (recherche, CDC, sélection des composants) & Semaines 1--8 \\
+    T20 & Prototype pour la démonstration de concept (mécanique, électronique, logiciel) & Semaines 5--10 \\
+    T30 & Mise au point et intégration finale (UI, intégration, tests système) & Semaines 9--14 \\
+    T40 & Préparation des livrables (rapport, vidéo, démonstration) & Semaines 13--16 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Phases du projet.}
+  \label{tab:phases}
+\end{table}
+
+\paragraph{Répartition du travail.}
+L'équipe est composée de cinq membres. La table~\ref{tab:roles}
+synthétise les responsabilités principales ; le détail tâche par tâche
+figure dans le planning en annexe.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{3.5cm}p{10cm}@{}}
+    \toprule
+    \textbf{Membre} & \textbf{Responsabilité principale} \\
+    \midrule
+    Tom Berthoud (EAI)    & Architecture logicielle, acquisition, triangulation, coordination. \\
+    Jason Weber (EAI)     & Interface utilisateur, reconstruction, export. \\
+    Luc Marchand (EAI)    & Électronique, schéma, alimentation et sécurité. \\
+    Hadrien Fuentes (EAI) & Câblage moteur / laser / caméra, sélection du laser. \\
+    Tim Stamm (ROCM)      & Conception mécanique, boîtier, plateau rotatif. \\
+    \bottomrule
+  \end{tabular}
+  \caption{Répartition du travail.}
+  \label{tab:roles}
+\end{table}
+
+\paragraph{Livrables.}
+Rapport technique (ce document), prototype fonctionnel au MakeLab, vidéo
+de démonstration, présentation finale et jeu de scans d'objets de
+référence.
