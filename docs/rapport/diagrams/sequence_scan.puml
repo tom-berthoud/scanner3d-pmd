@@ -1,0 +1,43 @@
+@startuml sequence_scan
+' Diagramme de séquence — cycle complet d'un scan
+' Rendu : plantuml -tpdf sequence_scan.puml
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam defaultFontName Latin Modern Roman
+skinparam defaultFontSize 11
+
+title Séquence d'un cycle de scan
+
+actor Utilisateur as U
+participant "Web\n(Flask)" as W
+participant "FSM" as F
+participant "Acquisition" as A
+participant "Matériel\n(moteur/laser/caméra)" as H
+participant "Processing" as P
+participant "Reconstruction" as R
+participant "Export" as E
+
+U -> W : POST /scan/start
+W -> F : transition SCANNING
+loop 200 pas (1 tour)
+  A -> H : motor_step()
+  A -> H : laser_set(ON)
+  A -> H : camera_capture()
+  A -> H : laser_set(OFF)
+  A -> A : sauvegarder frame
+  A --> W : progression (SSE)
+end
+F -> F : transition PROCESSING
+loop par frame
+  P -> P : extract_laser_line()
+  P -> P : triangulate()
+end
+F -> F : transition EXPORTING
+R -> R : merge_profiles()
+R -> R : filter_outliers()
+E -> E : export_stl() / export_obj()
+F -> F : transition COMPLETE
+W --> U : STL disponible (viewer Three.js)
+
+@enduml

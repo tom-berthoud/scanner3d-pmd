@@ -1,0 +1,40 @@
+@startuml machine_etats
+' Machine d'états du scanner — transitions valides
+' Rendu : plantuml -tpdf machine_etats.puml
+
+skinparam shadowing false
+skinparam defaultFontName Latin Modern Roman
+skinparam defaultFontSize 11
+
+title Machine d'états du scanner
+
+[*] --> IDLE
+
+IDLE : LED verte fixe
+IDLE --> SCANNING : POST /scan/start
+IDLE --> CALIBRATING : lancer calibration
+
+CALIBRATING : LED orange clignotant
+CALIBRATING --> IDLE : terminé
+CALIBRATING --> ERROR : échec
+
+SCANNING : LED orange fixe
+SCANNING --> PROCESSING : capture terminée
+SCANNING --> ERROR : erreur matériel
+
+PROCESSING : LED orange rapide
+PROCESSING --> EXPORTING : nuage prêt
+PROCESSING --> COMPLETE : export direct
+PROCESSING --> ERROR
+
+EXPORTING : LED orange lent
+EXPORTING --> COMPLETE : fichier écrit
+EXPORTING --> ERROR
+
+COMPLETE : LED verte clignotant
+COMPLETE --> IDLE : reset()
+
+ERROR : LED rouge fixe\nlaser OFF forcé
+ERROR --> IDLE : acquittement
+
+@enduml

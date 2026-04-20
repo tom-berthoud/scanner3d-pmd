@@ -1,0 +1,72 @@
+@startuml architecture_composants
+' Diagramme de composants — architecture logicielle du Scanner 3D
+' Rendu : plantuml -tpdf architecture_composants.puml
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Latin Modern Roman
+skinparam defaultFontSize 11
+
+title Architecture logicielle — vue des composants
+
+actor "Utilisateur" as user
+
+package "Interface" {
+  [Serveur web Flask\n+ SSE] as web
+  [Viewer 3D\n(Three.js)] as viewer
+  [Afficheur local\n(TFT SPI)] as display
+}
+
+package "Orchestration" {
+  [Machine d'états] as fsm
+  [Boucle de scan] as scan
+}
+
+package "Pipeline de traitement" {
+  [Acquisition] as acq
+  [Extraction ligne laser] as line
+  [Triangulation] as tri
+  [Reconstruction\n(fusion + filtrage)] as recon
+  [Export STL/OBJ] as export
+}
+
+package "Calibration" {
+  [Intrinsèque caméra] as calib_cam
+  [Plan laser] as calib_laser
+  [Plateforme] as calib_plat
+}
+
+package "Abstraction matérielle" {
+  [Caméra] as hw_cam
+  [Moteur pas-à-pas] as hw_motor
+  [Laser] as hw_laser
+  [LEDs] as hw_led
+  [Mock (dev)] as hw_mock
+}
+
+database "Configuration\n(YAML)" as cfg
+
+user --> web : HTTP
+user --> display
+web --> viewer : STL
+web --> scan : POST /scan/start
+web <-- fsm : état (SSE)
+scan --> fsm : transitions
+scan --> acq
+acq --> hw_motor
+acq --> hw_laser
+acq --> hw_cam
+acq --> line : frames
+line --> tri : pixels
+tri --> recon : points 3D
+recon --> export : nuage
+fsm --> hw_led : signalisation
+calib_cam ..> cfg
+calib_laser ..> cfg
+calib_plat ..> cfg
+tri ..> cfg : lecture seule
+hw_cam .[#gray].> hw_mock : fallback
+hw_motor .[#gray].> hw_mock : fallback
+hw_laser .[#gray].> hw_mock : fallback
+
+@enduml
