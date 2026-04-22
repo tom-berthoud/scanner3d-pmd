@@ -30,9 +30,10 @@ def main(path: str) -> None:
     print()
 
     # Pour chaque seuil, combien de COLONNES ont au moins 1 pixel au-dessus ?
-    print("Combien de colonnes contiennent ≥1 pixel avec G >= seuil :")
+    signal = np.clip(G.astype(int) - np.maximum(R, B).astype(int), 0, 255).astype(np.uint8)
+    print("Combien de colonnes contiennent ≥1 pixel avec G-max(R,B) >= seuil :")
     for t in [30, 50, 80, 100, 120, 150, 180, 200]:
-        mask = G >= t
+        mask = signal >= t
         cols_with_detection = int((mask.any(axis=0)).sum())
         total_px = int(mask.sum())
         print(f"  seuil {t:3d} → {cols_with_detection:3d} colonnes détectées ({total_px} pixels au total)")

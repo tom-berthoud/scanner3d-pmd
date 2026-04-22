@@ -120,3 +120,108 @@ def make_laser_frame_sphere(
                 frame[r, col, 1] = min(255, intensity)
 
     return frame
+
+
+def make_laser_frame_vertical(
+    width: int = 640,
+    height: int = 480,
+    col: float = 320.0,
+    laser_width_px: float = 3.0,
+    laser_intensity: int = 220,
+    ambient_green: int = 5,
+    ambient_other: int = 2,
+    noise_amplitude: int = 3,
+    rng_seed: int = 42,
+) -> np.ndarray:
+    """Create a synthetic BGR image with a vertical laser line."""
+    rng = np.random.default_rng(rng_seed)
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+
+    frame[:, :, 0] = ambient_other
+    frame[:, :, 1] = ambient_green
+    frame[:, :, 2] = ambient_other
+
+    cols_f = np.arange(width, dtype=np.float64)
+    gaussian = np.exp(-0.5 * ((cols_f - col) / laser_width_px) ** 2)
+    green_profile = (laser_intensity * gaussian).clip(0, 255).astype(np.uint8)
+
+    for row in range(height):
+        frame[row, :, 1] = np.maximum(frame[row, :, 1], green_profile)
+
+    if noise_amplitude > 0:
+        noise = rng.integers(0, noise_amplitude + 1, (height, width, 3), dtype=np.uint8)
+        frame = np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+    return frame
+
+
+def make_laser_frame_polyline(
+    points: list[tuple[float, float]],
+    width: int = 640,
+    height: int = 480,
+    laser_width_px: float = 1.6,
+    laser_intensity: int = 220,
+    ambient_green: int = 5,
+    ambient_other: int = 2,
+    noise_amplitude: int = 0,
+    rng_seed: int = 42,
+    gap_segments: list[tuple[float, float]] | None = None,
+) -> np.ndarray:
+    """Create a frame with a laser line following a polyline in image space.
+
+    Args:
+        points: Ordered list of ``(col, row)`` control points.
+        gap_segments: Optional list of ``(start_ratio, end_ratio)`` intervals
+            skipped along the polyline, where 0 is the first point and 1 the
+            last point.
+    """
+    rng = np.random.default_rng(rng_seed)
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame[:, :, 0] = ambient_other
+    frame[:, :, 1] = ambient_green
+    frame[:, :, 2] = ambient_other
+
+    if len(points) < 2:
+        return frame
+
+    skip_ranges = gap_segments or []
+
+    def _is_skipped(progress: float) -> bool:
+        return any(start <= progress <= end for start, end in skip_ranges)
+
+    segment_lengths: list[float] = []
+    total_length = 0.0
+    for (x0, y0), (x1, y1) in zip(points[:-1], points[1:]):
+        seg_len = float(math.hypot(x1 - x0, y1 - y0))
+        segment_lengths.append(seg_len)
+        total_length += seg_len
+
+    traversed = 0.0
+    for (x0, y0), (x1, y1), seg_len in zip(points[:-1], points[1:], segment_lengths):
+        steps = max(2, int(math.ceil(seg_len * 2.5)))
+        for step in range(steps + 1):
+            alpha = step / float(steps)
+            progress = (traversed + alpha * seg_len) / max(total_length, 1e-9)
+            if _is_skipped(progress):
+                continue
+
+            col_f = x0 + alpha * (x1 - x0)
+            row_f = y0 + alpha * (y1 - y0)
+            col_i = int(round(col_f))
+            row_i = int(round(row_f))
+
+            for dy in range(-3, 4):
+                for dx in range(-3, 4):
+                    rr = row_i + dy
+                    cc = col_i + dx
+                    if 0 <= rr < height and 0 <= cc < width:
+                        dist2 = dx * dx + dy * dy
+                        intensity = int(laser_intensity * math.exp(-0.5 * dist2 / max(laser_width_px**2, 1e-6)))
+                        frame[rr, cc, 1] = max(frame[rr, cc, 1], intensity)
+        traversed += seg_len
+
+    if noise_amplitude > 0:
+        noise = rng.integers(0, noise_amplitude + 1, (height, width, 3), dtype=np.uint8)
+        frame = np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+    return frame

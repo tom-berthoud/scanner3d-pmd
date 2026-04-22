@@ -6,7 +6,11 @@ import numpy as np
 import pytest
 
 from scanner.processing import extract_laser_line, triangulate
-from tests.fixtures.generate import make_laser_frame
+from tests.fixtures.generate import (
+    make_laser_frame,
+    make_laser_frame_polyline,
+    make_laser_frame_vertical,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -85,6 +89,46 @@ class TestExtractLaserLine:
         if result.shape[0] > 0:
             assert result[:, 1].min() >= 0
             assert result[:, 1].max() < 150
+
+    def test_detects_vertical_line(self) -> None:
+        """A near-vertical laser line should be preserved across its height."""
+        true_col = 95.0
+        frame = make_laser_frame_vertical(width=200, height=160, col=true_col, noise_amplitude=0)
+        result = extract_laser_line(frame, threshold=80, min_pixels=20, subpixel=True)
+        assert result.shape[0] >= 145, f"Expected many vertical points, got {result.shape[0]}"
+        mean_col = float(result[:, 0].mean())
+        assert abs(mean_col - true_col) < 2.0, (
+            f"Mean detected column {mean_col:.2f} differs from truth {true_col} by > 2 px"
+        )
+        assert float(result[:, 1].max() - result[:, 1].min()) > 140.0
+
+    def test_detects_bent_polyline(self) -> None:
+        """A bent laser line should not collapse to a tiny set of points."""
+        frame = make_laser_frame_polyline(
+            points=[(108.0, 20.0), (122.0, 80.0), (94.0, 145.0)],
+            width=220,
+            height=180,
+            noise_amplitude=0,
+        )
+        result = extract_laser_line(frame, threshold=80, min_pixels=20, subpixel=True)
+        assert result.shape[0] >= 100, f"Expected dense bent line, got {result.shape[0]}"
+        assert float(result[:, 0].max() - result[:, 0].min()) >= 25.0
+        assert float(result[:, 1].max() - result[:, 1].min()) >= 110.0
+
+    def test_preserves_segments_across_large_gap(self) -> None:
+        """Separated visible segments should both survive instead of one replacing the other."""
+        frame = make_laser_frame_polyline(
+            points=[(100.0, 15.0), (116.0, 70.0), (92.0, 150.0)],
+            width=220,
+            height=180,
+            noise_amplitude=0,
+            gap_segments=[(0.42, 0.58)],
+        )
+        result = extract_laser_line(frame, threshold=80, min_pixels=20, subpixel=True)
+        assert result.shape[0] >= 80, f"Expected both visible branches to remain, got {result.shape[0]}"
+        rows = np.sort(result[:, 1])
+        row_gaps = np.diff(rows)
+        assert row_gaps.max() > 8.0, "A large optical gap should remain visible in the extracted line"
 
 
 # --------------------------------------------------------------------------- #

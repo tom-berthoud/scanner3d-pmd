@@ -32,7 +32,7 @@ def run_scan(
         4. For each frame: extract laser line + triangulate to 3D profile
         5. Merge profiles → point cloud; filter outliers
         6. Transition → EXPORTING
-        7. Export to STL or OBJ
+        7. Export raw cloud + STL or OBJ
         8. Transition → COMPLETE
 
     On any error, transitions to ERROR and re-raises the exception.
@@ -63,7 +63,7 @@ def run_scan(
     from scanner.acquisition import run_capture_sequence
     from scanner.processing import extract_laser_line, triangulate
     from scanner.reconstruction import merge_profiles, filter_outliers
-    from scanner.export import export_stl, export_obj
+    from scanner.export import export_stl, export_obj, export_point_cloud_ply
 
     sm = state_machine or StateMachine()
 
@@ -225,8 +225,12 @@ def run_scan(
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"scan_{timestamp}.{fmt}")
+    cloud_path = os.path.join(output_dir, f"scan_{timestamp}_cloud.ply")
 
     try:
+        export_point_cloud_ply(cloud, cloud_path)
+        logger.info("Raw point cloud exported to %s", cloud_path)
+
         _progress(n_steps, n_steps, "Exporting mesh…")
         if fmt == "obj":
             export_obj(cloud, output_path)

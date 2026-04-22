@@ -26,7 +26,7 @@ def analyse_frame(path: str) -> None:
     B = img[:, :, 0].astype(int)
     G = img[:, :, 1].astype(int)
     R = img[:, :, 2].astype(int)
-    signal = np.clip(G - R, 0, 255)
+    signal = np.clip(G - np.maximum(R, B), 0, 255)
 
     # Statistiques globales
     saturated = int(((R == 255) & (G == 255) & (B == 255)).sum())
@@ -34,7 +34,7 @@ def analyse_frame(path: str) -> None:
 
     print(f"\n=== {os.path.basename(path)} ({w}x{h}) ===")
     print(f"  B mean={B.mean():.1f}  G mean={G.mean():.1f}  R mean={R.mean():.1f}")
-    print(f"  G-R : max={signal.max()}  mean={signal.mean():.2f}")
+    print(f"  G-max(R,B) : max={signal.max()}  mean={signal.mean():.2f}")
     print(f"  pixels saturés (255,255,255) : {saturated}")
     print(f"  pixels G>200 : {very_bright_green}")
 
@@ -46,7 +46,7 @@ def analyse_frame(path: str) -> None:
 
     # Verdict
     if signal.max() < 30:
-        print("  ⚠️  Signal G-R trop faible — le laser n'est probablement pas détecté")
+        print("  ⚠️  Signal vert dominant trop faible — le laser n'est probablement pas détecté")
         print("      Causes probables : laser éteint, image en RGB au lieu de BGR,")
         print("                          ou laser saturé (overexposure)")
     elif saturated > 1000:

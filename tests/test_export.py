@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 import pytest
 
-from scanner.export import export_obj, export_stl
+from scanner.export import export_obj, export_point_cloud_ply, export_stl
 
 
 def _make_sphere_cloud(n: int = 300, radius: float = 30.0) -> np.ndarray:
@@ -111,3 +111,34 @@ class TestExportOBJ:
             path = os.path.join(tmpdir, "deep", "path", "out.obj")
             export_obj(cloud, path)
             assert os.path.exists(path)
+
+
+class TestExportPointCloudPLY:
+    """Tests for scanner.export.pointcloud.export_point_cloud_ply."""
+
+    def test_creates_file(self) -> None:
+        """export_point_cloud_ply should create a file at the given path."""
+        cloud = _make_sphere_cloud()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cloud.ply")
+            export_point_cloud_ply(cloud, path)
+            assert os.path.exists(path)
+
+    def test_header_contains_vertex_count(self) -> None:
+        """PLY header should declare the correct number of vertices."""
+        cloud = _make_sphere_cloud(n=123)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cloud.ply")
+            export_point_cloud_ply(cloud, path)
+            with open(path, "r", encoding="ascii") as fh:
+                content = fh.read()
+            assert "format ascii 1.0" in content
+            assert "element vertex 123" in content
+
+    def test_empty_cloud_raises(self) -> None:
+        """An empty cloud should raise ValueError."""
+        cloud = np.empty((0, 3))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cloud.ply")
+            with pytest.raises(ValueError):
+                export_point_cloud_ply(cloud, path)

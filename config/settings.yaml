@@ -32,8 +32,8 @@ motor:
 
 processing:
   laser_channel: green      # canal couleur à isoler : green (laser vert ~520nm)
-  laser_threshold: 60       # seuil de détection de la ligne (G-R 0-255) — pic mesuré ~160 sur notre hardware
-  min_line_pixels: 15      # nombre minimum de colonnes pour valider une ligne (évite faux positifs sur reflets)
+  laser_threshold: 60       # seuil de détection sur le signal G - max(R,B)
+  min_line_pixels: 15      # nombre minimum de points de ligne pour valider une détection
   subpixel: true            # activer la détection sub-pixel (centroïde)
 
 reconstruction:

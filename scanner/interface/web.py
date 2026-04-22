@@ -341,7 +341,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         """Capture a frame and overlay detected laser pixels in red.
 
         Query params:
-            threshold: G-R threshold for laser detection (default from settings)
+            threshold: green-dominant laser threshold (default from settings)
             min_pixels: minimum columns to validate a line (default from settings)
         """
         import cv2

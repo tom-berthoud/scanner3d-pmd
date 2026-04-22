@@ -1,4 +1,4 @@
-"""Trace la ligne laser détectée (colonnes avec pixel G > seuil).
+"""Trace la ligne laser détectée (pixels avec signal G-max(R,B) > seuil).
 
 Usage:
     python debug_line_trace.py <image.jpg> [seuil]
@@ -19,8 +19,11 @@ def main(path: str, threshold: int = 50) -> None:
 
     h, w = img.shape[:2]
     G = img[:, :, 1]
+    R = img[:, :, 2]
+    B = img[:, :, 0]
+    signal = np.clip(G.astype(int) - np.maximum(R, B).astype(int), 0, 255).astype(np.uint8)
 
-    print(f"Image {w}x{h}  |  seuil G>={threshold}")
+    print(f"Image {w}x{h}  |  seuil G-max(R,B)>={threshold}")
     print(f"Canaux max : B={img[:,:,0].max()} G={img[:,:,1].max()} R={img[:,:,2].max()}")
     print()
 
@@ -30,7 +33,7 @@ def main(path: str, threshold: int = 50) -> None:
     count = 0
     detected_rows = []
     for col in range(w):
-        col_g = G[:, col]
+        col_g = signal[:, col]
         mask = col_g >= threshold
         if not mask.any():
             continue
