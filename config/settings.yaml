@@ -4,7 +4,7 @@
 # avec de vraies valeurs — utiliser les .example.yaml comme templates.
 
 scan:
-  n_steps: 400           # nombre de pas pour 360° (1.8°/pas)
+  n_steps: 200           # nombre de photos pour 360° (1 photo = steps_per_rev*microstepping/n_steps pas moteur)
   direction: clockwise      # sens de rotation : clockwise / counterclockwise
 
 camera:
@@ -25,8 +25,8 @@ motor:
   step_pin: 3              # broche GPIO STEP
   dir_pin: 4              # broche GPIO DIR
   enable_pin: 17            # broche GPIO ENABLE (actif bas sur DM320T)
-  steps_per_rev: 3200        # pas moteur par révolution (1.8°/pas)
-  microstepping: 16          # facteur de microstepping (1, 2, 4, 8, 16)
+  steps_per_rev: 200        # pas physiques du NEMA 17 (1.8°/pas)
+  microstepping: 16          # facteur de microstepping du driver DM320T
   speed_rpm: 5              # vitesse de rotation (tours/min)
   accel_steps: 0           # nombre de pas d'accélération/décélération
 

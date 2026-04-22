@@ -86,7 +86,20 @@ def run_capture_sequence(
     direction: str = config.get("scan", {}).get("direction", "clockwise")
     frames: list[np.ndarray] = []
 
-    logger.info("Starting capture sequence: %d steps, direction=%s", n_steps, direction)
+    motor_cfg = config.get("motor", {})
+    total_motor_steps = int(motor_cfg.get("steps_per_rev", 200)) * int(
+        motor_cfg.get("microstepping", 1)
+    )
+    steps_per_photo = max(1, total_motor_steps // n_steps)
+
+    logger.info(
+        "Starting capture sequence: %d photos, %d motor steps/photo "
+        "(%d total steps/rev), direction=%s",
+        n_steps,
+        steps_per_photo,
+        total_motor_steps,
+        direction,
+    )
 
     # Clear previous frames
     if save_frames:
@@ -99,8 +112,8 @@ def run_capture_sequence(
 
     try:
         for step_idx in range(n_steps):
-            # 1. Advance one step
-            motor_step(1, direction)
+            # 1. Advance by steps_per_photo motor steps
+            motor_step(steps_per_photo, direction)
 
             # 2. Laser on
             laser_set(True)
