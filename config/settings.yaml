@@ -10,10 +10,10 @@ scan:
 camera:
   resolution: [640, 480]    # [width, height] en pixels (mock: 640x480 = résolution de calibration)
   mock_shape: duck            # forme simulée par le mock : sphere | cylinder | cube | duck
-  exposure_us: 5000         # temps d'exposition en microsecondes (court = ligne laser nette)
+  exposure_us: 1500         # court pour éviter la saturation blanche du centre de la ligne laser
   gain: 1.0                 # gain analogique (faible = moins de bruit)
   awb_mode: off             # balance des blancs : off (fixe) pour cohérence entre frames
-  awb_gains: [1.5, 1.2]    # gains rouge/bleu si awb_mode = off
+  awb_gains: [0.5, 1.0]    # gains rouge/bleu — rouge bas pour supprimer reflets parasites
 
 laser:
   gpio_pin: 2             # numéro de broche GPIO (BCM) pour le laser
@@ -33,7 +33,7 @@ motor:
 processing:
   laser_channel: green      # canal couleur à isoler : green (laser vert ~520nm)
   laser_threshold: 60       # seuil de détection de la ligne (G-R 0-255) — pic mesuré ~160 sur notre hardware
-  min_line_pixels: 3       # nombre minimum de pixels pour valider une ligne
+  min_line_pixels: 15      # nombre minimum de colonnes pour valider une ligne (évite faux positifs sur reflets)
   subpixel: true            # activer la détection sub-pixel (centroïde)
 
 reconstruction:

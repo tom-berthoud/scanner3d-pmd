@@ -336,6 +336,72 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except HardwareError:
             return Response(status=503)
 
+    @app.route("/manual/camera/tuning")
+    def manual_camera_tuning() -> Response:
+        """Capture a frame and overlay detected laser pixels in red.
+
+        Query params:
+            threshold: G-R threshold for laser detection (default from settings)
+            min_pixels: minimum columns to validate a line (default from settings)
+        """
+        import cv2
+        import numpy as np
+        from scanner.hardware import HardwareError, camera_capture
+        from scanner.processing import extract_laser_line
+
+        if not _manual_allowed():
+            return Response(status=409)
+
+        proc_cfg = settings.get("processing", {})
+        default_threshold = int(proc_cfg.get("laser_threshold", 60))
+        default_min_px = int(proc_cfg.get("min_line_pixels", 15))
+
+        try:
+            threshold = int(request.args.get("threshold", default_threshold))
+        except ValueError:
+            threshold = default_threshold
+        try:
+            min_px = int(request.args.get("min_pixels", default_min_px))
+        except ValueError:
+            min_px = default_min_px
+        threshold = max(0, min(255, threshold))
+        min_px = max(1, min(640, min_px))
+
+        try:
+            frame = camera_capture()
+        except HardwareError:
+            return Response(status=503)
+
+        line = extract_laser_line(
+            frame, threshold=threshold, min_pixels=min_px, subpixel=True
+        )
+
+        g = frame[:, :, 1].astype(int)
+        r = frame[:, :, 2].astype(int)
+        signal = np.clip(g - r, 0, 255)
+        gr_max = int(signal.max())
+        gr_mean = float(signal.mean())
+
+        overlay = frame.copy()
+        for i in range(line.shape[0]):
+            col, row = int(round(line[i, 0])), int(round(line[i, 1]))
+            cv2.circle(overlay, (col, row), 2, (0, 0, 255), -1)
+
+        ok, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not ok:
+            return Response(status=500)
+
+        resp = Response(buf.tobytes(), mimetype="image/jpeg")
+        resp.headers["X-Detected-Columns"] = str(line.shape[0])
+        resp.headers["X-GR-Max"] = str(gr_max)
+        resp.headers["X-GR-Mean"] = f"{gr_mean:.2f}"
+        resp.headers["X-Threshold"] = str(threshold)
+        resp.headers["X-Min-Pixels"] = str(min_px)
+        resp.headers["Access-Control-Expose-Headers"] = (
+            "X-Detected-Columns,X-GR-Max,X-GR-Mean,X-Threshold,X-Min-Pixels"
+        )
+        return resp
+
     @app.route("/manual/laser", methods=["POST"])
     def manual_laser() -> Response:
         from scanner.hardware import HardwareError, laser_set

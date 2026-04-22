@@ -75,7 +75,7 @@ def calibrate_laser_plane(
     all_points: list[np.ndarray] = []
 
     for img_idx, (img, z_ref) in enumerate(zip(reference_images, reference_distances_mm)):
-        line_px = extract_laser_line(img, threshold=60, min_pixels=5, subpixel=True)
+        line_px = extract_laser_line(img, threshold=20, min_pixels=5, subpixel=True)
         if line_px.shape[0] < 5:
             logger.warning(
                 "Image %d: only %d laser pixels found — skipping", img_idx, line_px.shape[0]

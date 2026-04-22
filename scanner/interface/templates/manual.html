@@ -81,6 +81,46 @@
     <div class="pnl">
       <div class="pnl-head">
         <span class="pip"></span>
+        <span>Tuning Laser (live)</span>
+      </div>
+      <div class="trigger-body">
+        <div class="err-strip" style="display:block;">
+          Regle le seuil jusqu'a voir des points rouges sur toute la ligne laser verte. Puis reporte les valeurs dans config/settings.yaml.
+        </div>
+        <img id="tuning-img" src="" alt="Tuning detection" class="img-fluid rounded" style="background:#000;min-height:220px;object-fit:contain;" />
+
+        <div style="margin-top:8px;">
+          <label for="tuning-threshold" class="form-label mb-1">
+            Seuil G-R : <span id="tuning-threshold-val">60</span>
+          </label>
+          <input id="tuning-threshold" type="range" min="0" max="255" value="60" class="form-range" oninput="document.getElementById('tuning-threshold-val').textContent=this.value;" />
+        </div>
+
+        <div>
+          <label for="tuning-minpx" class="form-label mb-1">
+            min_line_pixels : <span id="tuning-minpx-val">15</span>
+          </label>
+          <input id="tuning-minpx" type="range" min="1" max="100" value="15" class="form-range" oninput="document.getElementById('tuning-minpx-val').textContent=this.value;" />
+        </div>
+
+        <div id="tuning-stats" class="state-msg" style="font-family:monospace;font-size:0.85em;">
+          En attente...
+        </div>
+
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary" id="btn-tuning-refresh" onclick="refreshTuningFrame()">
+            <i class="bi bi-arrow-repeat me-1"></i>Capturer
+          </button>
+          <button class="btn btn-outline-secondary" id="btn-tuning-toggle" onclick="toggleTuningAuto()">
+            <i class="bi bi-play-circle me-1"></i>Auto
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
         <span>LEDs</span>
       </div>
       <div class="trigger-body">
@@ -207,6 +247,46 @@ function toggleCameraAuto() {
   }
   refreshCameraFrame();
   _camTimer = setInterval(refreshCameraFrame, 700);
+  if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Stop';
+}
+
+let _tuningTimer = null;
+
+async function refreshTuningFrame() {
+  var img = document.getElementById('tuning-img');
+  var stats = document.getElementById('tuning-stats');
+  if (!img) return;
+  var th = document.getElementById('tuning-threshold').value;
+  var mp = document.getElementById('tuning-minpx').value;
+  try {
+    var r = await fetch('/manual/camera/tuning?threshold=' + th + '&min_pixels=' + mp + '&t=' + Date.now());
+    if (!r.ok) {
+      if (stats) stats.textContent = 'Erreur ' + r.status + ' — scan en cours ?';
+      return;
+    }
+    var detected = r.headers.get('X-Detected-Columns') || '?';
+    var grMax = r.headers.get('X-GR-Max') || '?';
+    var grMean = r.headers.get('X-GR-Mean') || '?';
+    var blob = await r.blob();
+    img.src = URL.createObjectURL(blob);
+    if (stats) {
+      stats.textContent = 'Detections : ' + detected + ' cols  |  G-R max=' + grMax + ' mean=' + grMean + '  |  seuil=' + th + ' min_px=' + mp;
+    }
+  } catch (e) {
+    if (stats) stats.textContent = 'Erreur: ' + e;
+  }
+}
+
+function toggleTuningAuto() {
+  var btn = document.getElementById('btn-tuning-toggle');
+  if (_tuningTimer) {
+    clearInterval(_tuningTimer);
+    _tuningTimer = null;
+    if (btn) btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Auto';
+    return;
+  }
+  refreshTuningFrame();
+  _tuningTimer = setInterval(refreshTuningFrame, 800);
   if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Stop';
 }
 
