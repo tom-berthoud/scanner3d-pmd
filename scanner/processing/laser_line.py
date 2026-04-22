@@ -57,8 +57,10 @@ def extract_laser_line(
     green = frame[:, :, 1].astype(np.int32)
     red = frame[:, :, 2].astype(np.int32)
 
-    # Suppress ambient light using colour difference (agents.md §2)
-    laser_signal = np.clip(green - red, 0, 255).astype(np.uint8)
+    # Green laser isolation. Our 532nm DPSS laser has a red/IR leak, so R can be
+    # almost as high as G on the laser spot (measured R=181, G=196, B=67).
+    # Using green - blue gives a much stronger signal (~130 vs ~15 with G-R).
+    laser_signal = np.clip(green - blue, 0, 255).astype(np.uint8)
 
     # Apply threshold → binary mask (H, W)
     mask = laser_signal >= threshold  # type: ignore[operator]

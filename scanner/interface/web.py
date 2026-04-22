@@ -376,9 +376,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             frame, threshold=threshold, min_pixels=min_px, subpixel=True
         )
 
+        b = frame[:, :, 0].astype(int)
         g = frame[:, :, 1].astype(int)
-        r = frame[:, :, 2].astype(int)
-        signal = np.clip(g - r, 0, 255)
+        signal = np.clip(g - b, 0, 255)
         gr_max = int(signal.max())
         gr_mean = float(signal.mean())
 
