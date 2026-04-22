@@ -52,15 +52,10 @@ def extract_laser_line(
         )
         return np.empty((0, 2), dtype=np.float32)
 
-    # BGR → separate channels
-    blue = frame[:, :, 0].astype(np.int32)
-    green = frame[:, :, 1].astype(np.int32)
-    red = frame[:, :, 2].astype(np.int32)
-
-    # Green laser isolation. Our 532nm DPSS laser has a red/IR leak, so R can be
-    # almost as high as G on the laser spot (measured R=181, G=196, B=67).
-    # Using green - blue gives a much stronger signal (~130 vs ~15 with G-R).
-    laser_signal = np.clip(green - blue, 0, 255).astype(np.uint8)
+    # Green laser isolation — in our dark enclosure, background is RGB < 20,
+    # so thresholding the green channel alone gives the strongest, cleanest
+    # signal (laser G ~200 vs background G <20).
+    laser_signal = frame[:, :, 1]  # green channel (BGR format, index 1)
 
     # Apply threshold → binary mask (H, W)
     mask = laser_signal >= threshold  # type: ignore[operator]

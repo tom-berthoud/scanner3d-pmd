@@ -91,7 +91,7 @@
 
         <div style="margin-top:8px;">
           <label for="tuning-threshold" class="form-label mb-1">
-            Seuil G-R : <span id="tuning-threshold-val">60</span>
+            Seuil canal vert : <span id="tuning-threshold-val">60</span>
           </label>
           <input id="tuning-threshold" type="range" min="0" max="255" value="60" class="form-range" oninput="document.getElementById('tuning-threshold-val').textContent=this.value;" />
         </div>
@@ -270,7 +270,7 @@ async function refreshTuningFrame() {
     var blob = await r.blob();
     img.src = URL.createObjectURL(blob);
     if (stats) {
-      stats.textContent = 'Detections : ' + detected + ' cols  |  G-R max=' + grMax + ' mean=' + grMean + '  |  seuil=' + th + ' min_px=' + mp;
+      stats.textContent = 'Detections : ' + detected + ' cols  |  G max=' + grMax + ' mean=' + grMean + '  |  seuil=' + th + ' min_px=' + mp;
     }
   } catch (e) {
     if (stats) stats.textContent = 'Erreur: ' + e;

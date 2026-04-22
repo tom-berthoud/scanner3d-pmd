@@ -376,9 +376,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             frame, threshold=threshold, min_pixels=min_px, subpixel=True
         )
 
-        b = frame[:, :, 0].astype(int)
-        g = frame[:, :, 1].astype(int)
-        signal = np.clip(g - b, 0, 255)
+        signal = frame[:, :, 1]  # green channel only
         gr_max = int(signal.max())
         gr_mean = float(signal.mean())
 
