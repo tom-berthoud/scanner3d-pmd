@@ -1,7 +1,104 @@
-\section{Regulation}
+\section{Régulation}
 
-\subsection{Strategie de controle}
-Presenter la logique de regulation et les lois de commande.
+\subsection{Positionnement}
 
-\subsection{Performance de regulation}
-Analyser la stabilite, precision et robustesse.
+Le scanner n'intègre pas de boucle de régulation asservie au sens
+strict (pas de retour capteur continu fermant une boucle de commande).
+Trois aspects relèvent néanmoins de problématiques de contrôle, de
+synchronisation et de stabilité, et impactent directement la
+précision visée par l'exigence \textbf{E24} ($\leq 2$\,mm d'erreur
+absolue, $\leq 1$\,mm de répétabilité).
+
+\subsection{Contrôle du plateau rotatif}
+
+Le plateau est piloté en \textbf{boucle ouverte} via le driver
+\texttt{DM320T} et son microstepping 1/32. La position angulaire
+est reconstruite par comptage logiciel des pas.
+
+\paragraph{Justification du choix.}
+\begin{itemize}
+  \item Charge faible ($<$2\,kg) et vitesse lente ($<$1\,tour/min) :
+        le risque de perte de pas est négligeable.
+  \item Le pas élémentaire après microstepping ($0{,}056^\circ$)
+        correspond à moins de $0{,}08$\,mm à un rayon de 75\,mm,
+        très en deçà de la précision visée (E24).
+  \item L'ajout d'un codeur rotatif n'est pas justifié au regard
+        du coût, de la complexité et de la précision déjà atteinte.
+\end{itemize}
+
+\emph{À compléter : mesure expérimentale de la dérive angulaire
+cumulée sur 10 tours consécutifs.}
+
+\subsection{Contrôle de l'exposition caméra}
+
+L'auto-exposition par défaut de la Pi\,Camera\,3 est désactivée
+pendant l'acquisition pour garantir la stabilité photométrique
+d'image à image (condition nécessaire à l'extraction du centroïde
+sous-pixel de la ligne laser). Une phase d'initialisation courte
+évalue le temps d'exposition à partir de quelques images de
+référence, puis fige les paramètres pour toute la séquence.
+
+\emph{À compléter : protocole d'initialisation, seuil de saturation
+du canal vert et impact mesuré sur la précision du centroïde.}
+
+\subsection{Synchronisation moteur / laser / caméra}
+
+La séquence d'acquisition est orchestrée par la machine d'états
+logicielle (voir chapitre \og Software\fg{}). Pour chaque profil,
+l'ordre est :
+
+\begin{enumerate}
+  \item Incrément moteur (un pas angulaire).
+  \item Délai de stabilisation mécanique.
+  \item Allumage laser.
+  \item Capture caméra.
+  \item Extinction laser.
+\end{enumerate}
+
+Le paramètre critique est le \textbf{délai de stabilisation} :
+trop court, il introduit du flou de mouvement dans la ligne laser
+et dégrade la précision ; trop long, il pénalise le temps total
+de scan et compromet la cible de 10\,minutes (besoin B4 du CDC V2).
+
+\emph{À compléter : caractérisation expérimentale du temps de
+stabilisation minimal (analyse de la netteté de la ligne laser en
+fonction du délai, ou acquisition haute vitesse).}
+
+\subsection{Stabilité, précision et sources d'erreur}
+
+Les principales sources d'erreur identifiées, à maîtriser pour
+atteindre \textbf{E24}, sont :
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{5cm}p{8cm}@{}}
+    \toprule
+    \textbf{Source} & \textbf{Stratégie de mitigation} \\
+    \midrule
+    Dérive de calibration (mécanique, thermique) & Calibration en
+    conditions nominales, vérification périodique. \\
+    Bruit photonique et \emph{speckle} laser & Moyennage temporel
+    par pas (envisagé si nécessaire), filtrage KDTree. \\
+    Jeu mécanique dans la chaîne de rotation & Précharge du
+    roulement, limitation de l'inertie. \\
+    Flou de mouvement & Réglage du délai de stabilisation ;
+    temps d'exposition court. \\
+    Alignement caméra/laser imparfait & Calibration du plan laser,
+    réglages d'angle mécaniques. \\
+    \bottomrule
+  \end{tabular}
+  \caption{Sources d'erreur et mitigations envisagées.}
+  \label{tab:erreurs}
+\end{table}
+
+\subsection{Points ouverts}
+
+\begin{itemize}
+  \item Mise en place d'un banc de mesure de la répétabilité
+        (3 scans successifs d'un objet de référence, distance
+        nuage-à-nuage).
+  \item Étude de l'impact du moyennage par pas sur le temps total
+        de scan.
+  \item Caractérisation thermique : dérive des paramètres sur une
+        session longue.
+\end{itemize}

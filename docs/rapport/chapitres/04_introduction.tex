@@ -9,13 +9,6 @@ mettre à disposition des étudiants, collaborateurs et enseignants un
 outil simple pour numériser des objets physiques en modèles 3D
 exploitables (STL ou OBJ).
 
-Le système repose sur la \textbf{triangulation laser} : un laser ligne
-projette un plan sur un objet en rotation sur un plateau motorisé, une
-caméra capture la déformation de la ligne, et un logiciel reconstruit un
-nuage de points puis un maillage. L'ensemble est intégré dans une boîte
-fermée pour contrôler la lumière ambiante et garantir la sécurité
-utilisateur vis-à-vis du laser.
-
 \subsection{État de l'art}
 
 Les solutions de numérisation 3D du marché se répartissent en trois
@@ -26,28 +19,22 @@ public (Creality CR-Scan, Matter and Form) plus abordables mais fermés
 et peu adaptables, et les projets \emph{open-source} à triangulation
 laser ou photogrammétrie.
 
-Le projet \textbf{OpenScan}~\cite{openscan}, en particulier sa déclinaison
-matérielle \textbf{OpenScan Mini}~\cite{openscanmini}, constitue la
-référence la plus proche de notre approche : Raspberry Pi, plateau
-rotatif, acquisition par caméra. Sa documentation détaillée et ses
-retours d'expérience sur la qualité des scans~\cite{openscanquality}
-orientent plusieurs choix techniques.
 
 La valeur ajoutée de notre approche tient à trois points : un coût
 contenu sous 300\,CHF, une intégration pensée pour un usage pédagogique
-(interface web, retour LED, prise en main rapide) et une architecture
-logicielle modulaire permettant le développement et la calibration sans
-matériel.
+(interface web, retour LED, prise en main rapide).
 
 \subsection{But et objectifs}
 
 \paragraph{Problématique.}
+
 Comment concevoir et intégrer, dans un budget de 300\,CHF, un scanner 3D
 suffisamment simple pour être utilisé en autonomie au MakeLab, tout en
 garantissant la sécurité de l'utilisateur et une qualité de mesure
 exploitable ?
 
 \paragraph{Objectifs SMART.}
+
 Les objectifs mesurables dérivés du cahier des charges~\cite{cdc} sont
 les suivants :
 
@@ -57,14 +44,17 @@ les suivants :
     \toprule
     \textbf{Réf.} & \textbf{Objectif} \\
     \midrule
-    O1 & Numériser un objet de dimension maximale $150\times150\times150$\,mm (E3). \\
+    O1 & Numériser de manière automatisée un objet de dimension maximale $150\times150\times150$\,mm (E1, E3). \\
     O2 & Produire un fichier exportable au format STL ou OBJ (E6). \\
-    O3 & Réaliser un cycle de scan complet en moins de 10 minutes (E4). \\
-    O4 & Garantir une prise en main inférieure à 10 minutes pour un nouvel utilisateur (E7). \\
+    O3 & Réaliser un cycle de scan complet en moins de 10\,minutes (besoin utilisateur B4 du CDC). \\
+    O4 & Garantir une prise en main inférieure à 10\,minutes et un scan sans assistance dans au moins 90\,\% des cas sur 10 essais (E7). \\
     O5 & Respecter un budget total inférieur ou égal à 300\,CHF (E16). \\
-    O6 & Assurer la protection de l'utilisateur vis-à-vis du rayonnement laser et des zones mobiles (E18, E19). \\
+    O6 & Assurer la protection de l'utilisateur : matériaux non toxiques, arêtes non tranchantes, isolation du rayon laser et des zones mobiles (E17, E18, E19). \\
     O7 & Fournir un retour visuel de l'état du système (LEDs et écran) (E5). \\
-    O8 & Offrir une interface de commande via USB ou web (E10, E11). \\
+    O8 & Offrir une interface de commande USB et/ou web permettant de lancer un scan en au plus 5 actions (E10, E11). \\
+    O9 & Atteindre une erreur absolue moyenne $\leq 2$\,mm et une répétabilité (écart-type) $\leq 1$\,mm sur 3 scans successifs du même objet de référence (E24). \\
+    O10 & Respecter un encombrement $\leq 500\times500\times500$\,mm et une masse totale $\leq 15$\,kg (E21). \\
+    O11 & Se limiter aux objets sans cavité fermée et sans contre-dépouille supérieure à $45^\circ$ (E23). \\
     \bottomrule
   \end{tabular}
   \caption{Objectifs SMART du projet, alignés sur les exigences du cahier des charges.}
@@ -75,7 +65,8 @@ les suivants :
 
 Le projet est structuré en quatre phases principales, réparties sur
 16 semaines pour un effort total estimé à 322 heures (hors imprévus
-et gestion de projet) :
+et gestion de projet). La livraison du prototype fonctionnel est
+fixée au \textbf{7 juin 2026} (E22).
 
 \begin{table}[H]
   \centering
@@ -100,7 +91,7 @@ figure dans le planning en annexe.
 
 \begin{table}[H]
   \centering
-  \begin{tabular}{@{}p{3.5cm}p{10cm}@{}}
+  \begin{tabular}{@{}p{4.5cm}p{12cm}@{}}
     \toprule
     \textbf{Membre} & \textbf{Responsabilité principale} \\
     \midrule

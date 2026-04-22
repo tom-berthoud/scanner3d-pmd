@@ -1,7 +1,94 @@
-\section{Conception mecanique}
+\section{Conception mécanique}
 
-\subsection{Architecture mecanique}
-Decrire la conception globale, les choix de materiaux et les contraintes.
+\subsection{Architecture mécanique}
+
+Le scanner se présente sous la forme d'une boîte fermée de dimensions
+extérieures inférieures à $500\times500\times500$\,mm pour une masse
+totale inférieure à 15\,kg (exigence \textbf{E21}). L'architecture
+est pensée pour une intégration directe dans l'environnement du
+MakeLab de la HEIG-VD (FC3).
+
+Le système s'organise autour de trois sous-ensembles :
+
+\begin{itemize}
+  \item \textbf{Plateau rotatif motorisé} (FT7, \textbf{E15}) :
+        support de l'objet à numériser, entraîné par un moteur
+        pas-à-pas NEMA\,17 couplé à un étage de transmission
+        (courroie ou réduction directe, à figer).
+  \item \textbf{Bâti de mesure} : supporte la caméra Pi\,Camera\,3
+        et le module laser ligne vert dans une géométrie fixe et
+        calibrée (angle connu, exigence \textbf{E12}).
+  \item \textbf{Carter} : couvercle amovible équipé d'un
+        micro-interrupteur de sécurité (SW1) assurant la coupure
+        automatique du laser à l'ouverture (\textbf{E19}).
+\end{itemize}
+
+\emph{À compléter : vue éclatée CAO, rendu d'assemblage et liste
+des pièces mécaniques (BOM mécanique).}
+
+\subsection{Zone de scan et périmètre fonctionnel}
+
+La zone utile est dimensionnée pour accueillir un objet maximal de
+$150\times150\times150$\,mm (\textbf{E3}). Conformément au périmètre
+fonctionnel \textbf{E23}, le système cible les pièces simples :
+
+\begin{itemize}
+  \item sans cavité fermée (non accessible par la ligne de vue
+        caméra/laser) ;
+  \item sans contre-dépouille supérieure à $45^\circ$ par rapport
+        à l'axe de rotation.
+\end{itemize}
+
+Cette limitation découle du principe de triangulation laser
+mono-vue et doit être communiquée à l'utilisateur via l'interface.
+
+\subsection{Choix des matériaux}
+
+Les matériaux accessibles à l'utilisateur sont non toxiques et les
+arêtes chanfreinées ou ébavurées (\textbf{E17}). Le carter est
+envisagé en tôle pliée peinte ou panneau MDF, choix résultant d'un
+compromis coût~/~rigidité~/~facilité d'usinage au MakeLab. Les
+éléments structurels internes combinent profilés aluminium (type
+$20\times20$) et pièces imprimées en PETG.
+
+\emph{À compléter : fiche matériaux définitive après revue mécanique,
+essais de rigidité et tolérances d'alignement.}
 
 \subsection{Dimensionnement}
-Documenter les calculs, hypotheses et validations.
+
+Le dimensionnement du plateau rotatif vise un couple suffisant pour
+supporter un objet de masse pouvant atteindre 2\,kg (hypothèse
+haute) à vitesse lente (inférieure à 1\,tour/min). Le couple
+résistant comprend principalement le frottement des roulements et
+un éventuel balourd. Le moteur NEMA\,17 sélectionné est
+surdimensionné pour cette charge et offre une marge confortable
+avec le microstepping 1/32 du driver DM320T.
+
+\emph{À compléter : bilan des forces, vérification moteur + réduction,
+dimensionnement de l'axe et des roulements.}
+
+\subsection{Sécurité mécanique}
+
+Deux mesures principales assurent la protection de l'utilisateur :
+
+\begin{itemize}
+  \item \textbf{Confinement des pièces mobiles} (\textbf{E18}) :
+        plateau et moteur enfermés dans le carter fermé, aucune
+        pièce en rotation n'est accessible pendant un scan.
+  \item \textbf{Interlock de sécurité laser} (\textbf{E19}) :
+        micro-interrupteur SW1 sur le couvercle, câblé de telle
+        sorte que son ouverture coupe logiciellement la GPIO
+        \emph{Laser on} via un passage en état \texttt{ERROR} de
+        la machine d'états.
+\end{itemize}
+
+\subsection{Points ouverts}
+
+\begin{itemize}
+  \item Schéma CAO détaillé et plans de fabrication.
+  \item Fixation du laser et réglage d'angle (calibration initiale).
+  \item Matériau final du plateau et traitement de surface
+        anti-réflexion (limitation des parasites lumineux, FT1).
+  \item Tolérances d'alignement caméra/laser requises pour atteindre
+        la précision \textbf{E24} ($\leq 2$\,mm).
+\end{itemize}

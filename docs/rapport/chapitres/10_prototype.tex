@@ -1,10 +1,100 @@
 \section{Prototype}
 
-\subsection{Presentation du prototype}
-Presenter le prototype final et ses sous-systemes.
+\subsection{État d'avancement au rapport intermédiaire}
 
-\subsection{Fonctionnalites}
-Lister les fonctionnalites implementees et leur niveau de maturite.
+À la date du présent document, le projet est en phase T20
+(prototype pour démonstration de concept). L'architecture
+logicielle est opérationnelle en mode simulation (mocks matériels),
+la chaîne électronique est dimensionnée et les premières itérations
+mécaniques sont en cours de conception.
 
-\subsection{Performances}
-Synthese des mesures, ecarts et points d'amelioration.
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{3.8cm}p{3cm}p{7.5cm}@{}}
+    \toprule
+    \textbf{Sous-système} & \textbf{Maturité} & \textbf{État} \\
+    \midrule
+    Logiciel (pipeline) & Fonctionnel & Pipeline complet en mode
+    \emph{mock}, export STL/OBJ validé. \\
+    Machine d'états & Fonctionnel & Transitions couvertes par tests
+    unitaires, sécurité laser vérifiée. \\
+    Interface web & Fonctionnel & Flask + SSE, viewer Three.js,
+    calibration UI. \\
+    Électronique & Schéma figé & Schéma validé, approvisionnement
+    des composants en cours. \\
+    Alimentation & Dimensionnée & Architecture deux rails (12\,V
+    / 5\,V) choisie, bilan de consommation à mesurer. \\
+    Mécanique & Conception & Carter et plateau en cours de dessin
+    CAO ; premier prototype d'essai à produire. \\
+    Calibration & Outillage prêt & Routines caméra (OpenCV) et
+    plan laser écrites, à tester sur matériel réel. \\
+    Intégration & À venir & Dépend de la livraison mécanique et
+    du câblage. \\
+    \bottomrule
+  \end{tabular}
+  \caption{État de maturité des sous-systèmes au rapport intermédiaire.}
+  \label{tab:maturite}
+\end{table}
+
+\subsection{Fonctionnalités déjà démontrées}
+
+En mode simulation (\emph{mock} matériel) :
+
+\begin{itemize}
+  \item Cycle de scan complet sur 200 pas ($1{,}8^\circ$ par pas)
+        avec objets synthétiques (sphère, cylindre, cube, formes
+        libres).
+  \item Extraction de ligne laser par seuillage $G-R$ + centroïde
+        sous-pixel.
+  \item Reconstruction par fusion des profils et filtrage
+        d'\emph{outliers} KDTree.
+  \item Export STL binaire et OBJ via \texttt{trimesh}.
+  \item Interface web avec suivi temps réel des étapes (SSE),
+        téléchargement du résultat et viewer 3D intégré.
+  \item Couverture de tests unitaires sur la machine d'états et les
+        étages de traitement.
+\end{itemize}
+
+Reste à démontrer sur matériel réel : acquisition caméra Pi,
+pilotage moteur NEMA\,17 via DM320T, commutation laser par MOSFET,
+cycle de bout en bout.
+
+\subsection{Performances attendues et à mesurer}
+
+Les mesures sur cible (Raspberry\,Pi\,4, matériel assemblé) restent
+à caractériser. Le tableau~\ref{tab:perf-attendues} récapitule les
+indicateurs clés à reporter dans le rapport final.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{6cm}p{4cm}p{3.5cm}@{}}
+    \toprule
+    \textbf{Indicateur} & \textbf{Cible} & \textbf{Référence} \\
+    \midrule
+    Temps d'un cycle complet & $\leq 10$\,min & O3 / B4 \\
+    Erreur absolue moyenne & $\leq 2$\,mm & O9 / E24 \\
+    Répétabilité (écart-type, 3 scans) & $\leq 1$\,mm & O9 / E24 \\
+    Taux de réussite utilisateur novice (n=10) & $\geq 90$\,\% & O4 / E7 \\
+    Encombrement / masse & $\leq 500^3$\,mm / $\leq 15$\,kg & O10 / E21 \\
+    Consommation électrique en régime établi & À caractériser & --- \\
+    \bottomrule
+  \end{tabular}
+  \caption{Indicateurs de performance à mesurer.}
+  \label{tab:perf-attendues}
+\end{table}
+
+\subsection{Points ouverts}
+
+\begin{itemize}
+  \item Définition du banc de mesure de précision : objet de
+        référence imprimé (sphère ou pièce étalon), protocole de
+        comparaison nuage-à-nuage (distance de Hausdorff ou
+        équivalent).
+  \item Essai d'ergonomie avec utilisateurs tiers ($n=10$)
+        conformément à \textbf{E7}.
+  \item Durcissement logiciel sur matériel : gestion des
+        \emph{timeouts}, récupération d'erreurs GPIO, reconnexion
+        caméra.
+  \item Photos et rendus du prototype final (à intégrer dans cette
+        section pour le rapport final).
+\end{itemize}

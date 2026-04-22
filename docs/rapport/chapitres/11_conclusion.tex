@@ -1,13 +1,85 @@
 \section{Conclusion}
 
-\subsection{Revue des objectifs}
-Verifier chaque objectif defini dans l'introduction.
+\subsection{Bilan intermédiaire}
 
-\subsection{Resultats principaux}
-Resumer les contributions techniques et organisationnelles.
+À mi-parcours du projet, l'équipe a figé l'architecture globale du
+scanner (mécanique, électronique, logiciel), validé les choix
+techniques principaux et produit une version fonctionnelle du
+pipeline logiciel en simulation. Les objectifs SMART définis en
+introduction restent atteignables dans le cadre du budget
+(\textbf{E16}) et du délai de livraison du 7\,juin\,2026
+(\textbf{E22}).
+
+\subsection{Revue des objectifs}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{1cm}p{9cm}p{4cm}@{}}
+    \toprule
+    \textbf{Réf.} & \textbf{Objectif} & \textbf{Statut} \\
+    \midrule
+    O1  & Numériser un objet $\leq 150^3$\,mm, automatisé          & En cours (intégration) \\
+    O2  & Export STL ou OBJ                                         & Fait (logiciel) \\
+    O3  & Cycle de scan $\leq 10$\,min                              & À mesurer \\
+    O4  & Prise en main $\leq 10$\,min, autonomie $\geq 90$\,\%     & À valider (essais utilisateurs) \\
+    O5  & Budget $\leq 300$\,CHF                                    & Piloté \\
+    O6  & Sécurité utilisateur (laser, mobile, matériaux)           & Conçu, à valider sur prototype \\
+    O7  & Retour visuel LED / écran                                 & Fait (logiciel) \\
+    O8  & Interface USB ou web, scan en $\leq 5$ actions            & Fait (web Flask + SSE) \\
+    O9  & Erreur $\leq 2$\,mm, répétabilité $\leq 1$\,mm            & À mesurer (risque principal) \\
+    O10 & Encombrement $\leq 500^3$\,mm, masse $\leq 15$\,kg        & En cours (mécanique) \\
+    O11 & Objets sans cavité fermée, contre-dépouille $\leq 45^\circ$ & Accepté (limite triangulation mono-vue) \\
+    \bottomrule
+  \end{tabular}
+  \caption{Revue des objectifs au rapport intermédiaire.}
+  \label{tab:revue-obj}
+\end{table}
+
+\subsection{Résultats principaux}
+
+\begin{itemize}
+  \item Architecture logicielle modulaire testée et validée en
+        simulation ; pipeline \emph{Acquisition $\rightarrow$
+        Traitement $\rightarrow$ Reconstruction $\rightarrow$ Export}
+        opérationnel.
+  \item Schéma électrique figé, sécurité laser intégrée par
+        construction (coupure en état \texttt{ERROR}, interlock
+        porte).
+  \item Répartition claire des responsabilités dans l'équipe et
+        planification cohérente avec la date de livraison.
+\end{itemize}
+
+\subsection{Risques identifiés}
+
+\begin{itemize}
+  \item \textbf{Précision E24 (O9)} : risque technique principal.
+        Mitigation : calibration soignée, moyennage temporel,
+        filtrage KDTree, caractérisation du banc de mesure.
+  \item \textbf{Intégration mécanique tardive} : impact sur les
+        mesures de précision et l'essai utilisateur.
+        Mitigation : produire un prototype mécanique simplifié au
+        plus tôt pour débloquer l'intégration.
+  \item \textbf{Approvisionnement des composants} : à surveiller
+        pour ne pas retarder la phase T30.
+\end{itemize}
 
 \subsection{Perspectives}
-Proposer les suites a donner au projet et les axes d'amelioration.
+
+Phase T30 (semaines 9 à 14) :
+
+\begin{enumerate}
+  \item Assemblage mécanique et câblage du prototype.
+  \item Calibration caméra et plan laser sur matériel réel.
+  \item Premier scan bout-en-bout, confrontation aux objectifs
+        O3 (temps) et O9 (précision).
+  \item Essai d'ergonomie (O4) et ajustements d'interface.
+  \item Mesures de consommation et validation thermique.
+\end{enumerate}
+
+Phase T40 (semaines 13 à 16) : préparation des livrables (rapport
+final, vidéo de démonstration, présentation).
 
 \subsection{Commentaire personnel}
-Si pertinent, presenter le retour d'experience de l'equipe.
+
+\emph{À compléter en fin de projet (retour d'expérience de
+l'équipe).}
