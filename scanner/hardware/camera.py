@@ -61,7 +61,7 @@ class PiCamera:
             self._cam.set_controls(
                 {
                     "AfMode": 0,
-                    "LensPosition": 4.0,
+                    "LensPosition": 2.53,
                     "ExposureTime": self._exposure_us,
                     "AnalogueGain": self._gain,
                 }

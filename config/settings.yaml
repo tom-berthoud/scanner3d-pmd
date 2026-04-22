@@ -4,7 +4,7 @@
 # avec de vraies valeurs — utiliser les .example.yaml comme templates.
 
 scan:
-  n_steps: 200              # nombre de pas pour 360° (1.8°/pas)
+  n_steps: 400           # nombre de pas pour 360° (1.8°/pas)
   direction: clockwise      # sens de rotation : clockwise / counterclockwise
 
 camera:
@@ -16,24 +16,24 @@ camera:
   awb_gains: [1.5, 1.2]    # gains rouge/bleu si awb_mode = off
 
 laser:
-  gpio_pin: 16              # numéro de broche GPIO (BCM) pour le laser
+  gpio_pin: 2             # numéro de broche GPIO (BCM) pour le laser
   warmup_ms: 50             # temps de stabilisation après allumage (ms)
 
 motor:
   # Moteur : Generic 17HS3401 (NEMA 17, 1.8°/pas, 200 pas/tour, 1.5A)
   # Driver : DM320T (microstepping STEP/DIR, 20V max)
-  step_pin: 26              # broche GPIO STEP
-  dir_pin: 20              # broche GPIO DIR
-  enable_pin: 21            # broche GPIO ENABLE (actif bas sur DM320T)
-  steps_per_rev: 200        # pas moteur par révolution (1.8°/pas)
-  microstepping: 1          # facteur de microstepping (1, 2, 4, 8, 16)
+  step_pin: 3              # broche GPIO STEP
+  dir_pin: 4              # broche GPIO DIR
+  enable_pin: 17            # broche GPIO ENABLE (actif bas sur DM320T)
+  steps_per_rev: 3200        # pas moteur par révolution (1.8°/pas)
+  microstepping: 16          # facteur de microstepping (1, 2, 4, 8, 16)
   speed_rpm: 5              # vitesse de rotation (tours/min)
-  accel_steps: 20           # nombre de pas d'accélération/décélération
+  accel_steps: 0           # nombre de pas d'accélération/décélération
 
 processing:
   laser_channel: green      # canal couleur à isoler : green (laser vert ~520nm)
   laser_threshold: 180      # seuil de détection de la ligne (0-255)
-  min_line_pixels: 10       # nombre minimum de pixels pour valider une ligne
+  min_line_pixels: 3       # nombre minimum de pixels pour valider une ligne
   subpixel: true            # activer la détection sub-pixel (centroïde)
 
 reconstruction:
