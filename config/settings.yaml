@@ -10,7 +10,7 @@ scan:
 camera:
   resolution: [640, 480]    # [width, height] en pixels (mock: 640x480 = résolution de calibration)
   mock_shape: duck            # forme simulée par le mock : sphere | cylinder | cube | duck
-  exposure_us: 500         # temps d'exposition en microsecondes (court = ligne laser nette)
+  exposure_us: 800         # temps d'exposition en microsecondes (court = ligne laser nette)
   gain: 1.0                 # gain analogique (faible = moins de bruit)
   awb_mode: off             # balance des blancs : off (fixe) pour cohérence entre frames
   awb_gains: [0.5, 1.0]    # gains rouge/bleu — rouge bas pour supprimer reflets parasites
@@ -32,8 +32,8 @@ motor:
 
 processing:
   laser_channel: green      # canal couleur à isoler : green (laser vert ~520nm)
-  laser_threshold: 80       # seuil de détection; en row_green, il s'applique au vert brut
-  min_line_pixels: 15      # nombre minimum de points de ligne pour valider une détection
+  laser_threshold: 60       # seuil de détection; en row_green, il s'applique au vert brut
+  min_line_pixels: 2      # nombre minimum de points de ligne pour valider une détection
   subpixel: true            # activer la détection sub-pixel (centroïde)
   extraction_mode: row_green  # row_green = 1 point par ligne sur le vert brut
 
