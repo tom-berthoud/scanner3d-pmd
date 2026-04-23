@@ -52,6 +52,7 @@ export:
   default_format: stl       # format par défaut : stl / obj
   output_dir: /tmp/scans    # dossier de sortie des fichiers 3D
   mesh_mode: cloud          # cloud = alpha shape d'abord, puis convex hull si echec
+  alpha: 0                  # 0 = auto; sinon rayon alpha-shape en mm, plus petit = plus de details
 
 interface:
   web_host: 0.0.0.0         # écouter sur toutes les interfaces

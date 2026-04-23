@@ -108,6 +108,12 @@ def run_scan(
     fmt: str = export_cfg.get("default_format", "stl").lower()
     output_dir: str = export_cfg.get("output_dir", "/tmp/scans")
     mesh_mode: str = str(export_cfg.get("mesh_mode", "cloud"))
+    alpha_raw = export_cfg.get("alpha")
+    alpha: float | None = None
+    if alpha_raw is not None:
+        alpha_value = float(alpha_raw)
+        if alpha_value > 0.0:
+            alpha = alpha_value
 
     def _progress(current: int, total: int, message: str) -> None:
         if progress_callback is not None:
@@ -251,9 +257,9 @@ def run_scan(
 
         _progress(n_steps, n_steps, "Exporting mesh…")
         if fmt == "obj":
-            export_obj(cloud, output_path, profiles=profiles, mesh_mode=mesh_mode)
+            export_obj(cloud, output_path, profiles=profiles, mesh_mode=mesh_mode, alpha=alpha)
         else:
-            export_stl(cloud, output_path, profiles=profiles, mesh_mode=mesh_mode)
+            export_stl(cloud, output_path, profiles=profiles, mesh_mode=mesh_mode, alpha=alpha)
 
         logger.info("Scan exported to %s", output_path)
 

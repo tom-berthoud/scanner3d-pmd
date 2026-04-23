@@ -19,6 +19,7 @@ def export_stl(
     path: str,
     profiles: Sequence[np.ndarray] | None = None,
     mesh_mode: str = "cloud",
+    alpha: float | None = None,
 ) -> None:
     """Export *cloud* as a binary STL file at *path*.
 
@@ -33,12 +34,14 @@ def export_stl(
         path: Destination file path (must end with .stl).
         profiles: Optional ordered 3-D profiles, one per scan angle.
         mesh_mode: ``profiles``, ``cloud`` or ``auto``.
+        alpha: Optional alpha-shape radius in mm when ``mesh_mode='cloud'``.
+            ``None`` keeps the automatic heuristic.
 
     Raises:
         ValueError: if *cloud* has fewer than 4 points.
         RuntimeError: if mesh construction fails.
     """
-    mesh = _build_mesh(cloud, profiles=profiles, mesh_mode=mesh_mode)
+    mesh = _build_mesh(cloud, profiles=profiles, mesh_mode=mesh_mode, alpha=alpha)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     mesh.export(path, file_type="stl")
     file_size = os.path.getsize(path)
@@ -56,6 +59,7 @@ def export_obj(
     path: str,
     profiles: Sequence[np.ndarray] | None = None,
     mesh_mode: str = "cloud",
+    alpha: float | None = None,
 ) -> None:
     """Export *cloud* as a Wavefront OBJ file at *path*.
 
@@ -64,12 +68,14 @@ def export_obj(
         path: Destination file path (must end with .obj).
         profiles: Optional ordered 3-D profiles, one per scan angle.
         mesh_mode: ``profiles``, ``cloud`` or ``auto``.
+        alpha: Optional alpha-shape radius in mm when ``mesh_mode='cloud'``.
+            ``None`` keeps the automatic heuristic.
 
     Raises:
         ValueError: if *cloud* has fewer than 4 points.
         RuntimeError: if mesh construction fails.
     """
-    mesh = _build_mesh(cloud, profiles=profiles, mesh_mode=mesh_mode)
+    mesh = _build_mesh(cloud, profiles=profiles, mesh_mode=mesh_mode, alpha=alpha)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     mesh.export(path, file_type="obj")
     file_size = os.path.getsize(path)
@@ -86,6 +92,7 @@ def _build_mesh(
     cloud: np.ndarray,
     profiles: Sequence[np.ndarray] | None = None,
     mesh_mode: str = "cloud",
+    alpha: float | None = None,
 ) -> "trimesh.Trimesh":  # type: ignore[name-defined]
     if mesh_mode not in {"auto", "profiles", "cloud"}:
         raise ValueError(f"Unknown mesh_mode {mesh_mode!r}")
@@ -98,16 +105,21 @@ def _build_mesh(
                 raise RuntimeError(f"Profile-strip mesh construction failed: {exc}") from exc
             logger.debug("Profile-strip mesh failed: %s — falling back to cloud mesh", exc)
 
-    return _cloud_to_mesh(cloud)
+    return _cloud_to_mesh(cloud, alpha=alpha)
 
 
-def _cloud_to_mesh(cloud: np.ndarray) -> "trimesh.Trimesh":  # type: ignore[name-defined]
+def _cloud_to_mesh(
+    cloud: np.ndarray,
+    alpha: float | None = None,
+) -> "trimesh.Trimesh":  # type: ignore[name-defined]
     """Convert a point cloud to a trimesh mesh.
 
     Attempts alpha shape first; falls back to convex hull.
 
     Args:
         cloud: Float array (N, 3).
+        alpha: Optional alpha-shape radius in mm. ``None`` uses an automatic
+            heuristic based on the bounding-box diagonal.
 
     Returns:
         A trimesh.Trimesh instance.
@@ -138,17 +150,21 @@ def _cloud_to_mesh(cloud: np.ndarray) -> "trimesh.Trimesh":  # type: ignore[name
     try:
         import trimesh.creation  # noqa: F811
 
-        # Compute a reasonable alpha value from the point cloud bounding box
-        bbox_diag = float(np.linalg.norm(cloud_unique.max(axis=0) - cloud_unique.min(axis=0)))
-        alpha = bbox_diag / 10.0
+        if alpha is None:
+            bbox_diag = float(np.linalg.norm(cloud_unique.max(axis=0) - cloud_unique.min(axis=0)))
+            alpha_value = bbox_diag / 10.0
+        else:
+            alpha_value = float(alpha)
+            if alpha_value <= 0.0:
+                raise ValueError(f"alpha must be > 0, got {alpha_value}")
 
         alpha_mesh = trimesh.creation.icosphere()  # placeholder
         # Use trimesh's alpha_shape if available
         if hasattr(trimesh, "creation") and hasattr(trimesh.creation, "alpha_shape"):
-            alpha_mesh = trimesh.creation.alpha_shape(cloud_unique, alpha=alpha)
+            alpha_mesh = trimesh.creation.alpha_shape(cloud_unique, alpha=alpha_value)
             if alpha_mesh is not None and len(alpha_mesh.faces) > 0 and alpha_mesh.is_watertight:
                 mesh = alpha_mesh
-                logger.debug("Mesh built via alpha shape (alpha=%.2f)", alpha)
+                logger.debug("Mesh built via alpha shape (alpha=%.2f)", alpha_value)
     except Exception as alpha_exc:
         logger.debug("Alpha shape failed: %s — falling back to convex hull", alpha_exc)
 
