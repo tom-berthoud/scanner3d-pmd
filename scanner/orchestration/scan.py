@@ -107,7 +107,7 @@ def run_scan(
     export_cfg = config.get("export", {})
     fmt: str = export_cfg.get("default_format", "stl").lower()
     output_dir: str = export_cfg.get("output_dir", "/tmp/scans")
-    mesh_mode: str = str(export_cfg.get("mesh_mode", "cloud"))
+    mesh_mode: str = str(export_cfg.get("mesh_mode", "cylindrical"))
     alpha_raw = export_cfg.get("alpha")
     alpha: float | None = None
     if alpha_raw is not None:

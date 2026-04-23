@@ -18,7 +18,7 @@ def export_stl(
     cloud: np.ndarray,
     path: str,
     profiles: Sequence[np.ndarray] | None = None,
-    mesh_mode: str = "cloud",
+    mesh_mode: str = "cylindrical",
     alpha: float | None = None,
 ) -> None:
     """Export *cloud* as a binary STL file at *path*.
@@ -33,7 +33,7 @@ def export_stl(
         cloud: Float array of shape (N, 3) — point cloud in mm.
         path: Destination file path (must end with .stl).
         profiles: Optional ordered 3-D profiles, one per scan angle.
-        mesh_mode: ``profiles``, ``cloud`` or ``auto``.
+        mesh_mode: ``cylindrical``, ``profiles``, ``cloud`` or ``auto``.
         alpha: Optional alpha-shape radius in mm when ``mesh_mode='cloud'``.
             ``None`` keeps the automatic heuristic.
 
@@ -58,7 +58,7 @@ def export_obj(
     cloud: np.ndarray,
     path: str,
     profiles: Sequence[np.ndarray] | None = None,
-    mesh_mode: str = "cloud",
+    mesh_mode: str = "cylindrical",
     alpha: float | None = None,
 ) -> None:
     """Export *cloud* as a Wavefront OBJ file at *path*.
@@ -67,7 +67,7 @@ def export_obj(
         cloud: Float array of shape (N, 3) — point cloud in mm.
         path: Destination file path (must end with .obj).
         profiles: Optional ordered 3-D profiles, one per scan angle.
-        mesh_mode: ``profiles``, ``cloud`` or ``auto``.
+        mesh_mode: ``cylindrical``, ``profiles``, ``cloud`` or ``auto``.
         alpha: Optional alpha-shape radius in mm when ``mesh_mode='cloud'``.
             ``None`` keeps the automatic heuristic.
 
@@ -91,11 +91,19 @@ def export_obj(
 def _build_mesh(
     cloud: np.ndarray,
     profiles: Sequence[np.ndarray] | None = None,
-    mesh_mode: str = "cloud",
+    mesh_mode: str = "cylindrical",
     alpha: float | None = None,
 ) -> "trimesh.Trimesh":  # type: ignore[name-defined]
-    if mesh_mode not in {"auto", "profiles", "cloud"}:
+    if mesh_mode not in {"auto", "cylindrical", "profiles", "cloud"}:
         raise ValueError(f"Unknown mesh_mode {mesh_mode!r}")
+
+    if mesh_mode in {"auto", "cylindrical"} and profiles:
+        try:
+            return _profiles_to_cylindrical_mesh(list(profiles))
+        except Exception as exc:
+            if mesh_mode == "cylindrical":
+                raise RuntimeError(f"Cylindrical mesh construction failed: {exc}") from exc
+            logger.debug("Cylindrical mesh failed: %s — trying profile strips", exc)
 
     if mesh_mode in {"auto", "profiles"} and profiles:
         try:
@@ -231,6 +239,24 @@ def _prepare_profile_for_meshing(profile: np.ndarray) -> np.ndarray:
     return ordered[order]
 
 
+def _profile_to_unique_y_xyz(profile: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    ordered = _prepare_profile_for_meshing(profile)
+    if ordered.shape[0] < 2:
+        return np.empty((0,), dtype=np.float64), np.empty((0, 3), dtype=np.float64)
+
+    y_vals = ordered[:, 1]
+    rounded = np.round(y_vals, decimals=6)
+    unique_y, inverse = np.unique(rounded, return_inverse=True)
+    xyz = np.zeros((len(unique_y), 3), dtype=np.float64)
+    counts = np.zeros(len(unique_y), dtype=np.int32)
+    np.add.at(xyz[:, 0], inverse, ordered[:, 0])
+    np.add.at(xyz[:, 1], inverse, ordered[:, 1])
+    np.add.at(xyz[:, 2], inverse, ordered[:, 2])
+    np.add.at(counts, inverse, 1)
+    xyz /= counts[:, np.newaxis]
+    return unique_y.astype(np.float64), xyz
+
+
 def _profile_step_scale(profile: np.ndarray) -> float:
     if profile.shape[0] < 2:
         return 0.0
@@ -352,6 +378,153 @@ def _append_profile_end_caps(
         faces.append((bottom_center_idx, bottom_a, bottom_b))
 
     return vertices
+
+
+def _append_quad_faces(
+    faces: list[tuple[int, int, int]],
+    p00: np.ndarray,
+    p10: np.ndarray,
+    p01: np.ndarray,
+    p11: np.ndarray,
+    i00: int,
+    i10: int,
+    i01: int,
+    i11: int,
+) -> None:
+    diag_00_11 = float(np.linalg.norm(p00 - p11))
+    diag_10_01 = float(np.linalg.norm(p10 - p01))
+
+    if diag_00_11 <= diag_10_01:
+        faces.append((i00, i10, i11))
+        faces.append((i00, i11, i01))
+    else:
+        faces.append((i00, i10, i01))
+        faces.append((i10, i11, i01))
+
+
+def _profiles_to_cylindrical_mesh(profiles: Sequence[np.ndarray]) -> "trimesh.Trimesh":  # type: ignore[name-defined]
+    try:
+        import trimesh  # type: ignore[import]
+        import trimesh.repair  # type: ignore[import]
+    except ImportError as exc:
+        raise RuntimeError("trimesh not available — install with: pip install trimesh") from exc
+
+    prepared = [_profile_to_unique_y_xyz(profile) for profile in profiles]
+    prepared = [(y_vals, xyz) for y_vals, xyz in prepared if y_vals.size >= 2]
+    if len(prepared) < 3:
+        raise ValueError("Need at least 3 non-empty profiles to build a cylindrical mesh")
+
+    max_samples = max(len(y_vals) for y_vals, _ in prepared)
+    sample_count = max(16, min(max_samples, 1024))
+    y_min = min(float(y_vals[0]) for y_vals, _ in prepared)
+    y_max = max(float(y_vals[-1]) for y_vals, _ in prepared)
+    if not np.isfinite(y_min) or not np.isfinite(y_max) or y_max <= y_min:
+        raise ValueError("Invalid vertical extent for cylindrical meshing")
+
+    y_grid = np.linspace(y_min, y_max, sample_count, dtype=np.float64)
+    vertices_list: list[np.ndarray] = []
+    grid_indices = np.full((len(prepared), sample_count), -1, dtype=np.int64)
+
+    for profile_idx, (y_vals, xyz) in enumerate(prepared):
+        valid_mask = (y_grid >= y_vals[0]) & (y_grid <= y_vals[-1])
+        if not np.any(valid_mask):
+            continue
+
+        sample_y = y_grid[valid_mask]
+        sample_x = np.interp(sample_y, y_vals, xyz[:, 0])
+        sample_z = np.interp(sample_y, y_vals, xyz[:, 2])
+        sample_xyz = np.column_stack([sample_x, sample_y, sample_z]).astype(np.float64)
+
+        start_idx = len(vertices_list)
+        vertices_list.extend(sample_xyz)
+        inserted = np.arange(start_idx, start_idx + sample_xyz.shape[0], dtype=np.int64)
+        grid_indices[profile_idx, np.flatnonzero(valid_mask)] = inserted
+
+    if not vertices_list:
+        raise RuntimeError("Cylindrical mesh contains no vertices")
+
+    vertices = np.asarray(vertices_list, dtype=np.float64)
+    faces: list[tuple[int, int, int]] = []
+
+    for profile_idx in range(len(prepared)):
+        next_idx = (profile_idx + 1) % len(prepared)
+        current = grid_indices[profile_idx]
+        nxt = grid_indices[next_idx]
+
+        for row_idx in range(sample_count - 1):
+            i00 = int(current[row_idx])
+            i01 = int(current[row_idx + 1])
+            i10 = int(nxt[row_idx])
+            i11 = int(nxt[row_idx + 1])
+            if min(i00, i01, i10, i11) < 0:
+                continue
+            _append_quad_faces(
+                faces,
+                vertices[i00],
+                vertices[i10],
+                vertices[i01],
+                vertices[i11],
+                i00,
+                i10,
+                i01,
+                i11,
+            )
+
+    top_ring = [int(grid_indices[idx, np.flatnonzero(grid_indices[idx] >= 0)[0]]) for idx in range(len(prepared)) if np.any(grid_indices[idx] >= 0)]
+    bottom_ring = [int(grid_indices[idx, np.flatnonzero(grid_indices[idx] >= 0)[-1]]) for idx in range(len(prepared)) if np.any(grid_indices[idx] >= 0)]
+    if len(top_ring) >= 3:
+        top_center = vertices[top_ring].mean(axis=0)
+        top_idx = len(vertices)
+        vertices = np.vstack([vertices, top_center])
+        for idx in range(len(top_ring)):
+            nxt = (idx + 1) % len(top_ring)
+            faces.append((top_idx, top_ring[nxt], top_ring[idx]))
+    if len(bottom_ring) >= 3:
+        bottom_center = vertices[bottom_ring].mean(axis=0)
+        bottom_idx = len(vertices)
+        vertices = np.vstack([vertices, bottom_center])
+        for idx in range(len(bottom_ring)):
+            nxt = (idx + 1) % len(bottom_ring)
+            faces.append((bottom_idx, bottom_ring[idx], bottom_ring[nxt]))
+
+    if not faces:
+        raise RuntimeError("Cylindrical mesh produced no triangles")
+
+    mesh = trimesh.Trimesh(
+        vertices=vertices,
+        faces=np.asarray(faces, dtype=np.int64),
+        process=False,
+    )
+    try:
+        mesh.remove_duplicate_faces()
+    except Exception:
+        pass
+    try:
+        mesh.remove_degenerate_faces()
+    except Exception:
+        pass
+    try:
+        mesh.remove_unreferenced_vertices()
+    except Exception:
+        pass
+    try:
+        trimesh.repair.fill_holes(mesh)
+    except Exception:
+        pass
+    try:
+        trimesh.repair.fix_normals(mesh)
+    except Exception:
+        pass
+
+    if len(mesh.faces) == 0:
+        raise RuntimeError("Cylindrical mesh contains no faces after trimesh conversion")
+
+    logger.debug(
+        "Mesh built via cylindrical profile surface (%d vertices, %d faces)",
+        len(mesh.vertices),
+        len(mesh.faces),
+    )
+    return mesh
 
 
 def _profiles_to_mesh(profiles: Sequence[np.ndarray]) -> "trimesh.Trimesh":  # type: ignore[name-defined]

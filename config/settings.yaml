@@ -51,7 +51,7 @@ calibration:
 export:
   default_format: stl       # format par défaut : stl / obj
   output_dir: /tmp/scans    # dossier de sortie des fichiers 3D
-  mesh_mode: cloud          # cloud = alpha shape d'abord, puis convex hull si echec
+  mesh_mode: cylindrical    # surface reguliere issue des profils du scanner, puis fallback si echec
   alpha: 0                  # 0 = auto; sinon rayon alpha-shape en mm, plus petit = plus de details
 
 interface:

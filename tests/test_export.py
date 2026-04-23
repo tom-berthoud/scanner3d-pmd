@@ -95,6 +95,16 @@ class TestExportSTL:
             assert os.path.exists(path)
             assert os.path.getsize(path) > 0
 
+    def test_cylindrical_mesh_creates_file(self) -> None:
+        """export_stl should support cylindrical meshing from ordered profiles."""
+        profiles = _make_hourglass_profiles()
+        cloud = np.vstack(profiles)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "hourglass_cyl.stl")
+            export_stl(cloud, path, profiles=profiles, mesh_mode="cylindrical")
+            assert os.path.exists(path)
+            assert os.path.getsize(path) > 0
+
 
 class TestExportOBJ:
     """Tests for scanner.export.stl.export_obj."""
@@ -148,6 +158,17 @@ class TestExportOBJ:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "hourglass.obj")
             export_obj(cloud, path, profiles=profiles, mesh_mode="profiles")
+            with open(path, "r", encoding="utf-8") as fh:
+                content = fh.read()
+            assert "f " in content
+
+    def test_cylindrical_obj_has_faces(self) -> None:
+        """export_obj should write cylindrical-surface faces when profiles are provided."""
+        profiles = _make_hourglass_profiles()
+        cloud = np.vstack(profiles)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "hourglass_cyl.obj")
+            export_obj(cloud, path, profiles=profiles, mesh_mode="cylindrical")
             with open(path, "r", encoding="utf-8") as fh:
                 content = fh.read()
             assert "f " in content
