@@ -43,86 +43,13 @@
         {% if not use_checkerboard %}
         <div class="alert alert-warning py-2 mb-0">
           Le mode damier est desactive dans <code>config/settings.yaml</code>
-          (<code>calibration.use_checkerboard: false</code>). La calibration reste possible ici, mais elle ne sera utilisee au runtime qu'apres reactivation.
+          (<code>calibration.use_checkerboard: false</code>). Cette calibration est ignoree.
         </div>
         {% endif %}
 
         <hr style="border-color:#30363d; margin:0;" />
 
         <form id="form-camera" enctype="multipart/form-data" class="d-flex flex-column gap-3">
-
-          <div class="alert alert-info py-2 mb-0">
-            Mode guide: applique temporairement des reglages camera plus lumineux, affiche un retour image du damier, puis tu captures manuellement chaque vue retenue.
-          </div>
-
-          <div class="row g-3">
-            <div class="col-md-4">
-              <label class="form-label form-label-sm">Expo temporaire (us)</label>
-              <input class="form-control form-control-sm" type="number"
-                     id="cam-auto-exposure" value="{{ camera_capture_defaults.exposure_us }}" min="100" max="200000" />
-            </div>
-            <div class="col-md-4">
-              <label class="form-label form-label-sm">Gain temporaire</label>
-              <input class="form-control form-control-sm" type="number"
-                     id="cam-auto-gain" value="{{ camera_capture_defaults.gain }}" min="0.1" max="32" step="0.1" />
-            </div>
-            <div class="col-md-4">
-              <label class="form-label form-label-sm">AWB</label>
-              <select class="form-select form-select-sm" id="cam-auto-awb">
-                <option value="auto" {% if camera_capture_defaults.awb_mode == 'auto' %}selected{% endif %}>auto</option>
-                <option value="off" {% if camera_capture_defaults.awb_mode == 'off' %}selected{% endif %}>off</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="row g-3">
-            <div class="col-md-4">
-              <label class="form-label form-label-sm">Stabilisation (ms)</label>
-              <input class="form-control form-control-sm" type="number"
-                     id="cam-auto-warmup" value="{{ camera_capture_defaults.warmup_ms }}" min="0" max="10000" />
-            </div>
-          </div>
-
-          <div>
-            <img id="cam-calib-preview" src="" alt="Apercu damier" class="img-fluid rounded" style="background:#000; min-height:240px; width:100%; object-fit:contain;" />
-            <div id="cam-calib-preview-stats" class="state-msg mt-2" style="font-family:monospace; font-size:0.85em;">
-              Apercu inactif.
-            </div>
-          </div>
-
-          <div class="d-flex gap-2 flex-wrap">
-            <button type="button" class="btn btn-info calib-btn" onclick="refreshCameraCalibPreview()">
-              <i class="bi bi-arrow-clockwise me-2"></i>Rafraichir l'aperçu
-            </button>
-            <button type="button" class="btn btn-outline-secondary calib-btn" id="btn-camera-preview-toggle" onclick="toggleCameraCalibPreview()">
-              <i class="bi bi-play-circle me-2"></i>Aperçu auto
-            </button>
-            <button type="button" class="btn btn-success calib-btn" id="btn-camera-capture" onclick="captureCameraCalibFrame()">
-              <i class="bi bi-camera me-2"></i>Capturer cette vue
-            </button>
-          </div>
-
-          <div id="cam-calib-session-status" class="alert alert-secondary py-2 mb-0">
-            Session vide.
-          </div>
-
-          <div class="d-flex gap-2 flex-wrap">
-            <button type="button" class="btn btn-outline-secondary calib-btn" onclick="popCameraCalibFrame()">
-              <i class="bi bi-arrow-counterclockwise me-2"></i>Annuler la derniere
-            </button>
-            <button type="button" class="btn btn-outline-danger calib-btn" onclick="resetCameraCalibSession()">
-              <i class="bi bi-trash me-2"></i>Vider la session
-            </button>
-            <button type="button" class="btn btn-primary calib-btn" id="btn-camera-guided-run" onclick="runGuidedCameraCalibration()">
-              <i class="bi bi-cpu me-2"></i>Calibrer avec les prises
-            </button>
-          </div>
-
-          <div class="form-text" style="color:#6e7681;">
-            Bouge le damier, verifie l'aperçu, puis capture une image a la fois. Le laser reste coupe pendant toute la sequence.
-          </div>
-
-          <hr style="border-color:#30363d; margin:0;" />
 
           <div>
             <label class="form-label">Images du damier</label>
@@ -135,7 +62,7 @@
               multiple
               required
             />
-            <div class="form-text" style="color:#6e7681;">Fallback manuel. Formats acceptes : JPG, PNG</div>
+            <div class="form-text" style="color:#6e7681;">Formats acceptes : JPG, PNG</div>
           </div>
 
           <div class="row g-3">
@@ -159,7 +86,7 @@
             </div>
           </div>
 
-          <button type="submit" class="btn btn-primary calib-btn">
+          <button type="submit" class="btn btn-primary calib-btn" {% if not use_checkerboard %}disabled{% endif %}>
             <i class="bi bi-cpu me-2"></i>Lancer la calibration camera
           </button>
         </form>
@@ -350,202 +277,6 @@ if (camForm) {
   });
 }
 
-let _camCalibPreviewTimer = null;
-
-function cameraCalibPayload() {
-  var form = document.getElementById('form-camera');
-  return {
-    board_cols: parseInt(form.querySelector('[name="board_cols"]').value || '9', 10),
-    board_rows: parseInt(form.querySelector('[name="board_rows"]').value || '6', 10),
-    square_size_mm: parseFloat(form.querySelector('[name="square_size_mm"]').value || '25'),
-    warmup_ms: parseInt(document.getElementById('cam-auto-warmup').value || '1500', 10),
-    exposure_us: parseInt(document.getElementById('cam-auto-exposure').value || '10000', 10),
-    gain: parseFloat(document.getElementById('cam-auto-gain').value || '2.0'),
-    awb_mode: document.getElementById('cam-auto-awb').value || 'auto'
-  };
-}
-
-function cameraCalibQuery(payload) {
-  var q = new URLSearchParams();
-  Object.keys(payload).forEach(function(k) {
-    q.set(k, String(payload[k]));
-  });
-  q.set('t', String(Date.now()));
-  return q.toString();
-}
-
-function renderCameraCalibSessionStatus(count, flags) {
-  var el = document.getElementById('cam-calib-session-status');
-  if (!el) return;
-  if (!count) {
-    el.className = 'alert alert-secondary py-2 mb-0';
-    el.innerHTML = 'Session vide.';
-    return;
-  }
-
-  var valid = Array.isArray(flags) ? flags.filter(Boolean).length : count;
-  el.className = 'alert alert-info py-2 mb-0';
-  el.innerHTML =
-    '<strong>' + count + ' prise(s)</strong> en session' +
-    '<div class="mt-1" style="font-size:0.8rem; color:#8b949e;">prises valides detectees: ' + valid + '</div>';
-}
-
-async function refreshCameraCalibSessionStatus() {
-  try {
-    var resp = await fetch('/calibration/camera/session?t=' + Date.now());
-    var data = await resp.json();
-    if (resp.ok) {
-      renderCameraCalibSessionStatus(data.count || 0, data.checkerboard_found || []);
-    }
-  } catch (e) {
-  }
-}
-
-async function refreshCameraCalibPreview() {
-  var img = document.getElementById('cam-calib-preview');
-  var stats = document.getElementById('cam-calib-preview-stats');
-  if (!img || !stats) return;
-
-  var payload = cameraCalibPayload();
-  try {
-    var resp = await fetch('/calibration/camera/live?' + cameraCalibQuery(payload));
-    if (!resp.ok) {
-      stats.textContent = 'Aperçu indisponible (' + resp.status + ')';
-      return;
-    }
-    var blob = await resp.blob();
-    img.src = URL.createObjectURL(blob);
-    var found = resp.headers.get('X-Checkerboard-Found') === '1';
-    var count = parseInt(resp.headers.get('X-Session-Count') || '0', 10);
-    stats.textContent = (found ? 'Damier detecte' : 'Damier non detecte') + ' | session=' + count;
-  } catch (e) {
-    stats.textContent = 'Erreur apercu: ' + e;
-  }
-}
-
-function toggleCameraCalibPreview() {
-  var btn = document.getElementById('btn-camera-preview-toggle');
-  if (_camCalibPreviewTimer) {
-    clearInterval(_camCalibPreviewTimer);
-    _camCalibPreviewTimer = null;
-    if (btn) btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>Aperçu auto';
-    return;
-  }
-  refreshCameraCalibPreview();
-  var warmup = parseInt(document.getElementById('cam-auto-warmup').value || '1500', 10);
-  _camCalibPreviewTimer = setInterval(refreshCameraCalibPreview, Math.max(2000, warmup + 500));
-  if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-2"></i>Stop aperçu';
-}
-
-async function captureCameraCalibFrame() {
-  var result = document.getElementById('camera-result');
-  var btn = document.getElementById('btn-camera-capture');
-  var payload = cameraCalibPayload();
-  btn.disabled = true;
-  result.innerHTML =
-    '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
-    '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
-    'Capture de la vue courante\u2026</div>';
-  try {
-    var resp = await fetch('/calibration/camera/session/capture', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    var data = await resp.json();
-    var preview = '';
-    if (data.preview_jpeg_base64) {
-      preview = '<img src="data:image/jpeg;base64,' + data.preview_jpeg_base64 + '" style="width:100%; border-radius:8px; margin-top:12px; border:1px solid #30363d;" />';
-    }
-    if (resp.ok) {
-      result.innerHTML =
-        '<div class="alert alert-success py-2 mb-0 mt-2">' +
-        '<i class="bi bi-check-circle-fill me-2"></i>Vue ajoutee a la session. Total: <strong>' + data.count + '</strong>' +
-        preview +
-        '</div>';
-      if (typeof showToast === 'function') showToast('Vue capturee', 'success');
-    } else {
-      result.innerHTML =
-        '<div class="alert alert-danger py-2 mb-0 mt-2">' +
-        '<i class="bi bi-exclamation-triangle-fill me-2"></i>' +
-        (data.error || 'Erreur inconnue') +
-        preview +
-        '</div>';
-      if (typeof showToast === 'function') showToast(data.error || 'Erreur', 'error');
-    }
-  } catch (e) {
-    result.innerHTML =
-      '<div class="alert alert-danger py-2 mb-0 mt-2">' +
-      '<i class="bi bi-wifi-off me-2"></i>Erreur reseau : ' + e +
-      '</div>';
-  } finally {
-    btn.disabled = false;
-    refreshCameraCalibSessionStatus();
-    refreshCameraCalibPreview();
-  }
-}
-
-async function popCameraCalibFrame() {
-  try {
-    await fetch('/calibration/camera/session/pop', { method: 'POST' });
-  } finally {
-    refreshCameraCalibSessionStatus();
-    refreshCameraCalibPreview();
-  }
-}
-
-async function resetCameraCalibSession() {
-  try {
-    await fetch('/calibration/camera/session/reset', { method: 'POST' });
-  } finally {
-    refreshCameraCalibSessionStatus();
-    refreshCameraCalibPreview();
-  }
-}
-
-async function runGuidedCameraCalibration() {
-  var result = document.getElementById('camera-result');
-  var btn = document.getElementById('btn-camera-guided-run');
-  var payload = cameraCalibPayload();
-  btn.disabled = true;
-  result.innerHTML =
-    '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
-    '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
-    'Calibration a partir des prises retenues\u2026</div>';
-  try {
-    var resp = await fetch('/calibration/camera/session/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    var data = await resp.json();
-    if (resp.ok) {
-      result.innerHTML =
-        '<div class="alert alert-success py-2 mb-0 mt-2">' +
-        '<i class="bi bi-check-circle-fill me-2"></i>' +
-        '<strong>Calibration reussie</strong>' +
-        '<pre class="mb-0 mt-2" style="font-size:0.75rem; color:#adbac7;">' + JSON.stringify(data, null, 2) + '</pre>' +
-        '</div>';
-      if (typeof showToast === 'function') showToast('Calibration reussie', 'success');
-    } else {
-      result.innerHTML =
-        '<div class="alert alert-danger py-2 mb-0 mt-2">' +
-        '<i class="bi bi-exclamation-triangle-fill me-2"></i>' +
-        (data.error || 'Erreur inconnue') +
-        '</div>';
-      if (typeof showToast === 'function') showToast(data.error || 'Erreur', 'error');
-    }
-  } catch (e) {
-    result.innerHTML =
-      '<div class="alert alert-danger py-2 mb-0 mt-2">' +
-      '<i class="bi bi-wifi-off me-2"></i>Erreur reseau : ' + e +
-      '</div>';
-  } finally {
-    btn.disabled = false;
-    refreshCameraCalibSessionStatus();
-  }
-}
-
 document.getElementById('form-laser').addEventListener('submit', function(e) {
   e.preventDefault();
   submitCalibForm('form-laser', '/calibration/laser', 'laser-result');
@@ -628,8 +359,5 @@ async function disableBackgroundFilter() {
     btn.disabled = false;
   }
 }
-
-refreshCameraCalibSessionStatus();
-refreshCameraCalibPreview();
 </script>
 {% endblock %}

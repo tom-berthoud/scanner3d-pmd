@@ -105,37 +105,6 @@ class PiCamera:
         except Exception as exc:
             raise HardwareError(f"Camera capture failed: {exc}") from exc
 
-    def update_settings(self, config: dict) -> None:
-        """Update capture controls without recreating the camera instance."""
-        awb_gains = config.get("awb_gains", self._awb_gains)
-        self._exposure_us = int(config.get("exposure_us", self._exposure_us))
-        self._gain = float(config.get("gain", self._gain))
-        self._awb_mode = str(config.get("awb_mode", self._awb_mode))
-        self._awb_gains = (float(awb_gains[0]), float(awb_gains[1]))
-
-        controls = {
-            "ExposureTime": self._exposure_us,
-            "AnalogueGain": self._gain,
-        }
-        if self._awb_mode == "off":
-            controls["AwbEnable"] = False
-            controls["ColourGains"] = self._awb_gains
-        else:
-            controls["AwbEnable"] = True
-
-        try:
-            self._cam.set_controls(controls)
-            logger.info(
-                "PiCamera settings updated (exposure=%d µs, gain=%.2f, awb=%s)",
-                self._exposure_us,
-                self._gain,
-                self._awb_mode,
-            )
-        except Exception as exc:
-            from scanner.hardware import HardwareError
-
-            raise HardwareError(f"Camera settings update failed: {exc}") from exc
-
     def close(self) -> None:
         """Release the camera resource."""
         try:

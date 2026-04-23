@@ -105,11 +105,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     }
     _scan_lock = threading.Lock()
     _sse_queue: queue.Queue = queue.Queue(maxsize=50)
-    _camera_calib_lock = threading.Lock()
-    _camera_calib_session: dict[str, list] = {
-        "frames_jpeg": [],
-        "checkerboard_found": [],
-    }
 
     def _load_background_filter_config() -> dict:
         from scanner.calibration import load_background_filter
@@ -136,100 +131,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         value = data.get("crop_left_of_col")
         return None if value is None else float(value)
 
-    def _camera_calibration_capture_defaults() -> dict:
-        cam_cfg = settings.get("camera", {})
-        calib_cfg = settings.get("calibration", {})
-        return {
-            "capture_count": int(calib_cfg.get("camera_capture_count", 12)),
-            "interval_ms": int(calib_cfg.get("camera_capture_interval_ms", 1200)),
-            "warmup_ms": int(calib_cfg.get("camera_capture_warmup_ms", 1500)),
-            "exposure_us": int(calib_cfg.get("camera_calibration_exposure_us", 10000)),
-            "gain": float(calib_cfg.get("camera_calibration_gain", 2.0)),
-            "awb_mode": str(calib_cfg.get("camera_calibration_awb_mode", "auto")),
-            "awb_gains": list(cam_cfg.get("awb_gains", [0.5, 1.0])),
-        }
-
-    def _parse_camera_calibration_request(source) -> dict:
-        defaults = _camera_calibration_capture_defaults()
-        try:
-            values = {
-                "board_cols": int(source.get("board_cols", 9)),
-                "board_rows": int(source.get("board_rows", 6)),
-                "square_size_mm": float(source.get("square_size_mm", 25.0)),
-                "warmup_ms": int(source.get("warmup_ms", defaults["warmup_ms"])),
-                "exposure_us": int(source.get("exposure_us", defaults["exposure_us"])),
-                "gain": float(source.get("gain", defaults["gain"])),
-                "awb_mode": str(source.get("awb_mode", defaults["awb_mode"])),
-            }
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"Invalid calibration payload: {exc}") from exc
-
-        if values["board_cols"] < 3 or values["board_rows"] < 3:
-            raise ValueError("board size must be at least 3x3")
-        if values["square_size_mm"] <= 0.0:
-            raise ValueError("square_size_mm must be > 0")
-        if values["warmup_ms"] < 0 or values["warmup_ms"] > 10000:
-            raise ValueError("warmup_ms must be between 0 and 10000")
-        if values["exposure_us"] < 100 or values["exposure_us"] > 200000:
-            raise ValueError("exposure_us must be between 100 and 200000")
-        if values["gain"] <= 0.0 or values["gain"] > 32.0:
-            raise ValueError("gain must be between 0 and 32")
-        if values["awb_mode"] not in {"auto", "off"}:
-            raise ValueError("awb_mode must be auto or off")
-
-        values["awb_gains"] = defaults["awb_gains"]
-        return values
-
-    def _capture_checkerboard_frame(
-        capture_cfg: dict,
-        apply_warmup: bool = False,
-    ) -> tuple[bytes, bytes, bool]:
-        import cv2  # type: ignore[import]
-        from scanner.hardware import (
-            HardwareError,
-            camera_capture,
-            camera_temporary_config,
-            laser_set,
-        )
-
-        camera_overrides = {
-            "exposure_us": capture_cfg["exposure_us"],
-            "gain": capture_cfg["gain"],
-            "awb_mode": capture_cfg["awb_mode"],
-            "awb_gains": capture_cfg["awb_gains"],
-        }
-
-        try:
-            laser_set(False)
-            with camera_temporary_config(camera_overrides):
-                if apply_warmup and capture_cfg["warmup_ms"] > 0:
-                    time.sleep(capture_cfg["warmup_ms"] / 1000.0)
-                # Let the sensor/ISP settle after changing exposure/gain/AWB.
-                for _ in range(2):
-                    camera_capture()
-                    time.sleep(0.08)
-                frame = camera_capture()
-        except HardwareError:
-            raise
-        finally:
-            try:
-                laser_set(False)
-            except Exception:
-                pass
-
-        board_size = (capture_cfg["board_cols"], capture_cfg["board_rows"])
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        found, corners = cv2.findChessboardCorners(gray, board_size, None)
-
-        overlay = frame.copy()
-        if found:
-            cv2.drawChessboardCorners(overlay, board_size, corners, found)
-
-        ok_raw, raw_buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-        ok_preview, preview_buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        if not ok_raw or not ok_preview:
-            raise RuntimeError("Could not encode checkerboard preview")
-        return raw_buf.tobytes(), preview_buf.tobytes(), bool(found)
 
     def _push_sse(data: dict) -> None:
         """Push a dict as an SSE event."""
@@ -652,7 +553,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             "calibration.html",
             use_checkerboard=use_checkerboard,
             background_filter=_load_background_filter_config(),
-            camera_capture_defaults=_camera_calibration_capture_defaults(),
         )
 
     @app.route("/calibration/camera", methods=["POST"])
@@ -661,6 +561,16 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         import cv2  # type: ignore[import]
         import numpy as np
         from scanner.calibration import calibrate_camera, CalibrationError
+
+        if not bool(settings.get("calibration", {}).get("use_checkerboard", True)):
+            return jsonify(
+                {
+                    "error": (
+                        "Checkerboard calibration is disabled in settings "
+                        "(calibration.use_checkerboard=false)."
+                    )
+                }
+            ), 409
 
         files = request.files.getlist("images")
         if not files:
@@ -701,291 +611,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except Exception as exc:
             logger.error("Camera calibration error: %s", exc)
             return jsonify({"error": "Internal error during calibration"}), 500
-
-    @app.route("/calibration/camera/live")
-    def calibration_camera_live() -> Response:
-        """Capture one live checkerboard preview frame with temporary settings."""
-        try:
-            capture_cfg = _parse_camera_calibration_request(request.args)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-        if not _manual_allowed():
-            return Response(status=409)
-
-        try:
-            _, preview_jpeg_bytes, found = _capture_checkerboard_frame(
-                capture_cfg,
-                apply_warmup=True,
-            )
-        except HardwareError:
-            return Response(status=503)
-        except Exception as exc:
-            logger.error("Checkerboard live preview error: %s", exc)
-            return Response(status=500)
-
-        with _camera_calib_lock:
-            session_count = len(_camera_calib_session["frames_jpeg"])
-
-        resp = Response(preview_jpeg_bytes, mimetype="image/jpeg")
-        resp.headers["X-Checkerboard-Found"] = "1" if found else "0"
-        resp.headers["X-Session-Count"] = str(session_count)
-        resp.headers["Access-Control-Expose-Headers"] = (
-            "X-Checkerboard-Found,X-Session-Count"
-        )
-        return resp
-
-    @app.route("/calibration/camera/session")
-    def calibration_camera_session_status() -> Response:
-        """Return the current guided camera-calibration session status."""
-        with _camera_calib_lock:
-            count = len(_camera_calib_session["frames_jpeg"])
-            found_flags = list(_camera_calib_session["checkerboard_found"])
-        return jsonify(
-            {
-                "count": count,
-                "checkerboard_found": found_flags,
-            }
-        )
-
-    @app.route("/calibration/camera/session/reset", methods=["POST"])
-    def calibration_camera_session_reset() -> Response:
-        """Clear all captured checkerboard frames from the guided session."""
-        if not _manual_allowed():
-            return jsonify({"error": "Calibration disabled while scan is running"}), 409
-
-        with _camera_calib_lock:
-            _camera_calib_session["frames_jpeg"].clear()
-            _camera_calib_session["checkerboard_found"].clear()
-        return jsonify({"status": "ok", "count": 0})
-
-    @app.route("/calibration/camera/session/pop", methods=["POST"])
-    def calibration_camera_session_pop() -> Response:
-        """Remove the most recent checkerboard frame from the guided session."""
-        if not _manual_allowed():
-            return jsonify({"error": "Calibration disabled while scan is running"}), 409
-
-        with _camera_calib_lock:
-            if _camera_calib_session["frames_jpeg"]:
-                _camera_calib_session["frames_jpeg"].pop()
-                _camera_calib_session["checkerboard_found"].pop()
-            count = len(_camera_calib_session["frames_jpeg"])
-        return jsonify({"status": "ok", "count": count})
-
-    @app.route("/calibration/camera/session/capture", methods=["POST"])
-    def calibration_camera_session_capture() -> Response:
-        """Capture one checkerboard image and keep it in the guided session."""
-        payload = request.get_json(silent=True) or {}
-        try:
-            capture_cfg = _parse_camera_calibration_request(payload)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-        if not _manual_allowed():
-            return jsonify({"error": "Calibration disabled while scan is running"}), 409
-
-        try:
-            raw_jpeg_bytes, preview_jpeg_bytes, found = _capture_checkerboard_frame(
-                capture_cfg,
-                apply_warmup=True,
-            )
-        except HardwareError as exc:
-            return jsonify({"error": str(exc)}), 500
-        except Exception as exc:
-            logger.error("Checkerboard capture error: %s", exc)
-            return jsonify({"error": "Internal error during checkerboard capture"}), 500
-
-        if not found:
-            return jsonify(
-                {
-                    "error": "Damier non detecte dans la frame courante",
-                    "checkerboard_found": False,
-                    "preview_jpeg_base64": base64.b64encode(preview_jpeg_bytes).decode("ascii"),
-                }
-            ), 422
-
-        with _camera_calib_lock:
-            _camera_calib_session["frames_jpeg"].append(raw_jpeg_bytes)
-            _camera_calib_session["checkerboard_found"].append(True)
-            count = len(_camera_calib_session["frames_jpeg"])
-
-        return jsonify(
-            {
-                "status": "ok",
-                "checkerboard_found": True,
-                "count": count,
-                "preview_jpeg_base64": base64.b64encode(preview_jpeg_bytes).decode("ascii"),
-            }
-        )
-
-    @app.route("/calibration/camera/session/run", methods=["POST"])
-    def calibration_camera_session_run() -> Response:
-        """Run camera calibration on the guided session captures."""
-        import cv2  # type: ignore[import]
-        import numpy as np
-        from scanner.calibration import CalibrationError, calibrate_camera
-
-        payload = request.get_json(silent=True) or {}
-        try:
-            capture_cfg = _parse_camera_calibration_request(payload)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-        if not _manual_allowed():
-            return jsonify({"error": "Calibration disabled while scan is running"}), 409
-
-        with _camera_calib_lock:
-            frames_jpeg = list(_camera_calib_session["frames_jpeg"])
-
-        if len(frames_jpeg) < 4:
-            return jsonify({"error": "Need at least 4 captured frames"}), 400
-
-        images: list[np.ndarray] = []
-        for jpeg_bytes in frames_jpeg:
-            data = np.frombuffer(jpeg_bytes, dtype=np.uint8)
-            img = cv2.imdecode(data, cv2.IMREAD_COLOR)
-            if img is not None:
-                images.append(img)
-
-        if len(images) < 4:
-            return jsonify({"error": "Stored calibration frames could not be decoded"}), 500
-
-        try:
-            camera_matrix, dist_coeffs = calibrate_camera(
-                images,
-                board_size=(capture_cfg["board_cols"], capture_cfg["board_rows"]),
-                square_size_mm=capture_cfg["square_size_mm"],
-            )
-            return jsonify(
-                {
-                    "status": "ok",
-                    "capture_count": len(images),
-                    "board_size": [capture_cfg["board_cols"], capture_cfg["board_rows"]],
-                    "square_size_mm": capture_cfg["square_size_mm"],
-                    "fx": float(camera_matrix[0, 0]),
-                    "fy": float(camera_matrix[1, 1]),
-                    "cx": float(camera_matrix[0, 2]),
-                    "cy": float(camera_matrix[1, 2]),
-                    "dist_coeffs": dist_coeffs.tolist(),
-                }
-            )
-        except CalibrationError as exc:
-            return jsonify({"error": str(exc), "capture_count": len(images)}), 422
-        except Exception as exc:
-            logger.error("Guided camera calibration error: %s", exc)
-            return jsonify({"error": "Internal error during guided camera calibration"}), 500
-
-    @app.route("/calibration/camera/auto", methods=["POST"])
-    def calibration_camera_auto() -> Response:
-        """Capture checkerboard images automatically with temporary camera settings."""
-        from scanner.calibration import CalibrationError, calibrate_camera
-        from scanner.hardware import (
-            HardwareError,
-            camera_capture,
-            camera_temporary_config,
-            laser_set,
-        )
-
-        if not _manual_allowed():
-            return jsonify({"error": "Calibration disabled while scan is running"}), 409
-
-        payload = request.get_json(silent=True) or {}
-        defaults = _camera_calibration_capture_defaults()
-
-        try:
-            board_cols = int(payload.get("board_cols", 9))
-            board_rows = int(payload.get("board_rows", 6))
-            square_mm = float(payload.get("square_size_mm", 25.0))
-            capture_count = int(payload.get("capture_count", defaults["capture_count"]))
-            interval_ms = int(payload.get("interval_ms", defaults["interval_ms"]))
-            warmup_ms = int(payload.get("warmup_ms", defaults["warmup_ms"]))
-            exposure_us = int(payload.get("exposure_us", defaults["exposure_us"]))
-            gain = float(payload.get("gain", defaults["gain"]))
-            awb_mode = str(payload.get("awb_mode", defaults["awb_mode"]))
-        except (TypeError, ValueError) as exc:
-            return jsonify({"error": f"Invalid calibration payload: {exc}"}), 400
-
-        if board_cols < 3 or board_rows < 3:
-            return jsonify({"error": "board size must be at least 3x3"}), 400
-        if square_mm <= 0.0:
-            return jsonify({"error": "square_size_mm must be > 0"}), 400
-        if capture_count < 4 or capture_count > 50:
-            return jsonify({"error": "capture_count must be between 4 and 50"}), 400
-        if interval_ms < 200 or interval_ms > 10000:
-            return jsonify({"error": "interval_ms must be between 200 and 10000"}), 400
-        if warmup_ms < 0 or warmup_ms > 10000:
-            return jsonify({"error": "warmup_ms must be between 0 and 10000"}), 400
-        if exposure_us < 100 or exposure_us > 200000:
-            return jsonify({"error": "exposure_us must be between 100 and 200000"}), 400
-        if gain <= 0.0 or gain > 32.0:
-            return jsonify({"error": "gain must be between 0 and 32"}), 400
-        if awb_mode not in {"auto", "off"}:
-            return jsonify({"error": "awb_mode must be auto or off"}), 400
-
-        camera_overrides = {
-            "exposure_us": exposure_us,
-            "gain": gain,
-            "awb_mode": awb_mode,
-            "awb_gains": defaults["awb_gains"],
-        }
-
-        images = []
-        try:
-            laser_set(False)
-            with camera_temporary_config(camera_overrides):
-                if warmup_ms > 0:
-                    time.sleep(warmup_ms / 1000.0)
-                for idx in range(capture_count):
-                    images.append(camera_capture())
-                    if idx + 1 < capture_count:
-                        time.sleep(interval_ms / 1000.0)
-        except HardwareError as exc:
-            return jsonify({"error": str(exc)}), 500
-        finally:
-            try:
-                laser_set(False)
-            except Exception:
-                pass
-
-        try:
-            camera_matrix, dist_coeffs = calibrate_camera(
-                images,
-                board_size=(board_cols, board_rows),
-                square_size_mm=square_mm,
-            )
-            return jsonify(
-                {
-                    "status": "ok",
-                    "capture_count": capture_count,
-                    "board_size": [board_cols, board_rows],
-                    "square_size_mm": square_mm,
-                    "camera_settings": {
-                        "exposure_us": exposure_us,
-                        "gain": gain,
-                        "awb_mode": awb_mode,
-                    },
-                    "fx": float(camera_matrix[0, 0]),
-                    "fy": float(camera_matrix[1, 1]),
-                    "cx": float(camera_matrix[0, 2]),
-                    "cy": float(camera_matrix[1, 2]),
-                    "dist_coeffs": dist_coeffs.tolist(),
-                }
-            )
-        except CalibrationError as exc:
-            return jsonify(
-                {
-                    "error": str(exc),
-                    "capture_count": capture_count,
-                    "camera_settings": {
-                        "exposure_us": exposure_us,
-                        "gain": gain,
-                        "awb_mode": awb_mode,
-                    },
-                }
-            ), 422
-        except Exception as exc:
-            logger.error("Automatic camera calibration error: %s", exc)
-            return jsonify({"error": "Internal error during automatic camera calibration"}), 500
 
     @app.route("/calibration/laser", methods=["POST"])
     def calibration_laser() -> Response:

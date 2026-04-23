@@ -224,20 +224,6 @@ class MockCamera:
         )
         return frame
 
-    def close(self) -> None:
-        """Release mock camera resources (no-op)."""
-        logger.debug("MockCamera closed")
-
-    def update_settings(self, config: dict) -> None:
-        """Update mock camera settings without recreating the instance."""
-        self._exposure_us = int(config.get("exposure_us", self._exposure_us))
-        self._gain = float(config.get("gain", self._gain))
-        logger.debug(
-            "MockCamera settings updated (exposure=%d µs, gain=%.2f)",
-            self._exposure_us,
-            self._gain,
-        )
-
     def _surface_y(self, x_cam: float, z_cam: float, theta: float) -> Optional[float]:
         """Return the upper-surface Y coordinate (mm) at the given laser-plane point.
 
