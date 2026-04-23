@@ -7,3 +7,7 @@ degrees_per_step: 0.1125       # = 360 / (steps_per_revolution * microstepping)
 
 # Axe de rotation dans le repère caméra (vecteur unitaire)
 rotation_axis: [0.0, 1.0, 0.0]   # par défaut : axe Y (vertical)
+
+# Point appartenant à l'axe de rotation, dans le repère caméra (mm)
+# Exemple simple : centre du plateau sur l'axe optique de la caméra.
+rotation_axis_point_mm: [0.0, 0.0, 400.0]

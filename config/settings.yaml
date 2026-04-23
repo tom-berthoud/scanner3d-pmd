@@ -32,9 +32,10 @@ motor:
 
 processing:
   laser_channel: green      # canal couleur à isoler : green (laser vert ~520nm)
-  laser_threshold: 60       # seuil de détection sur le signal G - max(R,B)
+  laser_threshold: 80       # seuil de détection; en row_green, il s'applique au vert brut
   min_line_pixels: 15      # nombre minimum de points de ligne pour valider une détection
   subpixel: true            # activer la détection sub-pixel (centroïde)
+  extraction_mode: row_green  # row_green = 1 point par ligne sur le vert brut
 
 reconstruction:
   outlier_nb_neighbors: 20  # voisins pour filtrage outliers (Open3D)
@@ -47,6 +48,7 @@ calibration:
 export:
   default_format: stl       # format par défaut : stl / obj
   output_dir: /tmp/scans    # dossier de sortie des fichiers 3D
+  mesh_mode: profiles       # profiles = relie les profils successifs avec caps
 
 interface:
   web_host: 0.0.0.0         # écouter sur toutes les interfaces

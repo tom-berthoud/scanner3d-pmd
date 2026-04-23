@@ -91,6 +91,7 @@ def run_scan(
     threshold: int = int(proc_cfg.get("laser_threshold", 180))
     min_pixels: int = int(proc_cfg.get("min_line_pixels", 10))
     subpixel: bool = bool(proc_cfg.get("subpixel", True))
+    extraction_mode: str = str(proc_cfg.get("extraction_mode", "component_axis"))
 
     recon_cfg = config.get("reconstruction", {})
     nb_neighbors: int = int(recon_cfg.get("outlier_nb_neighbors", 20))
@@ -99,6 +100,7 @@ def run_scan(
     export_cfg = config.get("export", {})
     fmt: str = export_cfg.get("default_format", "stl").lower()
     output_dir: str = export_cfg.get("output_dir", "/tmp/scans")
+    mesh_mode: str = str(export_cfg.get("mesh_mode", "auto"))
 
     def _progress(current: int, total: int, message: str) -> None:
         if progress_callback is not None:
@@ -189,7 +191,11 @@ def run_scan(
         for idx, frame in enumerate(frames):
             angle_rad = idx * angle_step_rad
             line_px = extract_laser_line(
-                frame, threshold=threshold, min_pixels=min_pixels, subpixel=subpixel
+                frame,
+                threshold=threshold,
+                min_pixels=min_pixels,
+                subpixel=subpixel,
+                mode=extraction_mode,
             )
             if line_px.shape[0] > 0:
                 pts_3d = triangulate(
@@ -233,9 +239,9 @@ def run_scan(
 
         _progress(n_steps, n_steps, "Exporting mesh…")
         if fmt == "obj":
-            export_obj(cloud, output_path)
+            export_obj(cloud, output_path, profiles=profiles, mesh_mode=mesh_mode)
         else:
-            export_stl(cloud, output_path)
+            export_stl(cloud, output_path, profiles=profiles, mesh_mode=mesh_mode)
 
         logger.info("Scan exported to %s", output_path)
 

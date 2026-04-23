@@ -1,0 +1,12 @@
+# laser_plane.example.yaml — Template de calibration plan laser
+# Copier en laser_plane.yaml et remplir avec les vraies valeurs
+# après avoir effectué la calibration avec scanner/calibration/laser_plane.py
+# Équation du plan : a*x + b*y + c*z + d = 0 (dans le repère caméra)
+
+plane:
+  a: -0.8468672674687538
+  b: 0.021688723887813868
+  c: -0.5313618640306474
+  d: 215.5931405981255
+
+triangulation_angle_deg: 57.90248324807115   # angle mesuré entre caméra et plan laser

@@ -18,6 +18,25 @@ def _make_sphere_cloud(n: int = 300, radius: float = 30.0) -> np.ndarray:
     return pts
 
 
+def _make_hourglass_profiles(n_profiles: int = 24, n_rows: int = 18) -> list[np.ndarray]:
+    """Generate ordered scan profiles with a concave waist."""
+    profiles: list[np.ndarray] = []
+    ys = np.linspace(-30.0, 30.0, n_rows)
+    for angle in np.linspace(0.0, 2.0 * np.pi, n_profiles, endpoint=False):
+        radii = 24.0 + 10.0 * (np.abs(ys) / np.max(np.abs(ys)))
+        x = radii * np.cos(angle)
+        z = radii * np.sin(angle)
+        profile = np.column_stack(
+            [
+                np.full_like(ys, x, dtype=np.float64),
+                ys.astype(np.float64),
+                np.full_like(ys, z, dtype=np.float64),
+            ]
+        )
+        profiles.append(profile)
+    return profiles
+
+
 class TestExportSTL:
     """Tests for scanner.export.stl.export_stl."""
 
@@ -66,6 +85,16 @@ class TestExportSTL:
             export_stl(cloud, path)
             assert os.path.exists(path)
 
+    def test_profile_strip_mesh_creates_file(self) -> None:
+        """export_stl should support ordered profiles for strip meshing."""
+        profiles = _make_hourglass_profiles()
+        cloud = np.vstack(profiles)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "hourglass.stl")
+            export_stl(cloud, path, profiles=profiles, mesh_mode="profiles")
+            assert os.path.exists(path)
+            assert os.path.getsize(path) > 0
+
 
 class TestExportOBJ:
     """Tests for scanner.export.stl.export_obj."""
@@ -111,6 +140,17 @@ class TestExportOBJ:
             path = os.path.join(tmpdir, "deep", "path", "out.obj")
             export_obj(cloud, path)
             assert os.path.exists(path)
+
+    def test_profile_strip_obj_has_faces(self) -> None:
+        """export_obj should write profile-strip faces when profiles are provided."""
+        profiles = _make_hourglass_profiles()
+        cloud = np.vstack(profiles)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "hourglass.obj")
+            export_obj(cloud, path, profiles=profiles, mesh_mode="profiles")
+            with open(path, "r", encoding="utf-8") as fh:
+                content = fh.read()
+            assert "f " in content
 
 
 class TestExportPointCloudPLY:

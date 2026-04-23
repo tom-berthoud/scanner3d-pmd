@@ -280,8 +280,15 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         threshold = int(proc_cfg.get("laser_threshold", 180))
         min_px = int(proc_cfg.get("min_line_pixels", 10))
         subpixel = bool(proc_cfg.get("subpixel", True))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
 
-        line = extract_laser_line(frame, threshold=threshold, min_pixels=min_px, subpixel=subpixel)
+        line = extract_laser_line(
+            frame,
+            threshold=threshold,
+            min_pixels=min_px,
+            subpixel=subpixel,
+            mode=extraction_mode,
+        )
 
         # Draw detected pixels as red dots on the frame
         overlay = frame.copy()
@@ -355,6 +362,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         proc_cfg = settings.get("processing", {})
         default_threshold = int(proc_cfg.get("laser_threshold", 60))
         default_min_px = int(proc_cfg.get("min_line_pixels", 15))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
 
         try:
             threshold = int(request.args.get("threshold", default_threshold))
@@ -373,7 +381,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return Response(status=503)
 
         line = extract_laser_line(
-            frame, threshold=threshold, min_pixels=min_px, subpixel=True
+            frame,
+            threshold=threshold,
+            min_pixels=min_px,
+            subpixel=True,
+            mode=extraction_mode,
         )
 
         signal = frame[:, :, 1]  # green channel only

@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 _CLOSE_KERNEL_SIZE = 3
 _MAX_SHORT_GAP_BINS = 3
 _COMPONENT_SCORE_RATIO = 0.18
+_EXTRACTION_MODES = {"component_axis", "row_green"}
 
 
 def _empty_line() -> np.ndarray:
@@ -36,6 +37,50 @@ def _compute_laser_signal(frame: np.ndarray) -> np.ndarray:
     green = frame[:, :, 1].astype(np.int16)
     red = frame[:, :, 2].astype(np.int16)
     return np.clip(green - np.maximum(red, blue), 0, 255).astype(np.uint8)
+
+
+def _extract_row_green_line(
+    frame: np.ndarray,
+    threshold: int,
+    min_pixels: int,
+    subpixel: bool,
+) -> np.ndarray:
+    """Extract one laser point per image row using the raw green channel."""
+    green = frame[:, :, 1]
+    points: list[tuple[float, float]] = []
+
+    for row in range(green.shape[0]):
+        cols = np.flatnonzero(green[row] >= threshold)
+        if cols.size == 0:
+            continue
+
+        splits = np.where(np.diff(cols) > 1)[0] + 1
+        segments = np.split(cols, splits)
+        best_segment = max(
+            segments,
+            key=lambda seg: (int(green[row, seg].sum()), int(seg.size)),
+        )
+
+        if subpixel:
+            weights = green[row, best_segment].astype(np.float64)
+            weights = np.maximum(weights - float(threshold) + 1.0, 1.0)
+            col_center = float(np.average(best_segment.astype(np.float64), weights=weights))
+        else:
+            col_center = float(
+                int(round((int(best_segment[0]) + int(best_segment[-1])) / 2.0))
+            )
+
+        points.append((col_center, float(row)))
+
+    if len(points) < min_pixels:
+        logger.debug(
+            "_extract_row_green_line: only %d rows detected (min=%d)",
+            len(points),
+            min_pixels,
+        )
+        return _empty_line()
+
+    return np.asarray(points, dtype=np.float32)
 
 
 def _principal_axis(points_xy: np.ndarray, weights: np.ndarray) -> np.ndarray:
@@ -121,6 +166,7 @@ def extract_laser_line(
     threshold: int = 180,
     min_pixels: int = 10,
     subpixel: bool = True,
+    mode: str = "component_axis",
 ) -> np.ndarray:
     """Detect the green laser line in *frame* and return pixel coordinates.
 
@@ -131,6 +177,9 @@ def extract_laser_line(
             the full detection.
         subpixel: If True, use weighted centroids inside local bins.  If False,
             keep the strongest pixel per bin.
+        mode: Extraction strategy.
+            ``component_axis``: connected components + dominant axis centreline.
+            ``row_green``: one point per image row from the raw green channel.
 
     Returns:
         Float array of shape (N, 2) where each row is ``[col, row]``.
@@ -141,6 +190,19 @@ def extract_laser_line(
             "extract_laser_line: expected BGR frame (H,W,3), got shape %s", frame.shape
         )
         return _empty_line()
+
+    if mode not in _EXTRACTION_MODES:
+        raise ValueError(
+            f"Unknown extraction mode {mode!r}; expected one of {sorted(_EXTRACTION_MODES)}"
+        )
+
+    if mode == "row_green":
+        return _extract_row_green_line(
+            frame,
+            threshold=threshold,
+            min_pixels=min_pixels,
+            subpixel=subpixel,
+        )
 
     laser_signal = _compute_laser_signal(frame)
     mask = laser_signal >= threshold  # type: ignore[operator]

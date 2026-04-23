@@ -35,10 +35,17 @@ def _save_frame(frame: np.ndarray, step_idx: int, config: dict) -> None:
         threshold = int(proc_cfg.get("laser_threshold", 180))
         min_px = int(proc_cfg.get("min_line_pixels", 10))
         subpixel = bool(proc_cfg.get("subpixel", True))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
 
         overlay = frame.copy()
         try:
-            line = extract_laser_line(frame, threshold=threshold, min_pixels=min_px, subpixel=subpixel)
+            line = extract_laser_line(
+                frame,
+                threshold=threshold,
+                min_pixels=min_px,
+                subpixel=subpixel,
+                mode=extraction_mode,
+            )
             for i in range(line.shape[0]):
                 col, row = int(round(line[i, 0])), int(round(line[i, 1]))
                 cv2.circle(overlay, (col, row), 1, (0, 0, 255), -1)

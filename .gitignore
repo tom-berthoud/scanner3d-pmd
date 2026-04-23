@@ -12,11 +12,6 @@ __pycache__/
 # Test / cache
 .pytest_cache/
 
-# Calibration files with real values (never commit)
-config/camera_intrinsics.yaml
-config/laser_plane.yaml
-config/platform.yaml
-
 # Scan output and temporary frames
 /tmp/scans/
 /tmp/scan_frames/

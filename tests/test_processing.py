@@ -102,6 +102,24 @@ class TestExtractLaserLine:
         )
         assert float(result[:, 1].max() - result[:, 1].min()) > 140.0
 
+    def test_row_green_mode_tracks_vertical_line(self) -> None:
+        """row_green mode should return about one point per visible row."""
+        true_col = 95.25
+        frame = make_laser_frame_vertical(width=200, height=160, col=true_col, noise_amplitude=0)
+        result = extract_laser_line(
+            frame,
+            threshold=80,
+            min_pixels=20,
+            subpixel=True,
+            mode="row_green",
+        )
+        assert result.shape[0] >= 145, f"Expected many rows detected, got {result.shape[0]}"
+        mean_col = float(result[:, 0].mean())
+        assert abs(mean_col - true_col) < 1.0, (
+            f"Mean detected column {mean_col:.2f} differs from truth {true_col} by > 1 px"
+        )
+        assert float(result[:, 1].max() - result[:, 1].min()) > 140.0
+
     def test_detects_bent_polyline(self) -> None:
         """A bent laser line should not collapse to a tiny set of points."""
         frame = make_laser_frame_polyline(
