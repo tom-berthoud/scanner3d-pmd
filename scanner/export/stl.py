@@ -130,6 +130,7 @@ def _cloud_to_mesh(
     try:
         import trimesh  # type: ignore[import]
         import trimesh.creation  # type: ignore[import]
+        import trimesh.repair  # type: ignore[import]
     except ImportError as exc:
         raise RuntimeError("trimesh not available — install with: pip install trimesh") from exc
 
@@ -144,6 +145,43 @@ def _cloud_to_mesh(
     cloud_unique = np.unique(cloud.round(decimals=4), axis=0)
     if cloud_unique.shape[0] < 4:
         raise ValueError("Too few unique points after deduplication")
+
+    def _prepare_alpha_mesh(candidate: "trimesh.Trimesh") -> "trimesh.Trimesh | None":  # type: ignore[name-defined]
+        if candidate is None or len(candidate.faces) == 0:
+            return None
+
+        mesh_candidate = candidate.copy()
+        try:
+            components = mesh_candidate.split(only_watertight=False)
+            if len(components) > 1:
+                mesh_candidate = max(components, key=lambda comp: len(comp.faces))
+        except Exception:
+            pass
+
+        try:
+            mesh_candidate.remove_duplicate_faces()
+        except Exception:
+            pass
+        try:
+            mesh_candidate.remove_degenerate_faces()
+        except Exception:
+            pass
+        try:
+            mesh_candidate.remove_unreferenced_vertices()
+        except Exception:
+            pass
+        try:
+            trimesh.repair.fill_holes(mesh_candidate)
+        except Exception:
+            pass
+        try:
+            trimesh.repair.fix_normals(mesh_candidate)
+        except Exception:
+            pass
+
+        if len(mesh_candidate.faces) == 0:
+            return None
+        return mesh_candidate
 
     # Try alpha shape (better for concave objects)
     mesh = None
@@ -162,9 +200,14 @@ def _cloud_to_mesh(
         # Use trimesh's alpha_shape if available
         if hasattr(trimesh, "creation") and hasattr(trimesh.creation, "alpha_shape"):
             alpha_mesh = trimesh.creation.alpha_shape(cloud_unique, alpha=alpha_value)
-            if alpha_mesh is not None and len(alpha_mesh.faces) > 0 and alpha_mesh.is_watertight:
-                mesh = alpha_mesh
-                logger.debug("Mesh built via alpha shape (alpha=%.2f)", alpha_value)
+            mesh = _prepare_alpha_mesh(alpha_mesh)
+            if mesh is not None:
+                logger.debug(
+                    "Mesh built via alpha shape (alpha=%.2f, watertight=%s, faces=%d)",
+                    alpha_value,
+                    mesh.is_watertight,
+                    len(mesh.faces),
+                )
     except Exception as alpha_exc:
         logger.debug("Alpha shape failed: %s — falling back to convex hull", alpha_exc)
 
