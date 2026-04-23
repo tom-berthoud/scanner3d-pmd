@@ -161,12 +161,32 @@ def camera_reconfigure(config: dict) -> None:
 @contextmanager
 def camera_temporary_config(overrides: dict):
     """Temporarily apply camera settings for a calibration or debug action."""
-    if _camera_config is None:
+    global _camera_config
+
+    if _camera_config is None or _camera_instance is None:
         raise HardwareError("Camera configuration unavailable — call init_hardware() first")
 
     original = copy.deepcopy(_camera_config)
     temporary = copy.deepcopy(_camera_config)
     temporary.update(overrides)
+
+    if hasattr(_camera_instance, "update_settings"):
+        try:
+            _camera_instance.update_settings(temporary)
+            _camera_config = copy.deepcopy(temporary)
+        except Exception:
+            try:
+                _camera_instance.update_settings(original)
+                _camera_config = copy.deepcopy(original)
+            except Exception as restore_exc:
+                logger.error("Could not restore original camera settings after failure: %s", restore_exc)
+            raise
+        try:
+            yield
+        finally:
+            _camera_instance.update_settings(original)
+            _camera_config = copy.deepcopy(original)
+        return
 
     try:
         camera_reconfigure(temporary)
