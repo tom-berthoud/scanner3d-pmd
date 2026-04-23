@@ -58,6 +58,151 @@ def crop_laser_line(
     return filtered[order].astype(np.float32, copy=False)
 
 
+def _line_to_dense_rows(line: np.ndarray, image_height: int) -> np.ndarray:
+    """Map a sparse ``[col, row]`` line to one column value per integer row."""
+    if line.ndim != 2 or line.shape[1] != 2:
+        raise ValueError(f"line must be (N, 2), got {line.shape}")
+    if image_height <= 0:
+        raise ValueError(f"image_height must be > 0, got {image_height}")
+
+    dense = np.full(int(image_height), np.nan, dtype=np.float64)
+    if line.shape[0] == 0:
+        return dense
+
+    rows = np.rint(line[:, 1]).astype(np.int32)
+    valid = (rows >= 0) & (rows < int(image_height))
+    if not np.any(valid):
+        return dense
+
+    rows = rows[valid]
+    cols = np.asarray(line[valid, 0], dtype=np.float64)
+
+    sums = np.zeros(int(image_height), dtype=np.float64)
+    counts = np.zeros(int(image_height), dtype=np.int32)
+    np.add.at(sums, rows, cols)
+    np.add.at(counts, rows, 1)
+
+    row_mask = counts > 0
+    dense[row_mask] = sums[row_mask] / counts[row_mask]
+    return dense
+
+
+def _dense_rows_to_line(dense_rows: np.ndarray) -> np.ndarray:
+    """Convert a dense row-indexed column array back to sparse ``[col, row]``."""
+    valid_rows = np.flatnonzero(~np.isnan(dense_rows))
+    if valid_rows.size == 0:
+        return _empty_line()
+
+    cols = dense_rows[valid_rows].astype(np.float32)
+    rows = valid_rows.astype(np.float32)
+    return np.column_stack([cols, rows]).astype(np.float32, copy=False)
+
+
+def _is_gap_fill_allowed(gap_size: int, max_gap: int | None) -> bool:
+    if gap_size <= 0:
+        return False
+    if max_gap is None or int(max_gap) <= 0:
+        return True
+    return gap_size <= int(max_gap)
+
+
+def fill_occluded_laser_gaps(
+    line: np.ndarray,
+    image_height: int,
+    max_gap_rows: int | None = None,
+    min_points: int = 1,
+) -> np.ndarray:
+    """Interpolate missing rows inside one laser profile.
+
+    Only interior gaps are filled: rows before the first detection and after
+    the last detection stay empty.
+    """
+    dense = _line_to_dense_rows(line, image_height=image_height)
+    valid_rows = np.flatnonzero(~np.isnan(dense))
+    if valid_rows.size < 2:
+        return _dense_rows_to_line(dense)
+
+    filled_rows = 0
+    for left, right in zip(valid_rows[:-1], valid_rows[1:]):
+        gap = int(right - left - 1)
+        if not _is_gap_fill_allowed(gap, max_gap_rows):
+            continue
+        dense[left + 1 : right] = np.linspace(
+            dense[left],
+            dense[right],
+            gap + 2,
+            dtype=np.float64,
+        )[1:-1]
+        filled_rows += gap
+
+    result = _dense_rows_to_line(dense)
+    if result.shape[0] < max(int(min_points), 1):
+        return _empty_line()
+
+    if filled_rows > 0:
+        logger.debug(
+            "fill_occluded_laser_gaps: added %d row(s) inside one profile",
+            filled_rows,
+        )
+    return result
+
+
+def interpolate_laser_profiles(
+    lines: list[np.ndarray],
+    image_height: int,
+    max_gap_frames: int | None = None,
+    min_points: int = 1,
+) -> list[np.ndarray]:
+    """Fill occluded zones across successive scan views.
+
+    For each image row, missing frames bracketed by two visible frames are
+    linearly interpolated. This assumes the object is solid and that a hidden
+    laser segment should be reconstructed between the last visible view and
+    the next visible view where it reappears.
+    """
+    if not lines:
+        return []
+
+    dense_profiles = np.vstack(
+        [_line_to_dense_rows(line, image_height=image_height) for line in lines]
+    )
+    filled = dense_profiles.copy()
+    filled_points = 0
+
+    for row_idx in range(filled.shape[1]):
+        row_series = dense_profiles[:, row_idx]
+        valid_frames = np.flatnonzero(~np.isnan(row_series))
+        if valid_frames.size < 2:
+            continue
+
+        for left, right in zip(valid_frames[:-1], valid_frames[1:]):
+            gap = int(right - left - 1)
+            if not _is_gap_fill_allowed(gap, max_gap_frames):
+                continue
+            filled[left + 1 : right, row_idx] = np.linspace(
+                row_series[left],
+                row_series[right],
+                gap + 2,
+                dtype=np.float64,
+            )[1:-1]
+            filled_points += gap
+
+    results: list[np.ndarray] = []
+    for dense in filled:
+        line = _dense_rows_to_line(dense)
+        if line.shape[0] < max(int(min_points), 1):
+            results.append(_empty_line())
+        else:
+            results.append(line)
+
+    if filled_points > 0:
+        logger.debug(
+            "interpolate_laser_profiles: added %d occluded sample(s) across frames",
+            filled_points,
+        )
+    return results
+
+
 def _compute_laser_signal(frame: np.ndarray) -> np.ndarray:
     """Build a green-dominant laser signal robust to white highlights."""
     blue = frame[:, :, 0].astype(np.int16)

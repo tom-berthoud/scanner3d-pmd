@@ -36,13 +36,16 @@ processing:
   min_line_pixels: 2      # nombre minimum de points de ligne pour valider une détection
   subpixel: true            # activer la détection sub-pixel (centroïde)
   extraction_mode: row_green  # row_green = 1 point par ligne sur le vert brut
+  occlusion_interpolation: true  # comble les zones cachées du laser avant la reconstruction 3D
+  occlusion_max_gap_rows: 0      # 0 = sans limite, interpolation des trous internes dans une image
+  occlusion_max_gap_frames: 0    # 0 = sans limite, interpolation entre la derniere vue visible et la suivante
 
 reconstruction:
   outlier_nb_neighbors: 20  # voisins pour filtrage outliers (Open3D)
   outlier_std_ratio: 2.0    # ratio écart-type pour filtrage outliers
 
 calibration:
-  use_checkerboard: true    # false = desactive la calibration camera par damier et utilise des intrinsèques approx
+  use_checkerboard: false    # false = desactive la calibration camera par damier et utilise des intrinsèques approx
   approx_focal_scale: 1.25  # focale approx = largeur_image * facteur (640 px -> 800 px)
 
 export:

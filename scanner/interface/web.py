@@ -296,7 +296,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         import cv2
         import numpy as np
         from scanner.hardware.mock import MockCamera
-        from scanner.processing import crop_laser_line, extract_laser_line
+        from scanner.processing import (
+            crop_laser_line,
+            extract_laser_line,
+            fill_occluded_laser_gaps,
+        )
 
         angle_rad = float(request.args.get("angle", 0.0))
         cam_cfg = settings.get("camera", {"resolution": [640, 480]})
@@ -309,6 +313,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         min_px = int(proc_cfg.get("min_line_pixels", 10))
         subpixel = bool(proc_cfg.get("subpixel", True))
         extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        occlusion_interpolation = bool(proc_cfg.get("occlusion_interpolation", True))
+        occlusion_max_gap_rows_raw = int(proc_cfg.get("occlusion_max_gap_rows", 0))
+        occlusion_max_gap_rows = (
+            occlusion_max_gap_rows_raw if occlusion_max_gap_rows_raw > 0 else None
+        )
 
         line = extract_laser_line(
             frame,
@@ -322,6 +331,13 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             crop_left_of_col=_background_crop_left_col(),
             min_points=min_px,
         )
+        if occlusion_interpolation and line.shape[0] > 0:
+            line = fill_occluded_laser_gaps(
+                line,
+                image_height=frame.shape[0],
+                max_gap_rows=occlusion_max_gap_rows,
+                min_points=min_px,
+            )
 
         # Draw detected pixels as red dots on the frame
         overlay = frame.copy()
@@ -387,7 +403,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         import cv2
         import numpy as np
         from scanner.hardware import HardwareError, camera_capture
-        from scanner.processing import crop_laser_line, extract_laser_line
+        from scanner.processing import (
+            crop_laser_line,
+            extract_laser_line,
+            fill_occluded_laser_gaps,
+        )
 
         if not _manual_allowed():
             return Response(status=409)
@@ -396,6 +416,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         default_threshold = int(proc_cfg.get("laser_threshold", 60))
         default_min_px = int(proc_cfg.get("min_line_pixels", 15))
         extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        occlusion_interpolation = bool(proc_cfg.get("occlusion_interpolation", True))
+        occlusion_max_gap_rows_raw = int(proc_cfg.get("occlusion_max_gap_rows", 0))
+        occlusion_max_gap_rows = (
+            occlusion_max_gap_rows_raw if occlusion_max_gap_rows_raw > 0 else None
+        )
 
         try:
             threshold = int(request.args.get("threshold", default_threshold))
@@ -425,6 +450,13 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             crop_left_of_col=_background_crop_left_col(),
             min_points=min_px,
         )
+        if occlusion_interpolation and line.shape[0] > 0:
+            line = fill_occluded_laser_gaps(
+                line,
+                image_height=frame.shape[0],
+                max_gap_rows=occlusion_max_gap_rows,
+                min_points=min_px,
+            )
 
         signal = frame[:, :, 1]  # green channel only
         gr_max = int(signal.max())

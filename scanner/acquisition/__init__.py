@@ -28,7 +28,11 @@ def _save_frame(frame: np.ndarray, step_idx: int, config: dict) -> None:
     try:
         import cv2
         from scanner.calibration import load_background_filter
-        from scanner.processing import crop_laser_line, extract_laser_line
+        from scanner.processing import (
+            crop_laser_line,
+            extract_laser_line,
+            fill_occluded_laser_gaps,
+        )
 
         os.makedirs(_FRAME_DIR, exist_ok=True)
 
@@ -37,6 +41,11 @@ def _save_frame(frame: np.ndarray, step_idx: int, config: dict) -> None:
         min_px = int(proc_cfg.get("min_line_pixels", 10))
         subpixel = bool(proc_cfg.get("subpixel", True))
         extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        occlusion_interpolation = bool(proc_cfg.get("occlusion_interpolation", True))
+        occlusion_max_gap_rows_raw = int(proc_cfg.get("occlusion_max_gap_rows", 0))
+        occlusion_max_gap_rows = (
+            occlusion_max_gap_rows_raw if occlusion_max_gap_rows_raw > 0 else None
+        )
         background_filter = load_background_filter()
         crop_left_of_col = (
             float(background_filter["crop_left_of_col"])
@@ -54,6 +63,13 @@ def _save_frame(frame: np.ndarray, step_idx: int, config: dict) -> None:
                 mode=extraction_mode,
             )
             line = crop_laser_line(line, crop_left_of_col=crop_left_of_col, min_points=min_px)
+            if occlusion_interpolation and line.shape[0] > 0:
+                line = fill_occluded_laser_gaps(
+                    line,
+                    image_height=frame.shape[0],
+                    max_gap_rows=occlusion_max_gap_rows,
+                    min_points=min_px,
+                )
             for i in range(line.shape[0]):
                 col, row = int(round(line[i, 0])), int(round(line[i, 1]))
                 cv2.circle(overlay, (col, row), 1, (0, 0, 255), -1)

@@ -62,7 +62,13 @@ def run_scan(
         load_laser_plane,
     )
     from scanner.acquisition import run_capture_sequence
-    from scanner.processing import crop_laser_line, extract_laser_line, triangulate
+    from scanner.processing import (
+        crop_laser_line,
+        extract_laser_line,
+        fill_occluded_laser_gaps,
+        interpolate_laser_profiles,
+        triangulate,
+    )
     from scanner.reconstruction import merge_profiles, filter_outliers
     from scanner.export import export_stl, export_obj, export_point_cloud_ply
 
@@ -93,6 +99,15 @@ def run_scan(
     min_pixels: int = int(proc_cfg.get("min_line_pixels", 10))
     subpixel: bool = bool(proc_cfg.get("subpixel", True))
     extraction_mode: str = str(proc_cfg.get("extraction_mode", "component_axis"))
+    occlusion_interpolation: bool = bool(proc_cfg.get("occlusion_interpolation", True))
+    occlusion_max_gap_rows_raw = int(proc_cfg.get("occlusion_max_gap_rows", 0))
+    occlusion_max_gap_frames_raw = int(proc_cfg.get("occlusion_max_gap_frames", 0))
+    occlusion_max_gap_rows = (
+        occlusion_max_gap_rows_raw if occlusion_max_gap_rows_raw > 0 else None
+    )
+    occlusion_max_gap_frames = (
+        occlusion_max_gap_frames_raw if occlusion_max_gap_frames_raw > 0 else None
+    )
     background_filter = load_background_filter()
     crop_left_of_col = (
         float(background_filter["crop_left_of_col"])
@@ -192,11 +207,12 @@ def run_scan(
         raise
 
     profiles: list[np.ndarray] = []
+    line_profiles: list[np.ndarray] = []
     angle_step_rad = 2.0 * math.pi / n_steps
+    processing_total = n_steps * 2 if occlusion_interpolation else n_steps
 
     try:
         for idx, frame in enumerate(frames):
-            angle_rad = idx * angle_step_rad
             line_px = extract_laser_line(
                 frame,
                 threshold=threshold,
@@ -209,13 +225,43 @@ def run_scan(
                 crop_left_of_col=crop_left_of_col,
                 min_points=min_pixels,
             )
+            if occlusion_interpolation and line_px.shape[0] > 0:
+                line_px = fill_occluded_laser_gaps(
+                    line_px,
+                    image_height=frame.shape[0],
+                    max_gap_rows=occlusion_max_gap_rows,
+                    min_points=min_pixels,
+                )
+            line_profiles.append(line_px)
+            _progress(
+                idx + 1,
+                processing_total,
+                f"Extracting profile {idx + 1}/{n_steps}",
+            )
+
+        if occlusion_interpolation and line_profiles:
+            _progress(n_steps, processing_total, "Interpolating occluded zones")
+            line_profiles = interpolate_laser_profiles(
+                line_profiles,
+                image_height=frames[0].shape[0],
+                max_gap_frames=occlusion_max_gap_frames,
+                min_points=min_pixels,
+            )
+
+        for idx, line_px in enumerate(line_profiles):
+            angle_rad = idx * angle_step_rad
             if line_px.shape[0] > 0:
                 pts_3d = triangulate(
                     line_px, camera_matrix, dist_coeffs, laser_plane, angle_rad,
                     axis_point=_axis_point,
                 )
                 profiles.append(pts_3d)
-            _progress(idx + 1, n_steps, f"Processing frame {idx + 1}/{n_steps}")
+            step_idx = (n_steps + idx + 1) if occlusion_interpolation else (idx + 1)
+            _progress(
+                step_idx,
+                processing_total,
+                f"Triangulating frame {idx + 1}/{n_steps}",
+            )
 
         cloud = merge_profiles(profiles)
 
