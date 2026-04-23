@@ -19,9 +19,11 @@ Run with:
     python -m scanner.interface.web
 """
 
+import base64
 import io
 import json
 import logging
+import math
 import os
 import queue
 import threading
@@ -103,6 +105,31 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     }
     _scan_lock = threading.Lock()
     _sse_queue: queue.Queue = queue.Queue(maxsize=50)
+
+    def _load_background_filter_config() -> dict:
+        from scanner.calibration import load_background_filter
+
+        try:
+            return load_background_filter()
+        except Exception as exc:
+            logger.warning("Background filter config unreadable: %s", exc)
+            return {
+                "enabled": False,
+                "crop_left_of_col": None,
+                "background_line_max_col": None,
+                "margin_px": 0,
+                "threshold": None,
+                "min_pixels": None,
+                "extraction_mode": None,
+                "captured_at": None,
+            }
+
+    def _background_crop_left_col() -> float | None:
+        data = _load_background_filter_config()
+        if not data.get("enabled"):
+            return None
+        value = data.get("crop_left_of_col")
+        return None if value is None else float(value)
 
     def _push_sse(data: dict) -> None:
         """Push a dict as an SSE event."""
@@ -268,7 +295,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         import cv2
         import numpy as np
         from scanner.hardware.mock import MockCamera
-        from scanner.processing import extract_laser_line
+        from scanner.processing import crop_laser_line, extract_laser_line
 
         angle_rad = float(request.args.get("angle", 0.0))
         cam_cfg = settings.get("camera", {"resolution": [640, 480]})
@@ -288,6 +315,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels=min_px,
             subpixel=subpixel,
             mode=extraction_mode,
+        )
+        line = crop_laser_line(
+            line,
+            crop_left_of_col=_background_crop_left_col(),
+            min_points=min_px,
         )
 
         # Draw detected pixels as red dots on the frame
@@ -354,7 +386,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         import cv2
         import numpy as np
         from scanner.hardware import HardwareError, camera_capture
-        from scanner.processing import extract_laser_line
+        from scanner.processing import crop_laser_line, extract_laser_line
 
         if not _manual_allowed():
             return Response(status=409)
@@ -386,6 +418,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels=min_px,
             subpixel=True,
             mode=extraction_mode,
+        )
+        line = crop_laser_line(
+            line,
+            crop_left_of_col=_background_crop_left_col(),
+            min_points=min_px,
         )
 
         signal = frame[:, :, 1]  # green channel only
@@ -514,6 +551,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         return render_template(
             "calibration.html",
             use_checkerboard=use_checkerboard,
+            background_filter=_load_background_filter_config(),
         )
 
     @app.route("/calibration/camera", methods=["POST"])
@@ -634,13 +672,120 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return jsonify({"error": f"Camera intrinsics unavailable: {exc}"}), 409
 
         try:
-            plane = calibrate_laser_plane(images, distances, camera_matrix, dist_coeffs)
+            plane = calibrate_laser_plane(
+                images,
+                distances,
+                camera_matrix,
+                dist_coeffs,
+                crop_left_of_col=_background_crop_left_col(),
+            )
             return jsonify({"status": "ok", "plane": plane.tolist()})
         except CalibrationError as exc:
             return jsonify({"error": str(exc)}), 422
         except Exception as exc:
             logger.error("Laser calibration error: %s", exc)
             return jsonify({"error": "Internal error during laser calibration"}), 500
+
+    @app.route("/calibration/background-filter", methods=["POST"])
+    def calibration_background_filter() -> Response:
+        """Capture an empty frame and calibrate the left-image crop."""
+        import cv2
+        import numpy as np
+        from scanner.calibration import save_background_filter
+        from scanner.hardware import HardwareError, camera_capture, laser_set
+        from scanner.processing import extract_laser_line
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+
+        proc_cfg = settings.get("processing", {})
+        default_threshold = int(proc_cfg.get("laser_threshold", 60))
+        default_min_px = int(proc_cfg.get("min_line_pixels", 15))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+
+        payload = request.get_json(silent=True) or {}
+        try:
+            threshold = int(payload.get("threshold", default_threshold))
+            min_px = int(payload.get("min_pixels", default_min_px))
+            margin_px = int(payload.get("margin_px", 6))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid calibration payload: {exc}"}), 400
+
+        threshold = max(0, min(255, threshold))
+        min_px = max(1, min(4096, min_px))
+        margin_px = max(0, min(200, margin_px))
+
+        frame = None
+        try:
+            laser_set(True)
+            frame = camera_capture()
+        except HardwareError as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            try:
+                laser_set(False)
+            except Exception:
+                pass
+
+        if frame is None:
+            return jsonify({"error": "Camera capture failed"}), 500
+
+        line = extract_laser_line(
+            frame,
+            threshold=threshold,
+            min_pixels=min_px,
+            subpixel=True,
+            mode=extraction_mode,
+        )
+        if line.shape[0] < min_px:
+            return jsonify(
+                {
+                    "error": (
+                        f"Ligne de fond introuvable: {line.shape[0]} points detectes "
+                        f"(minimum requis: {min_px})"
+                    )
+                }
+            ), 422
+
+        background_col = float(np.max(line[:, 0]))
+        crop_left_of_col = float(math.ceil(background_col + margin_px))
+        saved = save_background_filter(
+            crop_left_of_col=crop_left_of_col,
+            background_line_max_col=background_col,
+            margin_px=margin_px,
+            threshold=threshold,
+            min_pixels=min_px,
+            extraction_mode=extraction_mode,
+        )
+
+        overlay = frame.copy()
+        for i in range(line.shape[0]):
+            col, row = int(round(line[i, 0])), int(round(line[i, 1]))
+            cv2.circle(overlay, (col, row), 2, (0, 0, 255), -1)
+        cutoff_x = int(round(crop_left_of_col))
+        cv2.line(
+            overlay,
+            (cutoff_x, 0),
+            (cutoff_x, overlay.shape[0] - 1),
+            (255, 255, 0),
+            2,
+        )
+        ok, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not ok:
+            return jsonify({"error": "Could not encode calibration preview"}), 500
+
+        saved["preview_jpeg_base64"] = base64.b64encode(buf.tobytes()).decode("ascii")
+        return jsonify(saved)
+
+    @app.route("/calibration/background-filter/disable", methods=["POST"])
+    def calibration_background_filter_disable() -> Response:
+        """Disable the calibrated left-image crop."""
+        from scanner.calibration import disable_background_filter
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+
+        return jsonify(disable_background_filter())
 
     # ------------------------------------------------------------------ #
     # Routes — USB export

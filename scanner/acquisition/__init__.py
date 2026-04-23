@@ -27,7 +27,8 @@ def _save_frame(frame: np.ndarray, step_idx: int, config: dict) -> None:
     """Save *frame* to disk with laser-line overlay."""
     try:
         import cv2
-        from scanner.processing import extract_laser_line
+        from scanner.calibration import load_background_filter
+        from scanner.processing import crop_laser_line, extract_laser_line
 
         os.makedirs(_FRAME_DIR, exist_ok=True)
 
@@ -36,6 +37,12 @@ def _save_frame(frame: np.ndarray, step_idx: int, config: dict) -> None:
         min_px = int(proc_cfg.get("min_line_pixels", 10))
         subpixel = bool(proc_cfg.get("subpixel", True))
         extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        background_filter = load_background_filter()
+        crop_left_of_col = (
+            float(background_filter["crop_left_of_col"])
+            if background_filter.get("enabled") and background_filter.get("crop_left_of_col") is not None
+            else None
+        )
 
         overlay = frame.copy()
         try:
@@ -46,6 +53,7 @@ def _save_frame(frame: np.ndarray, step_idx: int, config: dict) -> None:
                 subpixel=subpixel,
                 mode=extraction_mode,
             )
+            line = crop_laser_line(line, crop_left_of_col=crop_left_of_col, min_points=min_px)
             for i in range(line.shape[0]):
                 col, row = int(round(line[i, 0])), int(round(line[i, 1]))
                 cv2.circle(overlay, (col, row), 1, (0, 0, 255), -1)
