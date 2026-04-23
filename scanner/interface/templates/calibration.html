@@ -75,6 +75,14 @@
             </div>
           </div>
 
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label form-label-sm">Stabilisation (ms)</label>
+              <input class="form-control form-control-sm" type="number"
+                     id="cam-auto-warmup" value="{{ camera_capture_defaults.warmup_ms }}" min="0" max="10000" />
+            </div>
+          </div>
+
           <div>
             <img id="cam-calib-preview" src="" alt="Apercu damier" class="img-fluid rounded" style="background:#000; min-height:240px; width:100%; object-fit:contain;" />
             <div id="cam-calib-preview-stats" class="state-msg mt-2" style="font-family:monospace; font-size:0.85em;">
@@ -350,7 +358,7 @@ function cameraCalibPayload() {
     board_cols: parseInt(form.querySelector('[name="board_cols"]').value || '9', 10),
     board_rows: parseInt(form.querySelector('[name="board_rows"]').value || '6', 10),
     square_size_mm: parseFloat(form.querySelector('[name="square_size_mm"]').value || '25'),
-    warmup_ms: 0,
+    warmup_ms: parseInt(document.getElementById('cam-auto-warmup').value || '1500', 10),
     exposure_us: parseInt(document.getElementById('cam-auto-exposure').value || '10000', 10),
     gain: parseFloat(document.getElementById('cam-auto-gain').value || '2.0'),
     awb_mode: document.getElementById('cam-auto-awb').value || 'auto'
@@ -424,7 +432,8 @@ function toggleCameraCalibPreview() {
     return;
   }
   refreshCameraCalibPreview();
-  _camCalibPreviewTimer = setInterval(refreshCameraCalibPreview, 1000);
+  var warmup = parseInt(document.getElementById('cam-auto-warmup').value || '1500', 10);
+  _camCalibPreviewTimer = setInterval(refreshCameraCalibPreview, Math.max(2000, warmup + 500));
   if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-2"></i>Stop aperçu';
 }
 

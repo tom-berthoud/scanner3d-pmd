@@ -204,6 +204,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             with camera_temporary_config(camera_overrides):
                 if apply_warmup and capture_cfg["warmup_ms"] > 0:
                     time.sleep(capture_cfg["warmup_ms"] / 1000.0)
+                # Let the sensor/ISP settle after changing exposure/gain/AWB.
+                for _ in range(2):
+                    camera_capture()
+                    time.sleep(0.08)
                 frame = camera_capture()
         except HardwareError:
             raise
@@ -712,7 +716,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         try:
             _, preview_jpeg_bytes, found = _capture_checkerboard_frame(
                 capture_cfg,
-                apply_warmup=False,
+                apply_warmup=True,
             )
         except HardwareError:
             return Response(status=503)
@@ -783,7 +787,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         try:
             raw_jpeg_bytes, preview_jpeg_bytes, found = _capture_checkerboard_frame(
                 capture_cfg,
-                apply_warmup=False,
+                apply_warmup=True,
             )
         except HardwareError as exc:
             return jsonify({"error": str(exc)}), 500
