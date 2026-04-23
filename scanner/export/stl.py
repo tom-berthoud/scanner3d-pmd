@@ -18,7 +18,7 @@ def export_stl(
     cloud: np.ndarray,
     path: str,
     profiles: Sequence[np.ndarray] | None = None,
-    mesh_mode: str = "auto",
+    mesh_mode: str = "cloud",
 ) -> None:
     """Export *cloud* as a binary STL file at *path*.
 
@@ -55,7 +55,7 @@ def export_obj(
     cloud: np.ndarray,
     path: str,
     profiles: Sequence[np.ndarray] | None = None,
-    mesh_mode: str = "auto",
+    mesh_mode: str = "cloud",
 ) -> None:
     """Export *cloud* as a Wavefront OBJ file at *path*.
 
@@ -85,7 +85,7 @@ def export_obj(
 def _build_mesh(
     cloud: np.ndarray,
     profiles: Sequence[np.ndarray] | None = None,
-    mesh_mode: str = "auto",
+    mesh_mode: str = "cloud",
 ) -> "trimesh.Trimesh":  # type: ignore[name-defined]
     if mesh_mode not in {"auto", "profiles", "cloud"}:
         raise ValueError(f"Unknown mesh_mode {mesh_mode!r}")

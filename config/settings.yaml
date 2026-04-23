@@ -51,7 +51,7 @@ calibration:
 export:
   default_format: stl       # format par défaut : stl / obj
   output_dir: /tmp/scans    # dossier de sortie des fichiers 3D
-  mesh_mode: profiles       # profiles = relie les profils successifs avec caps
+  mesh_mode: cloud          # cloud = alpha shape d'abord, puis convex hull si echec
 
 interface:
   web_host: 0.0.0.0         # écouter sur toutes les interfaces
