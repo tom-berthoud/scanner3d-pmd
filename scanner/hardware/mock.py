@@ -224,6 +224,10 @@ class MockCamera:
         )
         return frame
 
+    def close(self) -> None:
+        """Release mock camera resources (no-op)."""
+        logger.debug("MockCamera closed")
+
     def _surface_y(self, x_cam: float, z_cam: float, theta: float) -> Optional[float]:
         """Return the upper-surface Y coordinate (mm) at the given laser-plane point.
 

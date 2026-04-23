@@ -42,7 +42,7 @@ reconstruction:
   outlier_std_ratio: 2.0    # ratio écart-type pour filtrage outliers
 
 calibration:
-  use_checkerboard: false    # false = desactive la calibration camera par damier et utilise des intrinsèques approx
+  use_checkerboard: true    # false = desactive la calibration camera par damier et utilise des intrinsèques approx
   approx_focal_scale: 1.25  # focale approx = largeur_image * facteur (640 px -> 800 px)
 
 export:

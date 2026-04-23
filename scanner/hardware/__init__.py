@@ -15,7 +15,9 @@ Exports:
     display_status: update display with scanner state.
 """
 
+import copy
 import logging
+from contextlib import contextmanager
 from typing import Optional
 
 import numpy as np
@@ -54,6 +56,18 @@ _motor_instance = None
 _laser_instance = None
 _led_instance = None
 _display_instance = None
+_camera_config: dict | None = None
+
+
+def _create_camera_instance(camera_config: dict):
+    if _ON_PI:
+        from scanner.hardware.camera import PiCamera
+
+        return PiCamera(camera_config)
+
+    from scanner.hardware.mock import MockCamera
+
+    return MockCamera(camera_config)
 
 
 def init_hardware(config: dict) -> None:
@@ -67,22 +81,23 @@ def init_hardware(config: dict) -> None:
     """
     global _camera_instance, _motor_instance, _laser_instance
     global _led_instance, _display_instance
+    global _camera_config
 
     logger.info("Initialising hardware (on_pi=%s)", _ON_PI)
 
     iface_cfg = config.get("interface", {})
     display_type = str(iface_cfg.get("display_type", "oled")).lower()
     display_enabled = display_type not in ("none", "off", "disabled")
+    _camera_config = copy.deepcopy(config.get("camera", {}))
 
     try:
         if _ON_PI:
-            from scanner.hardware.camera import PiCamera
             from scanner.hardware.motor import StepperMotor
             from scanner.hardware.laser import Laser
             from scanner.hardware.led import LED
             from scanner.hardware.display import Display
 
-            _camera_instance = PiCamera(config.get("camera", {}))
+            _camera_instance = _create_camera_instance(_camera_config)
             _motor_instance = StepperMotor(config.get("motor", {}))
             _laser_instance = Laser(config.get("laser", {}))
             _led_instance = LED(iface_cfg)
@@ -94,7 +109,7 @@ def init_hardware(config: dict) -> None:
         else:
             from scanner.hardware.mock import MockCamera, MockMotor, MockLaser, MockLED, MockDisplay
 
-            _camera_instance = MockCamera(config.get("camera", {}))
+            _camera_instance = _create_camera_instance(_camera_config)
             _motor_instance = MockMotor(config.get("motor", {}))
             _laser_instance = MockLaser(config.get("laser", {}))
             _led_instance = MockLED(iface_cfg)
@@ -121,6 +136,50 @@ def camera_capture() -> np.ndarray:
     if _camera_instance is None:
         raise HardwareError("Camera not initialised — call init_hardware() first")
     return _camera_instance.capture()
+
+
+def camera_reconfigure(config: dict) -> None:
+    """Recreate the camera singleton with a new configuration."""
+    global _camera_instance, _camera_config
+
+    if _camera_instance is not None and hasattr(_camera_instance, "close"):
+        try:
+            _camera_instance.close()
+        except Exception as exc:
+            logger.warning("Camera close during reconfigure failed: %s", exc)
+
+    try:
+        _camera_instance = _create_camera_instance(config)
+        _camera_config = copy.deepcopy(config)
+    except Exception as exc:
+        raise HardwareError(f"Camera reconfiguration failed: {exc}") from exc
+
+    if not _ON_PI and _motor_instance is not None and hasattr(_motor_instance, "current_angle_rad"):
+        _camera_instance.set_rotation_angle(_motor_instance.current_angle_rad)
+
+
+@contextmanager
+def camera_temporary_config(overrides: dict):
+    """Temporarily apply camera settings for a calibration or debug action."""
+    if _camera_config is None:
+        raise HardwareError("Camera configuration unavailable — call init_hardware() first")
+
+    original = copy.deepcopy(_camera_config)
+    temporary = copy.deepcopy(_camera_config)
+    temporary.update(overrides)
+
+    try:
+        camera_reconfigure(temporary)
+    except Exception:
+        try:
+            camera_reconfigure(original)
+        except Exception as restore_exc:
+            logger.error("Could not restore original camera config after failure: %s", restore_exc)
+        raise
+    try:
+        yield
+    finally:
+        camera_reconfigure(original)
 
 
 def motor_step(n: int, direction: str = "clockwise") -> None:
@@ -218,6 +277,8 @@ __all__ = [
     "HardwareError",
     "init_hardware",
     "camera_capture",
+    "camera_reconfigure",
+    "camera_temporary_config",
     "motor_step",
     "laser_set",
     "led_set",
