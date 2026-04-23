@@ -106,6 +106,38 @@ def _is_gap_fill_allowed(gap_size: int, max_gap: int | None) -> bool:
     return gap_size <= int(max_gap)
 
 
+def _interpolate_circular_series(
+    values: np.ndarray,
+    max_gap: int | None = None,
+) -> tuple[np.ndarray, int]:
+    """Interpolate NaN gaps on a circular 1-D series."""
+    series = np.asarray(values, dtype=np.float64).copy()
+    valid = np.flatnonzero(~np.isnan(series))
+    if valid.size < 2:
+        return series, 0
+
+    added = 0
+    extended = np.concatenate([valid, valid[:1] + len(series)])
+    for left, right in zip(extended[:-1], extended[1:]):
+        gap = int(right - left - 1)
+        if not _is_gap_fill_allowed(gap, max_gap):
+            continue
+
+        interp = np.linspace(
+            series[left % len(series)],
+            series[right % len(series)],
+            gap + 2,
+            dtype=np.float64,
+        )[1:-1]
+        for offset, value in enumerate(interp, start=1):
+            idx = (left + offset) % len(series)
+            if np.isnan(series[idx]):
+                series[idx] = value
+                added += 1
+
+    return series, added
+
+
 def fill_occluded_laser_gaps(
     line: np.ndarray,
     image_height: int,
@@ -170,22 +202,54 @@ def interpolate_laser_profiles(
     filled_points = 0
 
     for row_idx in range(filled.shape[1]):
-        row_series = dense_profiles[:, row_idx]
-        valid_frames = np.flatnonzero(~np.isnan(row_series))
-        if valid_frames.size < 2:
+        row_series, added = _interpolate_circular_series(
+            dense_profiles[:, row_idx],
+            max_gap=max_gap_frames,
+        )
+        filled[:, row_idx] = row_series
+        filled_points += added
+
+    # Enforce a solid profile on each frame: once the row extent of the object
+    # is known, any remaining hole inside that extent is filled.
+    top_rows = np.full(filled.shape[0], np.nan, dtype=np.float64)
+    bottom_rows = np.full(filled.shape[0], np.nan, dtype=np.float64)
+    for frame_idx in range(filled.shape[0]):
+        valid_rows = np.flatnonzero(~np.isnan(filled[frame_idx]))
+        if valid_rows.size == 0:
+            continue
+        top_rows[frame_idx] = float(valid_rows[0])
+        bottom_rows[frame_idx] = float(valid_rows[-1])
+
+    top_rows, top_added = _interpolate_circular_series(top_rows, max_gap=max_gap_frames)
+    bottom_rows, bottom_added = _interpolate_circular_series(
+        bottom_rows,
+        max_gap=max_gap_frames,
+    )
+    filled_points += top_added + bottom_added
+
+    for frame_idx in range(filled.shape[0]):
+        if np.isnan(top_rows[frame_idx]) or np.isnan(bottom_rows[frame_idx]):
             continue
 
-        for left, right in zip(valid_frames[:-1], valid_frames[1:]):
-            gap = int(right - left - 1)
-            if not _is_gap_fill_allowed(gap, max_gap_frames):
-                continue
-            filled[left + 1 : right, row_idx] = np.linspace(
-                row_series[left],
-                row_series[right],
-                gap + 2,
-                dtype=np.float64,
-            )[1:-1]
-            filled_points += gap
+        top = max(0, int(round(top_rows[frame_idx])))
+        bottom = min(image_height - 1, int(round(bottom_rows[frame_idx])))
+        if bottom <= top:
+            continue
+
+        segment = filled[frame_idx, top : bottom + 1].copy()
+        known = np.flatnonzero(~np.isnan(segment))
+        if known.size == 0:
+            continue
+        if known.size == 1:
+            segment[:] = segment[known[0]]
+        else:
+            segment[:] = np.interp(
+                np.arange(segment.size, dtype=np.float64),
+                known.astype(np.float64),
+                segment[known],
+            )
+        filled_points += int(np.isnan(filled[frame_idx, top : bottom + 1]).sum())
+        filled[frame_idx, top : bottom + 1] = segment
 
     results: list[np.ndarray] = []
     for dense in filled:
