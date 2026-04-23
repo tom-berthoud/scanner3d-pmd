@@ -27,15 +27,18 @@ motor:
   enable_pin: 17            # broche GPIO ENABLE (actif bas sur DM320T)
   steps_per_rev: 200        # pas physiques du NEMA 17 (1.8°/pas)
   microstepping: 16          # facteur de microstepping du driver DM320T
-  speed_rpm: 5              # vitesse de rotation (tours/min)
-  accel_steps: 0           # nombre de pas d'accélération/décélération
+  speed_rpm: 50000             # vitesse de rotation (tours/min)
+  accel_steps: 100          # nombre de pas d'accélération/décélération
 
 processing:
   laser_channel: green      # canal couleur à isoler : green (laser vert ~520nm)
   laser_threshold: 60       # seuil de détection; en row_green, il s'applique au vert brut
-  min_line_pixels: 2      # nombre minimum de points de ligne pour valider une détection
+  min_line_pixels: 1      # nombre minimum de points de ligne pour valider une détection
   subpixel: true            # activer la détection sub-pixel (centroïde)
   extraction_mode: row_green  # row_green = 1 point par ligne sur le vert brut
+  occlusion_interpolation: false  # comble les zones cachées du laser avant la reconstruction 3D
+  occlusion_max_gap_rows: 0      # 0 = sans limite, interpolation des trous internes dans une image
+  occlusion_max_gap_frames: 0    # 0 = sans limite, interpolation entre la derniere vue visible et la suivante
 
 reconstruction:
   outlier_nb_neighbors: 20  # voisins pour filtrage outliers (Open3D)
