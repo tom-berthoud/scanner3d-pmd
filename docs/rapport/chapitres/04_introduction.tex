@@ -3,7 +3,7 @@
 \subsection{Contexte}
 
 Ce projet s'inscrit dans le cadre de l'unité d'enseignement
-\uniteEnseignement{} (\filiere, HEIG-VD). Il consiste à concevoir et
+\filiere, HEIG-VD. Il consiste à concevoir et
 réaliser un scanner 3D destiné au \emph{MakeLab} de l'école, afin de
 mettre à disposition des étudiants, collaborateurs et enseignants un
 outil simple pour numériser des objets physiques en modèles 3D
@@ -15,14 +15,16 @@ Les solutions de numérisation 3D du marché se répartissent en trois
 familles : les scanners professionnels à structure de lumière
 (EinScan, Revopoint) offrant une précision élevée mais dont le prix
 dépasse largement le budget d'un projet étudiant, les scanners grand
-public (Creality CR-Scan, Matter and Form) plus abordables mais fermés
-et peu adaptables, et les projets \emph{open-source} à triangulation
-laser ou photogrammétrie.
+public (par exemple Creality CR-Scan ou Matter and Form) plus abordables
+mais souvent liés à un écosystème logiciel constructeur, et les projets
+\emph{open-source} à triangulation laser ou photogrammétrie.
 
 
-La valeur ajoutée de notre approche tient à trois points : un coût
+La valeur ajoutée de l'approche retenue tient à trois points : un coût
 contenu sous 300\,CHF, une intégration pensée pour un usage pédagogique
-(interface web, retour LED, prise en main rapide).
+(interface web, retour LED et écran, prise en main rapide) et une
+architecture ouverte permettant d'expliquer, modifier et améliorer chaque
+étape de la chaîne de mesure.
 
 \subsection{But et objectifs}
 
@@ -110,3 +112,19 @@ figure dans le planning en annexe.
 Rapport technique (ce document), prototype fonctionnel au MakeLab, vidéo
 de démonstration, présentation finale et jeu de scans d'objets de
 référence.
+
+\subsection{État intermédiaire du projet}
+
+Au 27 avril, le projet ne se limite plus à une validation logicielle en
+simulation. Un prototype physique existe : boîte découpée au laser,
+plateau motorisé, laser monté sur support imprimé en 3D, caméra placée
+à environ $30^\circ$, électronique d'alimentation et de commande, LEDs,
+écran et interface web. Un cycle de scan réel peut être lancé et produit
+un résultat exploitable pour l'analyse.
+
+Les essais montrent cependant que la qualité finale du modèle dépend
+encore fortement de trois points : la visibilité de la ligne laser par la
+caméra, la robustesse de l'extraction de points et la reconstruction du
+maillage STL à partir du nuage de points. Le présent rapport intermédiaire
+documente donc à la fois les éléments validés, les limites identifiées et
+les actions prévues pour la phase suivante.

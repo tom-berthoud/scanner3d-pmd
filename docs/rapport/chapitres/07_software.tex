@@ -4,22 +4,26 @@
 
 Le logiciel pilote le scanner et transforme une série d'images du plan
 laser déformé par l'objet en un modèle 3D exportable (STL ou OBJ),
-conformément aux exigences \textbf{E6} (format de sortie) et \textbf{E13}
-(traitement, filtrage, export) du cahier des charges.
+conformément aux exigences \textbf{E6} et \textbf{E13}. Le traitement suit
+un pipeline linéaire :
+\textbf{Acquisition} $\rightarrow$ \textbf{Extraction} $\rightarrow$
+\textbf{Triangulation} $\rightarrow$ \textbf{Reconstruction}
+$\rightarrow$ \textbf{Export}.
 
-Le traitement suit un pipeline linéaire à quatre étages :
-\textbf{Acquisition} $\rightarrow$ \textbf{Traitement} $\rightarrow$
-\textbf{Reconstruction} $\rightarrow$ \textbf{Export}. Une machine d'états
-(FSM) orchestre les transitions et garantit la cohérence des signaux
-utilisateur (LEDs, écran, interface web), en réponse à l'exigence
-\textbf{E5} (retour visuel).
+Au rapport intermédiaire, ce pipeline n'est plus seulement validé en
+simulation. Il est utilisé sur le prototype réel : un scan peut être
+lancé depuis l'interface web, les images sont capturées, la ligne laser
+est extraite, un nuage de points est produit et un fichier STL peut être
+exporté. Les limites actuelles se situent principalement dans
+l'extraction incomplète de certains points et dans la reconstruction du
+maillage à partir du nuage.
 
 \subsection{Architecture logicielle}
 
 L'architecture est modulaire : chaque responsabilité est isolée dans un
-sous-paquet Python exposant une API stable. Cette séparation permet le
-développement sans matériel (mock caméra/moteur/laser) et le remplacement
-ciblé d'un étage sans impacter les autres.
+sous-paquet Python exposant une API stable. Cette séparation a permis de
+développer d'abord en mode \emph{mock}, puis de transférer le pipeline sur
+le matériel réel sans réécrire l'ensemble du système.
 
 \begin{figure}[H]
   \centering
@@ -28,50 +32,66 @@ ciblé d'un étage sans impacter les autres.
   \label{fig:archi-composants}
 \end{figure}
 
-\subsubsection{Modules}
-
 \begin{table}[H]
   \centering
   \begin{tabular}{@{}p{3.5cm}p{10.5cm}@{}}
     \toprule
     \textbf{Module} & \textbf{Responsabilité} \\
     \midrule
-    \texttt{hardware}       & Abstraction GPIO (moteur, laser, LEDs, caméra). Bascule automatique vers un \emph{mock} lorsque \texttt{gpiozero} est indisponible. \\
-    \texttt{acquisition}    & Boucle capture : un pas moteur, allumage laser, capture image, extinction laser, sauvegarde. \\
-    \texttt{processing}     & Extraction de la ligne laser (seuillage $G-R$, centroïde sous-pixel) et triangulation pixel $\rightarrow$ point 3D. \\
-    \texttt{reconstruction} & Fusion des profils, filtrage d'\emph{outliers} par KDTree. \\
-    \texttt{export}         & Génération STL / OBJ via \emph{convex hull} \texttt{trimesh}. \\
+    \texttt{hardware}       & Abstraction du moteur, laser, LEDs, écran et caméra, avec mode \emph{mock}. \\
+    \texttt{acquisition}    & Séquence moteur, laser, capture image et sauvegarde des images. \\
+    \texttt{processing}     & Extraction de la ligne laser et triangulation pixel $\rightarrow$ point 3D. \\
+    \texttt{reconstruction} & Fusion des profils en nuage de points et filtrage. \\
+    \texttt{export}         & Génération STL / OBJ et export du nuage brut. \\
     \texttt{orchestration}  & Machine d'états et workflow de scan. \\
-    \texttt{calibration}    & Calibration intrinsèque caméra (OpenCV) et plan laser. \\
-    \texttt{interface}      & Serveur web Flask + SSE, affichage local TFT. \\
+    \texttt{calibration}    & Outils de calibration caméra, laser et filtres de fond. \\
+    \texttt{interface}      & Serveur web Flask, SSE, viewer 3D, commandes manuelles et écran local. \\
     \bottomrule
   \end{tabular}
   \caption{Modules logiciels et responsabilités.}
   \label{tab:modules}
 \end{table}
 
-\subsubsection{Flux de données}
+\subsection{Chaîne de traitement réelle}
 
-La figure~\ref{fig:sequence-scan} détaille la séquence d'un cycle complet.
-Pour un tour de plateau, 200 images sont acquises (pas de $1{,}8^\circ$),
-chacune produisant un profil 2D, puis un nuage de points 3D par
-triangulation avec le plan laser calibré.
+La chaîne réelle actuellement observée est la suivante :
+
+\begin{enumerate}
+  \item capture d'une image nette avec une ligne laser visible ;
+  \item extraction des points de la ligne laser ;
+  \item conversion des points image en nuage de points 3D ;
+  \item export d'un STL à partir du nuage.
+\end{enumerate}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\linewidth]{diagrams/sequence_scan.png}
-  \caption{Diagramme de séquence d'un cycle de scan.}
-  \label{fig:sequence-scan}
+  \fbox{\parbox[c][5cm][c]{0.9\linewidth}{\centering
+  Figure à insérer : quatre étapes d'un scan réel, de gauche à droite :
+  image laser, points extraits, nuage de points, STL exporté.}}
+  \caption{Chaîne de traitement observée sur le prototype réel.}
+  \label{fig:pipeline-reel}
 \end{figure}
+
+L'acquisition image est jugée de bonne qualité. L'extraction récupère une
+grande partie de la ligne laser, de l'ordre de 90\,\% sur les essais
+actuels, mais perd encore des points. Deux cas sont distingués : soit le
+laser est physiquement invisible pour la caméra à cause d'une occultation,
+soit le laser est visible mais l'algorithme ne détecte pas tous les points
+à cause des paramètres de seuil ou de la méthode d'extraction.
+
+La transformation des points extraits en nuage de points donne un rendu
+propre et exploitable pour l'analyse. Le passage du nuage de points au
+STL reste le point logiciel le plus critique, surtout pour les formes non
+cylindriques ou anguleuses.
 
 \subsection{Orchestration et machine d'états}
 
-La FSM centralise les transitions légales et déclenche les effets de bord
-associés (changement de LED, arrêt du laser en cas d'erreur). Les états
-\texttt{IDLE}, \texttt{CALIBRATING}, \texttt{SCANNING}, \texttt{PROCESSING},
-\texttt{EXPORTING}, \texttt{COMPLETE} et \texttt{ERROR} couvrent
-l'ensemble du cycle de vie. Toute transition invalide lève une
-exception plutôt qu'un état incohérent.
+La machine d'états centralise les transitions légales et déclenche les
+effets de bord associés : changement de LED, progression de l'interface,
+arrêt du laser en cas d'erreur. Les états
+\texttt{IDLE}, \texttt{CALIBRATING}, \texttt{SCANNING},
+\texttt{PROCESSING}, \texttt{EXPORTING}, \texttt{COMPLETE} et
+\texttt{ERROR} couvrent l'ensemble du cycle de vie.
 
 \begin{figure}[H]
   \centering
@@ -80,37 +100,37 @@ exception plutôt qu'un état incohérent.
   \label{fig:fsm}
 \end{figure}
 
-\paragraph{Sécurité laser (exigence E19).}
-Le laser est désactivé par défaut au démarrage. Un passage en
-\texttt{ERROR} force sa coupure via un \emph{observer} de la FSM. Aucune
-routine de calibration ne l'active sans confirmation. Un interrupteur de
-porte (SW1, voir section électronique) complète la protection matérielle.
+\paragraph{Sécurité laser.}
+Le logiciel désactive le laser au démarrage et lors d'un passage en état
+\texttt{ERROR}. Ce comportement est nécessaire mais ne remplace pas
+l'interlock matériel du capot, qui reste à intégrer pour la version
+utilisateur.
 
 \subsection{Calibration}
 
-Trois fichiers YAML, lus en lecture seule par le pipeline de scan,
-stockent les paramètres calibrés :
+Le pipeline s'appuie sur trois familles de paramètres : intrinsèques
+caméra, plan laser et géométrie de la plateforme. Les essais actuels ont
+permis d'obtenir une calibration suffisante pour retrouver des dimensions
+cohérentes en largeur et en profondeur sur des objets simples. La hauteur
+du modèle reste toutefois déformée vers le haut ; la cause n'a pas encore
+été isolée et devra être diagnostiquée lors de la prochaine phase.
 
-\begin{itemize}
-  \item \texttt{camera\_intrinsics.yaml} : matrice $3\times3$
-        $(f_x, f_y, c_x, c_y)$ et coefficients de distorsion
-        $(k_1, k_2, p_1, p_2, k_3)$, obtenus par damier + OpenCV.
-  \item \texttt{laser\_plane.yaml} : équation du plan laser
-        $[a, b, c, d]$ dans le repère caméra.
-  \item \texttt{platform.yaml} : point de l'axe de rotation et nombre
-        de pas par tour.
-\end{itemize}
-
-La règle d'immutabilité à l'exécution (le scan ne modifie jamais ces
-fichiers) garantit la reproductibilité.
+La caméra présente encore de la distorsion. Le protocole final devra
+stabiliser la calibration caméra, la calibration du plan laser et la
+position de l'axe de rotation, puis vérifier leur cohérence sur des
+pièces étalons.
 
 \subsection{Interface utilisateur}
 
-L'interface web Flask (exigence \textbf{E10, E11}) expose les routes
-nécessaires au lancement du scan, au suivi temps réel via Server-Sent
-Events et au téléchargement du résultat. Un viewer Three.js charge
-directement le STL binaire. Un afficheur TFT local reproduit l'état
-courant pour un usage sans écran externe.
+L'interface web Flask permet déjà de lancer un scan, suivre son état,
+visualiser les images, télécharger le résultat et afficher le STL dans un
+viewer Three.js. Elle est utilisable pour la démonstration, mais reste
+qualitative et orientée debug. L'ergonomie finale devra simplifier les
+actions utilisateur, clarifier les messages d'erreur et mieux distinguer
+les modes scan, calibration et commande manuelle.
+
+Les LEDs et l'écran fonctionnent et complètent
+l'interface web pour indiquer l'état du système.
 
 \subsection{Choix techniques}
 
@@ -120,29 +140,30 @@ courant pour un usage sans écran externe.
     \toprule
     \textbf{Besoin} & \textbf{Choix} & \textbf{Justification} \\
     \midrule
-    Traitement d'image      & OpenCV          & Calibration caméra intégrée, léger sur Pi. \\
-    Calcul numérique        & NumPy           & Standard scientifique Python. \\
-    Filtrage de nuage       & SciPy KDTree    & Plus léger qu'Open3D sur Pi. \\
-    Export maillé           & trimesh         & Support STL/OBJ sans dépendance GUI. \\
-    GPIO                    & gpiozero        & API haut niveau, fallback \texttt{RPi.GPIO}. \\
-    Interface web           & Flask + SSE     & Simple, SSE pour les mises à jour sans WebSocket. \\
-    Viewer 3D               & Three.js        & Lecture native du STL binaire. \\
-    Tests                   & pytest          & Standard, tous les GPIO mockés. \\
+    Traitement d'image      & OpenCV          & Extraction de ligne et calibration caméra. \\
+    Calcul numérique        & NumPy           & Standard scientifique Python, adapté au Pi. \\
+    Filtrage de nuage       & SciPy KDTree    & Solution légère pour filtrer les points aberrants. \\
+    Export maillé actuel    & \texttt{trimesh} & Export STL/OBJ et maillage de base. \\
+    Interface web           & Flask + SSE     & Simple, réactive, suffisante pour le suivi temps réel. \\
+    Viewer 3D               & Three.js        & Visualisation directe du STL dans le navigateur. \\
+    Tests                   & pytest          & Validation des modules de traitement et de la machine d'états. \\
     \bottomrule
   \end{tabular}
   \caption{Bibliothèques et justifications.}
   \label{tab:choix-tech}
 \end{table}
 
-\subsection{Points ouverts}
+\subsection{Limites identifiées et actions prévues}
 
 \begin{itemize}
-  \item Reconstruction concave (Poisson, \emph{alpha shape}) : actuellement
-        \emph{convex hull}, suffisant pour un MVP mais limité pour les formes
-        creuses. \emph{À compléter lors de la V2.}
-  \item Export sur clé USB : stratégie de montage automatique à définir.
-  \item Performances de bout en bout à mesurer pour respecter la cible
-        de scan $<$ 10\,min (besoin B4 du CDC V2) et la précision
-        \textbf{E24} ($\leq 2$\,mm d'erreur absolue, $\leq 1$\,mm de
-        répétabilité). \emph{Mesures terrain à reporter.}
+  \item \textbf{Extraction incomplète} : ajuster les seuils, améliorer
+        l'algorithme et distinguer les pertes dues au logiciel des pertes
+        dues aux occultations physiques.
+  \item \textbf{Maillage STL} : évaluer des solutions open-source de
+        reconstruction telles qu'Open3D, Poisson reconstruction ou
+        alpha-shape.
+  \item \textbf{Deuxième caméra} : développer la calibration et la fusion
+        des mesures provenant de deux caméras dans un même repère.
+  \item \textbf{Déformation en hauteur} : diagnostiquer la cause
+        géométrique ou logicielle à partir de pièces étalons.
 \end{itemize}

@@ -2,11 +2,17 @@
 
 \subsection{Vue d'ensemble}
 
-L'électronique du scanner repose sur une carte Raspberry\,Pi\,4 qui pilote
-l'ensemble des actionneurs et capteurs via ses GPIO. Les fonctions
-techniques adressées sont la capture des images (\textbf{FT4}), le pilotage
-du plateau rotatif (\textbf{FT7}) et la communication avec l'utilisateur
-(\textbf{FT2, FT3}).
+L'électronique du scanner repose sur une carte Raspberry\,Pi\,4 qui
+pilote les actionneurs et capteurs via ses GPIO. Les fonctions techniques
+adressées sont la capture des images (\textbf{FT4}), le pilotage du
+plateau rotatif (\textbf{FT7}), la commande du laser et la communication
+avec l'utilisateur (\textbf{FT2, FT3}).
+
+Au rapport intermédiaire, l'architecture électronique est définie et les
+fonctions principales sont opérationnelles en test : alimentation du
+système, commande du laser, rotation du moteur, acquisition caméra,
+retour par LEDs et écran. L'intégration de sécurité du
+capot reste à finaliser.
 
 \begin{table}[H]
   \centering
@@ -16,23 +22,32 @@ du plateau rotatif (\textbf{FT7}) et la communication avec l'utilisateur
     \midrule
     Unité de calcul        & Raspberry Pi 4 Model B 4\,GB & --- \\
     Acquisition image      & Pi Camera Module 3 (IMX708)  & CSI \\
-    Éclairage structuré    & Laser ligne vert VLM-520     & GPIO (via MOSFET) \\
+    Éclairage structuré    & Laser ligne vert VLM-520     & GPIO via étage de commande \\
     Rotation plateau       & Moteur NEMA\,17 + driver DM320T & GPIO STEP / DIR \\
-    Afficheur local        & TFT 1{,}3" IPS 240$\times$240 & SPI \\
-    Sécurité porte         & Micro-interrupteur SW1       & GPIO (entrée) \\
-    Signalisation          & LEDs (vert / orange / rouge) & GPIO \\
+    Interface locale       & Écran tactile 7 pouces       & HDMI / USB tactile \\
+    Sécurité porte         & Fin de course / interlock à intégrer & GPIO entrée \\
+    Signalisation          & LEDs                         & GPIO \\
     \bottomrule
   \end{tabular}
   \caption{Composants électroniques principaux et interfaces.}
   \label{tab:bom-electronique}
 \end{table}
 
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{0.85\linewidth}{\centering
+  Photo à insérer : câblage actuel du prototype, Raspberry Pi,
+  driver moteur, alimentation, commande laser et LEDs.}}
+  \caption{Électronique du prototype au rapport intermédiaire.}
+  \label{fig:proto-elec}
+\end{figure}
+
 \subsection{Schéma Raspberry Pi}
 
-Le schéma page~\ref{fig:sch-rpi} présente le câblage complet autour du
+Le schéma page~\ref{fig:sch-rpi} présente le câblage autour du
 Raspberry Pi : pilotage du laser et du moteur au travers d'un étage de
-commande à MOSFET (T1--T4), lecture de l'interrupteur de porte et
-connexion de l'afficheur SPI et de la caméra CSI.
+commande, lecture prévue de l'interrupteur de porte, connexion de
+l'écran et de la caméra.
 
 \begin{figure}[H]
   \centering
@@ -43,54 +58,63 @@ connexion de l'afficheur SPI et de la caméra CSI.
 
 \subsubsection{Pilotage du laser et signaux logiques}
 
-Le laser est commuté par le MOSFET \texttt{T2} piloté par la GPIO
-\emph{Laser~on}. Conformément à la contrainte de sécurité \textbf{E19}, la
-commande par défaut au démarrage est à l'état bas (laser éteint) et le
-logiciel force cette coupure à tout passage en état \texttt{ERROR}.
+Le laser est commandé électroniquement et peut être allumé ou éteint
+volontairement pendant les essais. Le logiciel impose l'extinction du
+laser en cas d'erreur de scan et le laser reste désactivé par défaut au
+démarrage, conformément aux règles de sécurité du projet.
 
-Les MOSFETs \texttt{T1}--\texttt{T4} servent d'adaptation de niveau et
-d'isolation du Raspberry Pi vis-à-vis des charges 12\,V (laser, moteur
-via driver).
+La validation intermédiaire montre que la commande fonctionne, mais la
+sécurité finale ne peut pas se limiter au logiciel. L'interlock de capot
+doit encore être intégré afin que l'ouverture de la boîte coupe ou
+interdise l'activation du laser.
 
 \subsubsection{Pilotage du moteur}
 
-Le driver \texttt{DM320T} reçoit deux signaux logiques du Pi,
-\emph{Step-motor~Pul} (pas) et \emph{Step-motor~Dir} (sens). Il assure le
-\emph{microstepping} jusqu'à 1/32 et isole le moteur du Pi via
-opto-couplage interne. L'alimentation de puissance du driver est
-prélevée sur le bus 12\,V (voir chapitre \og Système électrique\fg{}).
+Le driver \texttt{DM320T} reçoit les signaux \emph{Step} et \emph{Dir}
+du Raspberry Pi. Le moteur entraîne le plateau pendant les scans réels
+et ne constitue pas, à ce stade, le blocage principal. Les améliorations
+attendues concernent plutôt le maintien mécanique de la pièce et le
+centrage sur le plateau.
 
-\subsubsection{Capteur de porte (interlock)}
+\subsubsection{Affichage et signalisation}
 
-Le micro-interrupteur \texttt{SW1} est lu en entrée GPIO. Son état
-conditionne, au niveau logiciel, l'autorisation d'activer le laser
-(exigences \textbf{E19}). \emph{À compléter : stratégie de filtrage
-anti-rebond et comportement en cas d'ouverture pendant un scan.}
+Les LEDs et l'écran sont fonctionnels et permettent
+d'afficher l'état du système. Cet écran sert d'interface locale pour
+l'utilisation sans ordinateur externe. Cette signalisation complète
+l'interface web et répond à l'exigence de retour utilisateur
+(\textbf{E5}). La version finale devra aligner strictement les états
+affichés avec la machine d'états logicielle : attente, scan, traitement,
+fin et erreur.
+
+\subsubsection{Capteur de porte}
+
+Le capteur de porte prévu n'est pas encore intégré au prototype utilisé
+pour les essais. Il reste donc à câbler et valider le comportement
+suivant : ouverture du capot pendant ou avant un scan, désactivation du
+laser et passage dans un état sûr.
 
 \subsection{Justification des choix}
 
 \begin{itemize}
-  \item \textbf{Raspberry Pi 4} : capacité CPU suffisante pour la
-        triangulation en Python, Wi-Fi intégré pour l'interface web
-        (\textbf{E10}), très large écosystème logiciel.
-  \item \textbf{Pi Camera Module 3} : bonne sensibilité au 520\,nm (canal
-        vert $\approx$95\,\% à la longueur d'onde du laser), facteur de
-        contraste $G/R \approx 30$, autofocus verrouillable en manuel pour
-        préserver la calibration.
-  \item \textbf{Driver DM320T} : \emph{microstepping} fin pour un mouvement
-        régulier du plateau, interface STEP/DIR universelle, limite en
-        courant réglable.
-  \item \textbf{Afficheur SPI 1{,}3"} : suffisant pour un retour visuel
-        minimal local, empreinte mémoire et GPIO réduite.
+  \item \textbf{Raspberry Pi 4} : capacité CPU suffisante pour le
+        traitement Python, interface réseau intégrée et compatibilité
+        avec la caméra Pi.
+  \item \textbf{Pi Camera Module 3} : bonne sensibilité au 520\,nm sur le
+        canal vert, ce qui facilite l'extraction de la ligne laser.
+  \item \textbf{Driver DM320T} : interface STEP/DIR simple, adaptée au
+        moteur NEMA\,17 et au pilotage en boucle ouverte.
+  \item \textbf{LEDs et écran} : retour utilisateur
+        local même sans ordinateur connecté à l'interface web.
 \end{itemize}
 
-\subsection{Points ouverts}
+\subsection{Limites identifiées et actions prévues}
 
 \begin{itemize}
-  \item Classe de sécurité exacte du laser VLM-520 à confirmer sur fiche
-        technique.
-  \item Dimensionnement final des résistances de grille des MOSFETs et
-        choix de référence.
-  \item Connectique finale (brochage, choix des connecteurs) non figée.
-  \emph{À compléter après la revue électrique.}
+  \item Intégrer le capteur de capot et vérifier la coupure du laser.
+  \item Finaliser le câblage pour une utilisation durable et propre dans
+        la boîte.
+  \item Vérifier que toutes les ouvertures mécaniques ne permettent pas
+        la sortie du faisceau laser.
+  \item Prévoir l'intégration électrique d'une deuxième caméra USB si les
+        essais de réduction des occultations confirment cette piste.
 \end{itemize}

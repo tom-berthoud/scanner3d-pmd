@@ -2,11 +2,12 @@
 
 \subsection{État d'avancement au rapport intermédiaire}
 
-À la date du présent document, le projet est en phase T20
-(prototype pour démonstration de concept). L'architecture
-logicielle est opérationnelle en mode simulation (mocks matériels),
-la chaîne électronique est dimensionnée et les premières itérations
-mécaniques sont en cours de conception.
+À la date du rapport intermédiaire, le projet dispose d'un prototype réel
+capable d'exécuter un cycle de scan et de produire un résultat exploitable
+pour l'analyse. Le prototype comprend une boîte découpée au laser et
+fermable, un plateau motorisé, un laser monté sur support imprimé en 3D,
+une caméra inclinée d'environ $30^\circ$, l'électronique d'alimentation et
+de commande, les LEDs, l'écran et l'interface web.
 
 \begin{table}[H]
   \centering
@@ -14,22 +15,14 @@ mécaniques sont en cours de conception.
     \toprule
     \textbf{Sous-système} & \textbf{Maturité} & \textbf{État} \\
     \midrule
-    Logiciel (pipeline) & Fonctionnel & Pipeline complet en mode
-    \emph{mock}, export STL/OBJ validé. \\
-    Machine d'états & Fonctionnel & Transitions couvertes par tests
-    unitaires, sécurité laser vérifiée. \\
-    Interface web & Fonctionnel & Flask + SSE, viewer Three.js,
-    calibration UI. \\
-    Électronique & Schéma figé & Schéma validé, approvisionnement
-    des composants en cours. \\
-    Alimentation & Dimensionnée & Architecture deux rails (12\,V
-    / 5\,V) choisie, bilan de consommation à mesurer. \\
-    Mécanique & Conception & Carter et plateau en cours de dessin
-    CAO ; premier prototype d'essai à produire. \\
-    Calibration & Outillage prêt & Routines caméra (OpenCV) et
-    plan laser écrites, à tester sur matériel réel. \\
-    Intégration & À venir & Dépend de la livraison mécanique et
-    du câblage. \\
+    Mécanique & Prototype réel & Boîte, plateau, supports caméra/laser fabriqués ; stabilité et centrage à améliorer. \\
+    Électronique & Fonctionnelle en test & Alimentation, laser, moteur, caméra, LEDs et écran utilisables ; interlock capot à intégrer. \\
+    Logiciel acquisition & Fonctionnel & Scan réel lancé depuis l'interface web, images capturées et sauvegardées. \\
+    Extraction laser & Partiellement validée & Ligne détectée sur la majorité des points ; pertes dues aux seuils et aux occultations. \\
+    Nuage de points & Bon rendu & Conversion 3D propre sur les points extraits. \\
+    Export STL & Critique & Résultat acceptable sur forme cylindrique, mauvais sur formes non cylindriques. \\
+    Interface web & Démontrable & Lancement, suivi, téléchargement et visualisation ; encore orientée debug. \\
+    Validation métrique & À faire & Mesures formelles de précision et répétabilité non encore réalisées. \\
     \bottomrule
   \end{tabular}
   \caption{État de maturité des sous-systèmes au rapport intermédiaire.}
@@ -38,63 +31,102 @@ mécaniques sont en cours de conception.
 
 \subsection{Fonctionnalités déjà démontrées}
 
-En mode simulation (\emph{mock} matériel) :
+Les fonctionnalités suivantes ont été démontrées sur le prototype réel ou
+sur le pipeline logiciel :
 
 \begin{itemize}
-  \item Cycle de scan complet sur 200 pas ($1{,}8^\circ$ par pas)
-        avec objets synthétiques (sphère, cylindre, cube, formes
-        libres).
-  \item Extraction de ligne laser par seuillage $G-R$ + centroïde
-        sous-pixel.
-  \item Reconstruction par fusion des profils et filtrage
-        d'\emph{outliers} KDTree.
-  \item Export STL binaire et OBJ via \texttt{trimesh}.
-  \item Interface web avec suivi temps réel des étapes (SSE),
-        téléchargement du résultat et viewer 3D intégré.
-  \item Couverture de tests unitaires sur la machine d'états et les
-        étages de traitement.
+  \item lancement d'un scan depuis l'interface web ;
+  \item rotation du plateau motorisé ;
+  \item commande du laser ;
+  \item capture d'images réelles avec ligne laser visible ;
+  \item extraction de la ligne laser sur la majorité des points ;
+  \item génération d'un nuage de points 3D ;
+  \item export d'un fichier STL ;
+  \item retour utilisateur via interface web, LEDs et écran.
 \end{itemize}
 
-Reste à démontrer sur matériel réel : acquisition caméra Pi,
-pilotage moteur NEMA\,17 via DM320T, commutation laser par MOSFET,
-cycle de bout en bout.
+Le temps d'un scan réel, de la pièce posée jusqu'à l'export, est
+d'environ 1\,min à 1\,min\,30. La contrainte de scan inférieur à
+10\,minutes est donc atteignable avec une marge importante.
+
+\subsection{Résultats observés}
+
+Les essais actuels donnent des résultats différents selon les formes
+scannées. Un objet cylindrique produit un résultat de bonne qualité. Une
+pièce rectangulaire révèle en revanche une limite de visibilité : dans
+certains angles, la face de l'objet masque la ligne laser à la caméra.
+Les points correspondants ne peuvent donc pas être extraits par une seule
+caméra.
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{0.9\linewidth}{\centering
+  Figure à insérer : comparaison d'un scan de forme cylindrique et d'un
+  scan de pièce rectangulaire montrant les zones problématiques.}}
+  \caption{Résultats intermédiaires sur formes simple et anguleuse.}
+  \label{fig:resultats-scans}
+\end{figure}
+
+Les dimensions en largeur et profondeur sont cohérentes lors de contrôles
+manuels. La hauteur du modèle est en revanche étirée vers le haut. Ce
+défaut est identifié, mais sa cause n'a pas encore été isolée. Les
+mesures actuelles restent donc qualitatives.
+
+\subsection{Analyse de la limite principale}
+
+La limite la plus structurante est l'occultation de la ligne laser dans
+une configuration mono-caméra. Cette limite apparaît clairement sur les
+objets anguleux : le laser éclaire une zone de la pièce, mais cette zone
+peut être cachée du point de vue de la caméra. Aucun réglage de seuil ne
+peut récupérer un point qui n'est pas visible dans l'image.
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{0.9\linewidth}{\centering
+  Schéma à insérer : occultation de la ligne laser sur une pièce
+  rectangulaire et principe d'une deuxième caméra complémentaire.}}
+  \caption{Limite de visibilité en configuration mono-caméra.}
+  \label{fig:occultation-camera}
+\end{figure}
+
+La piste principale pour la suite est l'ajout d'une deuxième caméra,
+probablement USB, placée de manière complémentaire. La configuration
+envisagée est une caméra observant plutôt depuis la gauche vers le haut
+et une autre depuis la droite vers le bas. Cette solution doit réduire
+les zones invisibles, mais elle ne résout pas automatiquement les cavités
+profondes. La stratégie pour ces cas sera décidée après les essais à deux
+caméras.
 
 \subsection{Performances attendues et à mesurer}
-
-Les mesures sur cible (Raspberry\,Pi\,4, matériel assemblé) restent
-à caractériser. Le tableau~\ref{tab:perf-attendues} récapitule les
-indicateurs clés à reporter dans le rapport final.
 
 \begin{table}[H]
   \centering
   \begin{tabular}{@{}p{6cm}p{4cm}p{3.5cm}@{}}
     \toprule
-    \textbf{Indicateur} & \textbf{Cible} & \textbf{Référence} \\
+    \textbf{Indicateur} & \textbf{État intermédiaire} & \textbf{Cible} \\
     \midrule
-    Temps d'un cycle complet & $\leq 10$\,min & O3 / B4 \\
-    Erreur absolue moyenne & $\leq 2$\,mm & O9 / E24 \\
-    Répétabilité (écart-type, 3 scans) & $\leq 1$\,mm & O9 / E24 \\
-    Taux de réussite utilisateur novice (n=10) & $\geq 90$\,\% & O4 / E7 \\
-    Encombrement / masse & $\leq 500^3$\,mm / $\leq 15$\,kg & O10 / E21 \\
-    Consommation électrique en régime établi & À caractériser & --- \\
+    Temps d'un cycle complet & 1 à 1{,}5\,min observé & $\leq 10$\,min \\
+    Largeur / profondeur & Cohérentes manuellement & À quantifier \\
+    Hauteur & Déformation observée & À corriger \\
+    Répétabilité & Non mesurée & $\leq 1$\,mm \\
+    Précision absolue & Non mesurée formellement & $\leq 2$\,mm \\
+    Ergonomie utilisateur & Interface démontrable, encore debug & Prise en main $<10$\,min \\
     \bottomrule
   \end{tabular}
-  \caption{Indicateurs de performance à mesurer.}
+  \caption{Performances intermédiaires et mesures restantes.}
   \label{tab:perf-attendues}
 \end{table}
 
-\subsection{Points ouverts}
+\subsection{Actions prévues}
 
 \begin{itemize}
-  \item Définition du banc de mesure de précision : objet de
-        référence imprimé (sphère ou pièce étalon), protocole de
-        comparaison nuage-à-nuage (distance de Hausdorff ou
-        équivalent).
-  \item Essai d'ergonomie avec utilisateurs tiers ($n=10$)
-        conformément à \textbf{E7}.
-  \item Durcissement logiciel sur matériel : gestion des
-        \emph{timeouts}, récupération d'erreurs GPIO, reconnexion
-        caméra.
-  \item Photos et rendus du prototype final (à intégrer dans cette
-        section pour le rapport final).
+  \item Ajouter et tester une deuxième caméra pour réduire les occultations.
+  \item Développer la calibration et la fusion des deux nuages de points.
+  \item Améliorer l'extraction des points visibles par réglage des seuils
+        et adaptation de l'algorithme.
+  \item Diagnostiquer la déformation en hauteur sur pièces étalons.
+  \item Remplacer ou compléter l'algorithme actuel de maillage par une
+        solution open-source plus robuste.
+  \item Finaliser la sécurité capot, l'isolation laser, le centrage du
+        plateau et l'ergonomie de l'interface.
 \end{itemize}
