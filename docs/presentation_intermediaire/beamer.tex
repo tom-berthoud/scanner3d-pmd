@@ -45,11 +45,13 @@
 \setbeamertemplate{footline}{
   \leavevmode
   \hbox{
-    \begin{beamercolorbox}[wd=.73\paperwidth,ht=2.4ex,dp=1.1ex,leftskip=0.55cm]{author in head/foot}
-      \scriptsize\textcolor{mutedgray}{Scanner 3D -- rapport intermédiaire}
+    \begin{beamercolorbox}[wd=.40\paperwidth,ht=2.4ex,dp=1.1ex,leftskip=0.55cm]{author in head/foot}
+      \scriptsize\textcolor{mutedgray}{Scanner 3D -- présentation intermédiaire}
     \end{beamercolorbox}
-    \begin{beamercolorbox}[wd=.27\paperwidth,ht=2.4ex,dp=1.1ex,rightskip=0.55cm plus1fil]{date in head/foot}
+    \begin{beamercolorbox}[wd=.20\paperwidth,ht=2.4ex,dp=1.1ex,center]{date in head/foot}
       \scriptsize\textcolor{mutedgray}{\insertframenumber/\inserttotalframenumber}
+    \end{beamercolorbox}
+    \begin{beamercolorbox}[wd=.40\paperwidth,ht=2.4ex,dp=1.1ex]{date in head/foot}
     \end{beamercolorbox}
   }
 }
@@ -149,7 +151,7 @@
 
   \vspace{1.0cm}
   {\usebeamerfont{title}\textcolor{deepblue}{Scanner 3D à triangulation laser}}\\[0.25cm]
-  {\usebeamerfont{subtitle}\textcolor{mutedgray}{Rapport intermédiaire -- démonstration de prototype}}\\[0.55cm]
+  {\usebeamerfont{subtitle}\textcolor{mutedgray}{Présentation intermédiaire -- démonstration de prototype}}\\[0.55cm]
 
   \begin{tikzpicture}
     \fill[heigred] (0,0) rectangle (1.1,0.08);
@@ -225,65 +227,18 @@
       \nextbox{La qualité finale dépend directement de ce que la caméra voit réellement.}
     \end{column}
     \begin{column}{0.50\textwidth}
-      \begin{tikzpicture}[scale=0.92, every node/.style={font=\small}]
-        \draw[fill=softblue,draw=linegray] (0,0) rectangle (6.25,4.45);
-
-        % Vue image : la ligne laser reste verticale, mais son abscisse
-        % varie avec la profondeur du profil de la pièce.
-        \draw[fill=white,draw=linegray,thick] (0.45,0.55) rectangle (2.35,3.95);
-        \node[deepblue] at (1.4,4.18) {image caméra};
-        \draw[mutedgray,densely dotted] (1.4,0.75) -- (1.4,3.75);
-        \draw[heigred,very thick]
-          (1.25,0.8)
-          .. controls (1.72,1.25) and (1.05,1.7) .. (1.55,2.15)
-          .. controls (1.95,2.55) and (1.28,3.0) .. (1.72,3.65);
-        \node[align=center,text width=1.8cm] at (1.4,0.2) {\scriptsize ligne verticale\\[-0.04cm]\scriptsize décalée par le profil};
-
-        % Vue pseudo-3D : le plan laser est vertical et droit.
-        \coordinate (cam) at (5.65,3.55);
-        \draw[fill=white,draw=mutedgray] (3.0,0.65) -- (5.25,1.0) -- (5.95,0.65) -- (3.7,0.3) -- cycle;
-        \draw[->,mutedgray,thick] (4.55,0.62) arc (205:-35:0.58 and 0.18);
-        \node[mutedgray] at (4.55,0.1) {\scriptsize plateau};
-
-        \draw[fill=softred,draw=heigred,very thick,opacity=0.42]
-          (3.25,0.55) -- (4.05,0.80) -- (4.05,3.78) -- (3.25,3.48) -- cycle;
-        \draw[heigred,very thick] (3.25,0.55) -- (3.25,3.48);
-        \draw[heigred,very thick] (4.05,0.80) -- (4.05,3.78);
-        \node[heigred,align=center] at (3.65,4.05) {plan laser\\vertical};
-
-        \draw[fill=white,draw=deepblue,thick]
-          (4.55,0.95) .. controls (5.05,1.28) and (4.25,1.6) .. (4.8,1.98)
-          .. controls (5.35,2.36) and (4.45,2.72) .. (4.98,3.12)
-          -- (5.28,1.0) -- cycle;
-        \node[deepblue] at (5.12,0.72) {\scriptsize pièce};
-
-        \coordinate (q1) at (3.76,1.03);
-        \coordinate (q2) at (3.86,1.62);
-        \coordinate (q3) at (3.73,2.18);
-        \coordinate (q4) at (3.91,2.88);
-        \draw[fill=white,draw=deepblue,thick] (cam) circle (0.15);
-        \draw[deepblue,thick] (5.48,3.38) -- (5.10,3.08) -- (5.46,2.95) -- cycle;
-        \node[deepblue,anchor=west] at (5.78,3.55) {caméra};
-        \foreach \q in {q1,q2,q3,q4} {
-          \draw[deepblue!65,thin] (cam) -- (\q);
-          \fill[heigred] (\q) circle (0.045);
-        }
-        \draw[heigred,very thick]
-          (q1) .. controls (3.96,1.25) and (3.68,1.42) .. (q2)
-               .. controls (3.58,1.88) and (3.98,2.32) .. (q3)
-               .. controls (4.05,2.55) and (3.72,2.72) .. (q4);
-        \node[align=center,text width=2.25cm] at (5.03,2.35) {\scriptsize profil éclairé\\[-0.04cm]\scriptsize dans le plan};
-      \end{tikzpicture}
+      \input{schemas/triangulation.tex}
     \end{column}
   \end{columns}
 \end{frame}
 
 \begin{frame}{Architecture globale}{Une chaîne modulaire de la capture à l'export}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.70\textwidth}
-      \includegraphics[width=\linewidth,height=6.0cm,keepaspectratio]{architecture_composants.png}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.52\textwidth}
+      \includegraphics[width=1.16\linewidth,height=5.9cm,keepaspectratio,trim=0 0 1.2cm 0,clip]{architecture_composants.png}
     \end{column}
-    \begin{column}{0.26\textwidth}
+    \hspace{-1.00cm}
+    \begin{column}{0.43\textwidth}
       \small
       \begin{itemize}
         \item \textbf{Hardware} : moteur, laser, caméra, LEDs, écran.
@@ -317,11 +272,12 @@
 \end{frame}
 
 \begin{frame}{Chaîne de scan réelle}{Du prototype au fichier exportable}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.72\textwidth}
-      \includegraphics[width=\linewidth,height=6.05cm,keepaspectratio]{sequence_scan.png}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.58\textwidth}
+      \includegraphics[width=1.12\linewidth,height=6.0cm,keepaspectratio,trim=0 0 3.0cm 0,clip]{sequence_scan.png}
     \end{column}
-    \begin{column}{0.24\textwidth}
+    \hspace{-0.75cm}
+    \begin{column}{0.36\textwidth}
       \validbox{Scan lancé depuis l'interface web.}
       \vspace{0.18cm}
       \validbox{Images capturées avec ligne laser visible.}
@@ -389,20 +345,7 @@
 \begin{frame}{Analyse de l'occultation}{Le laser touche la pièce, mais la caméra ne voit pas toujours le point}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.52\textwidth}
-      \begin{tikzpicture}[scale=0.98, every node/.style={font=\small}]
-        \draw[fill=softblue,draw=linegray] (0,0) rectangle (6.3,4.5);
-        \begin{scope}[rotate around={30:(3.25,1.7)}]
-          \draw[fill=white,draw=deepblue,thick] (2.6,1.05) rectangle (3.9,2.35);
-        \end{scope}
-        \draw[heigred,very thick] (0.7,3.8) -- (2.84,2.59);
-        \draw[deepblue,very thick,dashed] (5.7,3.8) -- (3.35,1.32);
-        \draw[deepblue,very thick] (5.7,3.8) -- (4.14,2.05);
-        \draw[heigred,fill=heigred] (2.84,2.59) circle (0.06);
-        \node[heigred,align=center] at (1.2,4.1) {laser};
-        \node[deepblue,align=center] at (5.45,4.1) {caméra};
-        \node[align=center] at (3.2,0.55) {face de l'objet};
-        \node[align=center,text width=2.2cm] at (4.85,1.35) {zone masquée depuis la caméra};
-      \end{tikzpicture}
+      \input{schemas/occultation.tex}
     \end{column}
     \begin{column}{0.44\textwidth}
       \begin{itemize}
@@ -461,10 +404,11 @@
 
 \begin{frame}{Sécurité et points ouverts}{Conserver une démonstration maîtrisée}
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.61\textwidth}
-      \includegraphics[width=\linewidth,height=5.85cm,keepaspectratio]{machine_etats.png}
+    \begin{column}{0.55\textwidth}
+      \includegraphics[width=\linewidth,height=5.8cm,keepaspectratio,trim=0 0 2.7cm 0,clip]{machine_etats.png}
     \end{column}
-    \begin{column}{0.35\textwidth}
+    \hspace{-0.45cm}
+    \begin{column}{0.41\textwidth}
       \small
       \begin{itemize}
         \item Laser désactivé au démarrage.
@@ -546,22 +490,47 @@
 \end{frame}
 
 \begin{frame}{Conclusion}{Acquis, limites, prochaine étape}
-  \begin{columns}[T,onlytextwidth]
+  \vspace{0.15cm}
+  \begin{columns}[T,totalwidth=0.94\textwidth]
     \begin{column}{0.32\textwidth}
-      \validbox{Prototype réel assemblé, scan complet lancé depuis l'interface web, export STL obtenu.}
+      \colorbox{softgreen}{%
+        \parbox[t][2.45cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
+          \scriptsize
+          \textbf{\textcolor{deepblue}{Validé}}\\[0.12cm]
+          Prototype réel assemblé, scan complet lancé depuis l'interface web, export STL obtenu.
+        }%
+      }
     \end{column}
     \begin{column}{0.32\textwidth}
-      \limitbox{Les formes anguleuses exposent une limite de visibilité et un maillage STL encore fragile.}
+      \colorbox{softred}{%
+        \parbox[t][2.45cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
+          \scriptsize
+          \textbf{\textcolor{heigred}{Limite}}\\[0.12cm]
+          Les formes anguleuses exposent une limite de visibilité et un maillage STL encore fragile.
+        }%
+      }
     \end{column}
     \begin{column}{0.32\textwidth}
-      \nextbox{Tester une deuxième caméra, améliorer l'extraction, remplacer le maillage fragile et valider par mesures.}
+      \colorbox{softblue}{%
+        \parbox[t][2.45cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
+          \scriptsize
+          \textbf{\textcolor{deepblue}{Suite}}\\[0.12cm]
+          Tester une deuxième caméra, améliorer l'extraction, remplacer le maillage fragile et valider par mesures.
+        }%
+      }
     \end{column}
   \end{columns}
 
-  \vspace{0.55cm}
+  \vspace{0.32cm}
   \begin{center}
-    \Large\textbf{\textcolor{deepblue}{Message intermédiaire}}\\[0.15cm]
-    \normalsize Le projet est démontrable, les limites principales sont identifiées, et la suite est structurée autour de risques techniques concrets.
+    \begin{minipage}{0.78\textwidth}
+      \centering
+      \textcolor{linegray}{\rule{\linewidth}{0.5pt}}\\[0.14cm]
+      \large\textbf{\textcolor{deepblue}{Message intermédiaire}}\\[0.12cm]
+      \small
+      Le projet est démontrable, les limites principales sont identifiées, et la suite est structurée autour de risques techniques concrets.\\[0.14cm]
+      \textcolor{linegray}{\rule{\linewidth}{0.5pt}}
+    \end{minipage}
   \end{center}
 \end{frame}
 
