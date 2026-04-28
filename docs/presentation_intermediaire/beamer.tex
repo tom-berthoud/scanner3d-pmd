@@ -11,6 +11,7 @@
 \usepackage{tikz}
 \usetikzlibrary{calc}
 \usepackage{xcolor}
+\usepackage{amsmath}
 
 \graphicspath{
   {../rapport/images/}
@@ -233,6 +234,51 @@
     \begin{column}{0.50\textwidth}
       \hspace{0.5cm}
       \input{schemas/triangulation.tex}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Triangulation : formulation mathématique}{Du pixel au point 3D}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.50\textwidth}
+      \footnotesize
+      \textbf{1. Rayon caméra} (repère caméra) pour un pixel $\tilde{p}=(u,v,1)^\top$ :
+      \[
+        \hat{r} \;=\; \frac{K^{-1}\,\tilde{p}}{\lVert K^{-1}\,\tilde{p}\rVert}
+      \]
+      avec $K$ la matrice intrinsèque (focale, centre image, distorsion compensée).
+
+      \vspace{0.20cm}
+      \textbf{2. Plan laser} calibré une seule fois :
+      \[
+        \mathbf{n}\cdot X \;=\; d
+      \]
+
+      \textbf{3. Intersection rayon $\cap$ plan} :
+      \[
+        X \;=\; \hat{r}\;\cdot\;\frac{d}{\mathbf{n}\cdot\hat{r}}
+      \]
+      $\Rightarrow$ un point 3D dans le repère caméra.
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \footnotesize
+      \textbf{Extraction sub-pixel}\\
+      Centroïde sur le canal $G-R$ (ligne verte 520\,nm) $\Rightarrow$ position du maximum à $\approx 0{,}1$\,px.
+
+      \vspace{0.18cm}
+      \textbf{Fusion sur $360^\circ$}\\
+      $N=200$ pas, $\theta_k = k\cdot\frac{2\pi}{N}=1{,}8^\circ$. Chaque profil est ramené dans le repère monde :
+      \[
+        X_{\text{monde}} \;=\; R_z(\theta_k)\,X_{\text{cam}} + t
+      \]
+
+      \vspace{0.10cm}
+      \textbf{Calibrations préalables}
+      \begin{itemize}
+        \item Intrinsèques caméra (échiquier OpenCV)
+        \item Plan laser $(\mathbf{n}, d)$ (mire plane)
+        \item Position de l'axe de rotation $t$
+      \end{itemize}
     \end{column}
   \end{columns}
 \end{frame}
