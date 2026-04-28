@@ -375,9 +375,40 @@
   \end{columns}
 \end{frame}
 
+\begin{frame}{Décision technique : deuxième caméra}{Réduire les zones invisibles}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \centering
+      \includegraphics[height=3.7cm,keepaspectratio]{vue_obsturction_laser.jpeg}\\[0.08cm]
+      {\scriptsize Aujourd'hui : la face arrière reste masquée à la caméra unique.}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \input{schemas/deux_cameras.tex}\\[0.08cm]
+      {\scriptsize Ajout proposé : seconde caméra à $-30^\circ$, vue complémentaire.}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.20cm}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.55\textwidth}
+      \scriptsize
+      \begin{itemize}
+        \item Vue complémentaire pour les pièces anguleuses.
+        \item Calibration et fusion dans un repère commun.
+        \item Cavités profondes à évaluer ensuite.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \scriptsize
+      \nextbox{Valider le gain expérimentalement avant de figer l'architecture.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
 \begin{frame}{État des sous-systèmes}{Maturité au rapport intermédiaire}
   \small
-  \begin{tabularx}{\linewidth}{@{}p{3.2cm}p{2.2cm}X@{}}
+  \begin{tabularx}{\linewidth}{@{}p{3cm}p{1.2cm}X@{}}
     \toprule
     \textbf{Sous-système} & \textbf{Maturité} & \textbf{État actuel} \\
     \midrule
@@ -435,37 +466,6 @@
 
       \vspace{0.2cm}
       \limitbox{La démonstration reste encadrée ; la version utilisateur nécessite les sécurités matérielles finales.}
-    \end{column}
-  \end{columns}
-\end{frame}
-
-\begin{frame}{Décision technique : deuxième caméra}{Réduire les zones invisibles}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.48\textwidth}
-      \centering
-      \includegraphics[height=3.7cm,keepaspectratio]{vue_obsturction_laser.jpeg}\\[0.08cm]
-      {\scriptsize Aujourd'hui : la face arrière reste masquée à la caméra unique.}
-    \end{column}
-    \begin{column}{0.48\textwidth}
-      \centering
-      \input{schemas/deux_cameras.tex}\\[0.08cm]
-      {\scriptsize Ajout proposé : seconde caméra à $-30^\circ$, vue complémentaire.}
-    \end{column}
-  \end{columns}
-
-  \vspace{0.20cm}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.55\textwidth}
-      \scriptsize
-      \begin{itemize}
-        \item Vue complémentaire pour les pièces anguleuses.
-        \item Calibration et fusion dans un repère commun.
-        \item Cavités profondes à évaluer ensuite.
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.42\textwidth}
-      \scriptsize
-      \nextbox{Valider le gain expérimentalement avant de figer l'architecture.}
     \end{column}
   \end{columns}
 \end{frame}
