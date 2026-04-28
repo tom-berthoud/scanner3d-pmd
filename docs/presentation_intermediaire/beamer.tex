@@ -9,6 +9,7 @@
 \usepackage{array}
 \usepackage{tabularx}
 \usepackage{tikz}
+\usetikzlibrary{calc}
 \usepackage{xcolor}
 
 \graphicspath{
@@ -25,6 +26,8 @@
 \definecolor{textgray}{HTML}{333333}
 \definecolor{mutedgray}{HTML}{6B7280}
 \definecolor{linegray}{HTML}{D7DEE8}
+\definecolor{camorange}{HTML}{C26A0F}
+\definecolor{lasergreen}{HTML}{1F9D55}
 
 \usetheme{default}
 \usefonttheme{professionalfonts}
@@ -168,7 +171,7 @@
 
 \begin{frame}{Pourquoi ce projet ?}{Un outil ouvert pour le MakeLab}
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.54\textwidth}
+    \begin{column}{0.6\textwidth}
       \begin{itemize}
         \item Numériser des objets physiques en modèles 3D exploitables.
         \item Obtenir un fichier \textbf{STL ou OBJ} sans chaîne logicielle propriétaire.
@@ -180,7 +183,8 @@
       \validbox{La valeur du projet n'est pas seulement le résultat 3D : c'est aussi une chaîne de mesure explicable de bout en bout.}
     \end{column}
     \begin{column}{0.42\textwidth}
-      \placeholder{4.8cm}{Photo souhaitée : contexte MakeLab ou prototype posé sur une table, avec l'objet à scanner visible. Nom conseillé : \texttt{proto\_contexte.jpg}.}
+      \hspace{0.5cm}
+      \includegraphics[width=\linewidth,height=5.8cm,keepaspectratio]{vue_ext_ferme.jpeg}
     \end{column}
   \end{columns}
 \end{frame}
@@ -227,6 +231,7 @@
       \nextbox{La qualité finale dépend directement de ce que la caméra voit réellement.}
     \end{column}
     \begin{column}{0.50\textwidth}
+      \hspace{0.5cm}
       \input{schemas/triangulation.tex}
     \end{column}
   \end{columns}
@@ -235,7 +240,8 @@
 \begin{frame}{Architecture globale}{Une chaîne modulaire de la capture à l'export}
   \begin{columns}[T,totalwidth=\textwidth]
     \begin{column}{0.52\textwidth}
-      \includegraphics[width=1.16\linewidth,height=5.9cm,keepaspectratio,trim=0 0 1.2cm 0,clip]{architecture_composants.png}
+      \vspace{-1.15cm}
+      \includegraphics[width=1.66\linewidth,height=7.9cm,keepaspectratio,trim=0 0 1.2cm 0,clip]{architecture_composants.png}
     \end{column}
     \hspace{-1.00cm}
     \begin{column}{0.43\textwidth}
@@ -254,7 +260,8 @@
 \begin{frame}{Prototype physique actuel}{Un système réel déjà assemblé}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.48\textwidth}
-      \placeholder{5.0cm}{Photo souhaitée : prototype ouvert, montrant boîte, plateau, laser, caméra, électronique. Nom conseillé : \texttt{prototype\_ouvert.jpg}.}
+      \hspace{1cm}
+      \includegraphics[width=\linewidth,height=6.0cm,keepaspectratio]{boite_vue_ext_ouverte.jpeg}
     \end{column}
     \begin{column}{0.48\textwidth}
       \begin{itemize}
@@ -290,7 +297,7 @@
 \begin{frame}{Interface et démonstration}{Scénario prévu pendant la présentation}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.47\textwidth}
-      \placeholder{4.8cm}{Capture souhaitée : interface web pendant ou après un scan, avec progression et viewer 3D. Nom conseillé : \texttt{interface\_scan.png}.}
+      \includegraphics[width=\linewidth,height=4.8cm,keepaspectratio]{screen_interface.png}
     \end{column}
     \begin{column}{0.49\textwidth}
       \begin{enumerate}
@@ -310,13 +317,19 @@
 \begin{frame}{Résultat 1 : forme cylindrique}{Cas favorable pour le prototype actuel}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.31\textwidth}
-      \placeholder{4.25cm}{Image caméra réelle avec ligne laser visible sur cylindre. Nom : \texttt{cylindre\_image\_laser.jpg}.}
+      \centering
+      \includegraphics[width=\linewidth,height=4.25cm,keepaspectratio]{vue_interieur_laser_piece.jpeg}\\
+      \scriptsize Laser sur cylindre
     \end{column}
     \begin{column}{0.31\textwidth}
-      \placeholder{4.25cm}{Vue du nuage de points ou points extraits du cylindre. Nom : \texttt{cylindre\_nuage.png}.}
+      \centering
+      \includegraphics[width=\linewidth,height=4.25cm,keepaspectratio]{screen_cylindre_nuage.png}\\
+      \scriptsize Nuage de points
     \end{column}
     \begin{column}{0.31\textwidth}
-      \placeholder{4.25cm}{Capture du STL cylindre obtenu. Nom : \texttt{cylindre\_stl.png}.}
+      \centering
+      \includegraphics[width=\linewidth,height=4.25cm,keepaspectratio]{screen_cylindre_stl.png}\\
+      \scriptsize STL exporté
     \end{column}
   \end{columns}
 
@@ -327,7 +340,9 @@
 \begin{frame}{Résultat 2 : pièce anguleuse}{Un cas qui révèle la limite physique}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.48\textwidth}
-      \placeholder{4.8cm}{Photo ou capture du scan d'une pièce rectangulaire/carrée montrant les zones manquantes. Nom : \texttt{rectangle\_limite.png}.}
+      \centering
+      \includegraphics[width=\linewidth,height=4.8cm,keepaspectratio]{carre_gris_stl.png}\\
+      \scriptsize STL d'un cube : sommet déformé, faces incomplètes.
     \end{column}
     \begin{column}{0.48\textwidth}
       \begin{itemize}
@@ -426,19 +441,31 @@
 
 \begin{frame}{Décision technique : deuxième caméra}{Réduire les zones invisibles}
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.50\textwidth}
-      \placeholder{4.9cm}{Schéma ou photo annotée souhaitée : caméra actuelle à gauche vers le haut, caméra USB ajoutée à droite vers le bas. Nom : \texttt{schema\_deux\_cameras.png}.}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \includegraphics[height=3.7cm,keepaspectratio]{vue_obsturction_laser.jpeg}\\[0.08cm]
+      {\scriptsize Aujourd'hui : la face arrière reste masquée à la caméra unique.}
     \end{column}
-    \begin{column}{0.46\textwidth}
-      \begin{itemize}
-        \item La caméra actuelle ne voit pas toutes les zones éclairées.
-        \item Une deuxième caméra USB apporterait une vue complémentaire.
-        \item Les deux nuages devront être calibrés et fusionnés dans un même repère.
-        \item Les cavités profondes resteront à évaluer après ce test.
-      \end{itemize}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \input{schemas/deux_cameras.tex}\\[0.08cm]
+      {\scriptsize Ajout proposé : seconde caméra à $-30^\circ$, vue complémentaire.}
+    \end{column}
+  \end{columns}
 
-      \vspace{0.25cm}
-      \nextbox{Priorité technique : valider expérimentalement le gain avant de figer l'architecture finale.}
+  \vspace{0.20cm}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.55\textwidth}
+      \scriptsize
+      \begin{itemize}
+        \item Vue complémentaire pour les pièces anguleuses.
+        \item Calibration et fusion dans un repère commun.
+        \item Cavités profondes à évaluer ensuite.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \scriptsize
+      \nextbox{Valider le gain expérimentalement avant de figer l'architecture.}
     \end{column}
   \end{columns}
 \end{frame}

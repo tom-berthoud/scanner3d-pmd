@@ -65,10 +65,27 @@ La chaîne réelle actuellement observée est la suivante :
 
 \begin{figure}[H]
   \centering
-  \fbox{\parbox[c][5cm][c]{0.9\linewidth}{\centering
-  Figure à insérer : quatre étapes d'un scan réel, de gauche à droite :
-  image laser, points extraits, nuage de points, STL exporté.}}
-  \caption{Chaîne de traitement observée sur le prototype réel.}
+  \begin{minipage}{0.24\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=2.8cm,keepaspectratio]{images/vue_interieur_laser_piece.jpeg}
+    \\\scriptsize (1) Capture
+  \end{minipage}\hfill
+  \begin{minipage}{0.24\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=2.8cm,keepaspectratio]{images/vue_camera.jpg}
+    \\\scriptsize (2) Extraction
+  \end{minipage}\hfill
+  \begin{minipage}{0.24\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=2.8cm,keepaspectratio]{images/screen_cylindre_nuage.png}
+    \\\scriptsize (3) Nuage de points
+  \end{minipage}\hfill
+  \begin{minipage}{0.24\linewidth}
+    \centering
+    \includegraphics[width=\linewidth,height=2.8cm,keepaspectratio]{images/screen_cylindre_stl.png}
+    \\\scriptsize (4) STL exporté
+  \end{minipage}
+  \caption{Chaîne de traitement observée sur le prototype réel : de la capture image jusqu'au fichier STL.}
   \label{fig:pipeline-reel}
 \end{figure}
 

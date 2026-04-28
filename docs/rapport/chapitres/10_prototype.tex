@@ -60,9 +60,16 @@ caméra.
 
 \begin{figure}[H]
   \centering
-  \fbox{\parbox[c][5cm][c]{0.9\linewidth}{\centering
-  Figure à insérer : comparaison d'un scan de forme cylindrique et d'un
-  scan de pièce rectangulaire montrant les zones problématiques.}}
+  \begin{minipage}{0.45\linewidth}
+    \centering
+    \includegraphics[width=0.85\linewidth]{images/screen_cylindre_stl.png}
+    \\\small (a) Cylindre : maillage cohérent.
+  \end{minipage}\hfill
+  \begin{minipage}{0.45\linewidth}
+    \centering
+    \includegraphics[width=0.85\linewidth]{images/carre_gris_stl.png}
+    \\\small (b) Pièce rectangulaire : déformation au sommet.
+  \end{minipage}
   \caption{Résultats intermédiaires sur formes simple et anguleuse.}
   \label{fig:resultats-scans}
 \end{figure}
@@ -82,10 +89,8 @@ peut récupérer un point qui n'est pas visible dans l'image.
 
 \begin{figure}[H]
   \centering
-  \fbox{\parbox[c][5cm][c]{0.9\linewidth}{\centering
-  Schéma à insérer : occultation de la ligne laser sur une pièce
-  rectangulaire et principe d'une deuxième caméra complémentaire.}}
-  \caption{Limite de visibilité en configuration mono-caméra.}
+  \includegraphics[width=0.75\linewidth]{images/vue_obsturction_laser.jpeg}
+  \caption{Limite de visibilité en configuration mono-caméra : sur une pièce anguleuse, le laser éclaire une zone de la pièce mais celle-ci peut être masquée à la caméra par une autre face de l'objet.}
   \label{fig:occultation-camera}
 \end{figure}
 

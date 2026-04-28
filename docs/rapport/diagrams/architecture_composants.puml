@@ -7,7 +7,6 @@ skinparam shadowing false
 skinparam defaultFontName Latin Modern Roman
 skinparam defaultFontSize 11
 
-title Architecture logicielle — vue des composants
 
 actor "Utilisateur" as user
 

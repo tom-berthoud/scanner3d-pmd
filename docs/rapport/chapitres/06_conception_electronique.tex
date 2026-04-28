@@ -35,10 +35,8 @@ capot reste à finaliser.
 
 \begin{figure}[H]
   \centering
-  \fbox{\parbox[c][5cm][c]{0.85\linewidth}{\centering
-  Photo à insérer : câblage actuel du prototype, Raspberry Pi,
-  driver moteur, alimentation, commande laser et LEDs.}}
-  \caption{Électronique du prototype au rapport intermédiaire.}
+  \includegraphics[width=0.85\linewidth]{images/electronique.jpeg}
+  \caption{Électronique du prototype au rapport intermédiaire : Raspberry Pi 4, écran tactile, driver DM320T, étage de commande sur carte perforée et supports laser/caméra.}
   \label{fig:proto-elec}
 \end{figure}
 
@@ -57,7 +55,7 @@ Cette architecture permet d’assurer une alimentation adaptée à chaque compos
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth,page=1]{assets/Schema_electrique_Scan3D.pdf}
-  \caption{Schéma électrique — étage alimetation électrique.}
+  \caption{Schéma électrique — étage alimentation électrique.}
   \label{fig:sch-alim-elec}
 \end{figure}
 
@@ -132,7 +130,7 @@ machine d'états logicielle : attente, scan, traitement, fin et erreur.
 
 Le capteur de porte prévu n'est pas encore intégré au prototype utilisé
 pour les essais. Il reste donc à câbler et valider le comportement
-suivant : ouverture du capot pendant ou avant un scan, désactivation imédiate du
+suivant : ouverture du capot pendant ou avant un scan, désactivation immédiate du
 laser et passage dans un état sûr.
 
 \subsection{Justification des choix}
@@ -144,8 +142,8 @@ laser et passage dans un état sûr.
   \item \textbf{Pi Camera Module 3} : bonne sensibilité au 520\,nm sur le
         canal vert, ce qui facilite l'extraction de la ligne laser.
   \item \textbf{Driver DM320T} : adapté au moteur \textbf{NEMA\,17}, il offre la
-        précision de pilotage souhaitée. De plus, c'était le seul modèle disponible 
-        dans le stock du MakLab conforme aux caractéristiques nécessaires.
+        précision de pilotage souhaitée. De plus, c'était le seul modèle disponible
+        dans le stock du MakeLab conforme aux caractéristiques nécessaires.
   \item \textbf{Pi Touch Display 2} : retour utilisateur
         local même sans ordinateur connecté à l'interface web.
 \end{itemize}
