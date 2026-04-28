@@ -1,3 +1,4 @@
+\newpage
 \section{Conception électronique}
 
 \subsection{Vue d'ensemble}
@@ -23,10 +24,9 @@ capot reste à finaliser.
     Unité de calcul        & Raspberry Pi 4 Model B 4\,GB & --- \\
     Acquisition image      & Pi Camera Module 3 (IMX708)  & CSI \\
     Éclairage structuré    & Laser ligne vert VLM-520     & GPIO via étage de commande \\
-    Rotation plateau       & Moteur NEMA\,17 + driver DM320T & GPIO STEP / DIR \\
-    Interface locale       & Écran tactile 7 pouces       & HDMI / USB tactile \\
+    Rotation plateau       & Moteur NEMA\,17 + driver DM320T & GPIO via étage de commande \& les signaux \emph{Ena}, \emph{Dir}, \emph{Pull} \\
+    Interface locale       & Écran tactile 7 pouces       & port DSI \\
     Sécurité porte         & Fin de course / interlock à intégrer & GPIO entrée \\
-    Signalisation          & LEDs                         & GPIO \\
     \bottomrule
   \end{tabular}
   \caption{Composants électroniques principaux et interfaces.}
@@ -42,11 +42,30 @@ capot reste à finaliser.
   \label{fig:proto-elec}
 \end{figure}
 
+\subsection{Alimentation électrique}
+
+L’alimentation du système est assurée par un module externe convertissant le secteur 230\,V AC en une tension continue de 12\,V.
+Cette tension constitue la source d’énergie pour l’ensemble de la machine.
+
+Un interrupteur principal est placé en sortie de l’alimentation afin de permettre la mise sous et hors tension du système en toute sécurité.
+
+À partir de cette tension 12\,V, un convertisseur abaisseur (\textit{buck converter}) est utilisé pour générer une tension régulée de 5\,V.
+Cette tension est notamment utilisée pour alimenter les éléments nécessitant un niveau de tension plus faible, comme certaines interfaces logiques ou modules électroniques.
+
+Cette architecture permet d’assurer une alimentation adaptée à chaque composant tout en garantissant une bonne efficacité énergétique et une séparation claire entre les étages de puissance et de commande.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth,page=1]{assets/Schema_electrique_Scan3D.pdf}
+  \caption{Schéma électrique — étage alimetation électrique.}
+  \label{fig:sch-alim-elec}
+\end{figure}
+
 \subsection{Schéma Raspberry Pi}
 
-Le schéma page~\ref{fig:sch-rpi} présente le câblage autour du
+La figure~\ref{fig:sch-rpi} du schéma électronique présente le câblage autour du
 Raspberry Pi : pilotage du laser et du moteur au travers d'un étage de
-commande, lecture prévue de l'interrupteur de porte, connexion de
+commande, détection de l'ouverture du capot, connexion de
 l'écran et de la caméra.
 
 \begin{figure}[H]
@@ -55,6 +74,30 @@ l'écran et de la caméra.
   \caption{Schéma électrique — étage Raspberry Pi, pilotage actionneurs et capteurs.}
   \label{fig:sch-rpi}
 \end{figure}
+
+\subsubsection{Etage de commande des GPIO}
+Le Raspberry Pi ne peut pas piloter directement les actionneurs (laser et moteur)
+en raison de leurs exigences en tension et en courant.
+Un étage de commande est donc nécessaire pour faire l’interface entre les signaux logiques du Raspberry Pi et les composants à piloter.
+
+En effet, le laser ainsi que le moteur nécessitent une alimentation en 5\,V, tandis que les GPIO du Raspberry Pi fonctionnent en 3{,}3\,V et ne peuvent fournir que quelques milliampères.
+Cela est insuffisant pour alimenter directement ces dispositifs, et pourrait même endommager le Raspberry Pi.
+
+Pour résoudre ce problème, nous utilisons un étage de commande à base de transistors MOSFET.
+Le principe de fonctionnement est le suivant : la sortie GPIO du Raspberry Pi est reliée à la grille du MOSFET.
+Lorsque le GPIO est à l’état haut (3{,}3\,V), une tension est appliquée entre la grille et la source, ce qui rend le MOSFET passant.
+Le transistor se comporte alors comme un interrupteur fermé.
+
+Dans cet état, le courant peut circuler entre le drain et la source du MOSFET.
+La charge (laser ou entrée de commande du contrôleur moteur), alimentée en 5\,V, est alors reliée à la masse à travers le MOSFET.
+On parle de commande en \textit{low-side switching} (commutation côté masse).
+
+Lorsque le GPIO est à l’état bas (0\,V), la tension grille-source devient nulle, le MOSFET se bloque et agit comme un interrupteur ouvert.
+Le courant ne circule plus, ce qui désactive la charge.
+
+Ce montage permet ainsi de piloter des charges en 5\,V à partir d’un signal logique 3{,}3\,V, tout en protégeant le Raspberry Pi et en fournissant le courant nécessaire aux actionneurs.
+Des résistances sont également ajoutées pour assurer un fonctionnement stable, notamment pour éviter les états flottants et limiter les courants parasites.
+
 
 \subsubsection{Pilotage du laser et signaux logiques}
 
@@ -70,27 +113,26 @@ interdise l'activation du laser.
 
 \subsubsection{Pilotage du moteur}
 
-Le driver \texttt{DM320T} reçoit les signaux \emph{Step} et \emph{Dir}
+Le driver \texttt{DM320T} reçoit les signaux \emph{Ena}, \emph{Dir} et \emph{Pull}
 du Raspberry Pi. Le moteur entraîne le plateau pendant les scans réels
 et ne constitue pas, à ce stade, le blocage principal. Les améliorations
 attendues concernent plutôt le maintien mécanique de la pièce et le
 centrage sur le plateau.
 
-\subsubsection{Affichage et signalisation}
+\subsubsection{Affichage}
 
-Les LEDs et l'écran sont fonctionnels et permettent
-d'afficher l'état du système. Cet écran sert d'interface locale pour
-l'utilisation sans ordinateur externe. Cette signalisation complète
-l'interface web et répond à l'exigence de retour utilisateur
-(\textbf{E5}). La version finale devra aligner strictement les états
-affichés avec la machine d'états logicielle : attente, scan, traitement,
-fin et erreur.
+L'écran est fonctionnel et permet
+d'afficher l'état du système. Ce dernier sert d'interface locale pour
+l'utilisation sans ordinateur externe. L'interface web et répond à 
+l'exigence de retour utilisateur (\textbf{E5}).
+La version finale devra afficher sur l'écran tous les états de la 
+machine d'états logicielle : attente, scan, traitement, fin et erreur.
 
 \subsubsection{Capteur de porte}
 
 Le capteur de porte prévu n'est pas encore intégré au prototype utilisé
 pour les essais. Il reste donc à câbler et valider le comportement
-suivant : ouverture du capot pendant ou avant un scan, désactivation du
+suivant : ouverture du capot pendant ou avant un scan, désactivation imédiate du
 laser et passage dans un état sûr.
 
 \subsection{Justification des choix}
@@ -101,9 +143,10 @@ laser et passage dans un état sûr.
         avec la caméra Pi.
   \item \textbf{Pi Camera Module 3} : bonne sensibilité au 520\,nm sur le
         canal vert, ce qui facilite l'extraction de la ligne laser.
-  \item \textbf{Driver DM320T} : interface STEP/DIR simple, adaptée au
-        moteur NEMA\,17 et au pilotage en boucle ouverte.
-  \item \textbf{LEDs et écran} : retour utilisateur
+  \item \textbf{Driver DM320T} : adapté au moteur \textbf{NEMA\,17}, il offre la
+        précision de pilotage souhaitée. De plus, c'était le seul modèle disponible 
+        dans le stock du MakLab conforme aux caractéristiques nécessaires.
+  \item \textbf{Pi Touch Display 2} : retour utilisateur
         local même sans ordinateur connecté à l'interface web.
 \end{itemize}
 
