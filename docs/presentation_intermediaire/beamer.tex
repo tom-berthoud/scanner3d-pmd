@@ -16,6 +16,7 @@
 \graphicspath{
   {../rapport/images/}
   {../rapport/diagrams/}
+  {../rapport/assets/}
   {../preview/}
 }
 
@@ -320,6 +321,49 @@
 
       \vspace{0.25cm}
       \limitbox{Le centrage et l'adhérence du plateau doivent encore être améliorés.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[shrink=8]{Conception \'{e}lectrique}{Architecture d'alimentation}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.56\textwidth}
+      \vspace{-0.2cm}
+      \includegraphics[width=\linewidth,height=5.45cm,keepaspectratio,page=1]{Schema_electrique_Scan3D.pdf}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \small
+      \begin{itemize}
+        \item Alimentation externe : secteur 230\,V AC vers bus basse tension.
+        \item Rail principal 12\,V pour les charges de puissance.
+        \item Convertisseur DC/DC pour le 5\,V logique.
+        \item Interrupteur principal en entr\'{e}e de distribution.
+        \item Masse commune pour le Raspberry Pi, le driver moteur et les commandes.
+      \end{itemize}
+
+      \vspace{0.18cm}
+      \validbox{La s\'{e}paration puissance/commande simplifie les essais et limite l'exposition aux tensions secteur.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[shrink=8]{Conception \'{e}lectrique}{Commande Raspberry Pi et s\'{e}curit\'{e}}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.57\textwidth}
+      \vspace{-0.2cm}
+      \includegraphics[width=\linewidth,height=5.45cm,keepaspectratio,page=2]{Schema_electrique_Scan3D.pdf}
+    \end{column}
+    \begin{column}{0.39\textwidth}
+      \small
+      \begin{itemize}
+        \item GPIO 3{,}3\,V isol\'{e}s des charges par un \'{e}tage de commande MOSFET.
+        \item Driver DM320T pilot\'{e} par signaux \emph{Ena}, \emph{Dir} et \emph{Pull}.
+        \item Laser command\'{e} \'{e}lectroniquement, d\'{e}sactiv\'{e} par d\'{e}faut.
+        \item Entr\'{e}e capot pr\'{e}vue pour interdire le laser bo\^{i}te ouverte.
+      \end{itemize}
+
+      \vspace{0.18cm}
+      \limitbox{L'interlock capot reste \`{a} c\^{a}bler et \`{a} valider avant une utilisation non encadr\'{e}e.}
     \end{column}
   \end{columns}
 \end{frame}
