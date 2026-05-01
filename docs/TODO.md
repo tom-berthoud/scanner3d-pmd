@@ -3,7 +3,7 @@
 ## Mécanique
 
 - [ ] Ameliorer la connection entre moteur et le plateau
-
+- [ ] Le laser n'est vraiment pas bien fixé, trouver une solution pour le fixer solidement
 ## Electrique
 
 - [ ] Ajouter sécurité de fermeture du capot (capteur pour le laser)
