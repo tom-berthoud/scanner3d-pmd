@@ -41,7 +41,7 @@ processing:
   occlusion_max_gap_frames: 0    # 0 = sans limite, interpolation entre la derniere vue visible et la suivante
 
 reconstruction:
-  outlier_nb_neighbors: 20  # voisins pour filtrage outliers (Open3D)
+  outlier_nb_neighbors: 20  # voisins pour filtrage outliers (SciPy KDTree)
   outlier_std_ratio: 2.0    # ratio écart-type pour filtrage outliers
 
 calibration:

@@ -72,7 +72,7 @@ Ne jamais appeler `cam.autofocus_cycle()` dans le code de scan ou de calibration
 | `scanner/calibration/` | Calibration intrinsèque caméra + plan laser | Python + OpenCV |
 | `scanner/processing/` | Extraction ligne laser, triangulation pixel→3D | Python + OpenCV + NumPy |
 | `scanner/reconstruction/` | Fusion des profils, filtrage outliers, nuage de points | Python + NumPy + SciPy |
-| `scanner/export/` | Génération STL / OBJ via trimesh convex hull | Python + trimesh |
+| `scanner/export/` | Génération STL / OBJ via reconstruction Poisson Open3D | Python + Open3D |
 | `scanner/orchestration/` | Machine d'états, boucle de scan principale | Python |
 | `scanner/interface/` | Serveur web Flask + SSE + affichage écran local | Python + Flask |
 | `config/` | Fichiers YAML de calibration et réglages | YAML |
@@ -104,7 +104,7 @@ reconstruction/pointcloud.py — StateMachine: PROCESSING → EXPORTING
   → filtre outliers (KDTree, std_ratio)
           ↓
 export/stl.py — StateMachine: EXPORTING → COMPLETE
-  → convex hull trimesh → fichier.stl dans /tmp/scans/
+  → estimation des normales → reconstruction Poisson Open3D → fichier.stl dans /tmp/scans/
           ↓
 [SSE push → browser → Three.js STL viewer]
 ```
@@ -187,7 +187,7 @@ def export_obj(cloud: np.ndarray, path: str) -> None: ...
 | Traitement image | OpenCV (cv2) | Support calibration caméra, extraction de ligne, compatible Pi |
 | Calcul numérique | NumPy | Standard, aucune alternative nécessaire |
 | Filtrage outliers | SciPy KDTree | Plus léger qu'Open3D sur Pi, même résultat |
-| Export mesh | trimesh (convex hull) | Léger, sans dépendance GUI, support STL + OBJ |
+| Export mesh | Open3D Poisson | Reconstruction de surface depuis le nuage de points 3D avec estimation/orientation des normales |
 | GPIO | gpiozero (fallback RPi.GPIO) | API haut niveau, plus lisible |
 | Interface web | Flask + SSE | Léger, bien connu, SSE pour updates temps réel sans WebSocket |
 | Viewer 3D web | Three.js (STLLoader) | Chargement direct du STL binaire, pas de conversion |
@@ -340,7 +340,7 @@ Le mock (`scanner/hardware/mock.py`) simule la géométrie du scanner par lancer
 | Question | Responsable | Notes |
 |---|---|---|
 | Classe sécurité du laser VLM-520-56 | Équipe hardware | Modèle confirmé, classe exacte à vérifier sur fiche technique |
-| Open3D faisable sur Pi cible | Équipe software | SciPy KDTree utilisé en attendant — Open3D offrirait Poisson reconstruction |
+| Open3D faisable sur Pi cible | Équipe software | Requis pour l'export STL/OBJ par reconstruction Poisson |
 | Export USB : stratégie de montage automatique | Équipe software | Dépend de l'OS choisi |
-| Reconstruction concave (Poisson / alpha shape) | Équipe software | Convex hull actuel suffisant pour MVP, limité pour formes creuses |
+| Réglage qualité Poisson | Équipe software | Ajuster normales, profondeur et filtrage densité selon le bruit du nuage |
 | Alimentation : séquence de mise sous tension | Équipe hardware | Pi + moteur + laser : éviter pic de courant au démarrage |

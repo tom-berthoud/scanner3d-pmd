@@ -103,20 +103,14 @@ class TestExportSTL:
             export_stl(cloud, path, poisson=POISSON_TEST_CFG)
             assert os.path.exists(path)
 
-    def test_deprecated_profile_arguments_are_accepted(self) -> None:
-        """Legacy profile arguments should not break Poisson STL export."""
+    def test_concave_cloud_exports_from_points_only(self) -> None:
+        """Poisson STL export should use the merged point cloud directly."""
         _requires_open3d()
         profiles = _make_hourglass_profiles()
         cloud = np.vstack(profiles)
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "hourglass.stl")
-            export_stl(
-                cloud,
-                path,
-                profiles=profiles,
-                mesh_mode="profiles",
-                poisson=POISSON_TEST_CFG,
-            )
+            export_stl(cloud, path, poisson=POISSON_TEST_CFG)
             assert os.path.exists(path)
             assert os.path.getsize(path) > 0
 
@@ -171,20 +165,14 @@ class TestExportOBJ:
             export_obj(cloud, path, poisson=POISSON_TEST_CFG)
             assert os.path.exists(path)
 
-    def test_deprecated_profile_arguments_create_obj_faces(self) -> None:
-        """Legacy profile arguments should not break Poisson OBJ export."""
+    def test_concave_cloud_obj_has_faces(self) -> None:
+        """Poisson OBJ export should write faces reconstructed from the cloud."""
         _requires_open3d()
         profiles = _make_hourglass_profiles()
         cloud = np.vstack(profiles)
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "hourglass.obj")
-            export_obj(
-                cloud,
-                path,
-                profiles=profiles,
-                mesh_mode="cylindrical",
-                poisson=POISSON_TEST_CFG,
-            )
+            export_obj(cloud, path, poisson=POISSON_TEST_CFG)
             with open(path, "r", encoding="utf-8") as fh:
                 content = fh.read()
             assert "f " in content

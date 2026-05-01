@@ -1,21 +1,12 @@
-"""scanner.export.stl - Surface reconstruction and STL/OBJ export.
-
-The scanner produces an unstructured 3-D point cloud.  Mesh generation is done
-with Open3D's screened Poisson reconstruction:
-
-1. estimate point normals from local neighbours,
-2. orient normals consistently across the cloud,
-3. reconstruct the surface with Poisson,
-4. remove low-density Poisson artefacts,
-5. write the mesh as STL or OBJ.
-"""
+"""scanner.export.stl - Poisson surface reconstruction and STL/OBJ export."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
 import os
-from typing import Any, Sequence
+from types import ModuleType
+from typing import Any
 
 import numpy as np
 
@@ -79,31 +70,18 @@ class PoissonMeshConfig:
 def export_stl(
     cloud: np.ndarray,
     path: str,
-    profiles: Sequence[np.ndarray] | None = None,
-    mesh_mode: str | None = None,
-    alpha: float | None = None,
     poisson: PoissonMeshConfig | dict[str, Any] | None = None,
 ) -> None:
-    """Export *cloud* as a binary STL mesh reconstructed with Poisson.
-
-    ``profiles``, ``mesh_mode`` and ``alpha`` are accepted for compatibility
-    with older callers, but the mesh is always generated from the merged 3-D
-    point cloud using Poisson reconstruction.
-    """
-    _ = profiles, mesh_mode, alpha
+    """Export *cloud* as a binary STL mesh reconstructed with Poisson."""
     _export_mesh(cloud, path, file_type="stl", poisson=poisson)
 
 
 def export_obj(
     cloud: np.ndarray,
     path: str,
-    profiles: Sequence[np.ndarray] | None = None,
-    mesh_mode: str | None = None,
-    alpha: float | None = None,
     poisson: PoissonMeshConfig | dict[str, Any] | None = None,
 ) -> None:
     """Export *cloud* as a Wavefront OBJ mesh reconstructed with Poisson."""
-    _ = profiles, mesh_mode, alpha
     _export_mesh(cloud, path, file_type="obj", poisson=poisson)
 
 
@@ -114,12 +92,8 @@ def _export_mesh(
     poisson: PoissonMeshConfig | dict[str, Any] | None = None,
 ) -> None:
     mesh = _cloud_to_poisson_mesh(cloud, poisson=poisson)
+    o3d = _require_open3d()
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-
-    try:
-        import open3d as o3d  # type: ignore[import]
-    except ImportError as exc:
-        raise RuntimeError("open3d not available - install with: pip install open3d") from exc
 
     ok = o3d.io.write_triangle_mesh(
         path,
@@ -145,54 +119,23 @@ def _export_mesh(
 
 def _cloud_to_poisson_mesh(
     cloud: np.ndarray,
+    o3d: ModuleType | None = None,
     poisson: PoissonMeshConfig | dict[str, Any] | None = None,
 ) -> "o3d.geometry.TriangleMesh":  # type: ignore[name-defined]
-    """Convert a point cloud to an Open3D triangle mesh using Poisson."""
+    """Convert a 3-D point cloud to an Open3D triangle mesh using Poisson."""
     cfg = (
         poisson
         if isinstance(poisson, PoissonMeshConfig)
         else PoissonMeshConfig.from_mapping(poisson)
     )
     points = _prepare_cloud(cloud, cfg.deduplicate_decimals)
-
-    try:
-        import open3d as o3d  # type: ignore[import]
-    except ImportError as exc:
-        raise RuntimeError("open3d not available - install with: pip install open3d") from exc
+    o3d = o3d or _require_open3d()
 
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(points)
 
-    logger.info(
-        "Poisson mesh: estimating normals (radius=%.2f mm, max_nn=%d)",
-        cfg.normal_radius_mm,
-        cfg.normal_max_nn,
-    )
-    pcd.estimate_normals(
-        search_param=o3d.geometry.KDTreeSearchParamHybrid(
-            radius=cfg.normal_radius_mm,
-            max_nn=cfg.normal_max_nn,
-        )
-    )
-
-    orientation_k = min(cfg.orientation_k, points.shape[0] - 1)
-    logger.info("Poisson mesh: orienting normals (k=%d)", orientation_k)
-    pcd.orient_normals_consistent_tangent_plane(orientation_k)
-    pcd.normalize_normals()
-
-    logger.info(
-        "Poisson mesh: reconstructing surface (depth=%d, scale=%.2f, linear_fit=%s)",
-        cfg.depth,
-        cfg.scale,
-        cfg.linear_fit,
-    )
-    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-        pcd,
-        depth=cfg.depth,
-        width=cfg.width,
-        scale=cfg.scale,
-        linear_fit=cfg.linear_fit,
-    )
+    _estimate_poisson_normals(pcd, point_count=points.shape[0], cfg=cfg, o3d=o3d)
+    mesh, densities = _run_poisson_reconstruction(pcd, cfg=cfg, o3d=o3d)
 
     _remove_low_density_vertices(mesh, densities, cfg.density_quantile)
     _clean_mesh(mesh)
@@ -208,6 +151,61 @@ def _cloud_to_poisson_mesh(
         len(mesh.triangles),
     )
     return mesh
+
+
+def _require_open3d() -> ModuleType:
+    try:
+        import open3d as o3d  # type: ignore[import]
+    except ImportError as exc:
+        raise RuntimeError(
+            "Open3D is required for Poisson mesh export. Install it with: pip install open3d"
+        ) from exc
+    return o3d
+
+
+def _estimate_poisson_normals(
+    pcd: Any,
+    point_count: int,
+    cfg: PoissonMeshConfig,
+    o3d: ModuleType,
+) -> None:
+    logger.info(
+        "Poisson mesh: estimating normals (radius=%.2f mm, max_nn=%d)",
+        cfg.normal_radius_mm,
+        cfg.normal_max_nn,
+    )
+    pcd.estimate_normals(
+        search_param=o3d.geometry.KDTreeSearchParamHybrid(
+            radius=cfg.normal_radius_mm,
+            max_nn=cfg.normal_max_nn,
+        )
+    )
+
+    orientation_k = min(cfg.orientation_k, point_count - 1)
+    logger.info("Poisson mesh: orienting normals (k=%d)", orientation_k)
+    pcd.orient_normals_consistent_tangent_plane(orientation_k)
+    pcd.normalize_normals()
+
+
+def _run_poisson_reconstruction(
+    pcd: Any,
+    cfg: PoissonMeshConfig,
+    o3d: ModuleType,
+) -> tuple[Any, Any]:
+    logger.info(
+        "Poisson mesh: reconstructing surface (depth=%d, scale=%.2f, linear_fit=%s)",
+        cfg.depth,
+        cfg.scale,
+        cfg.linear_fit,
+    )
+    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+        pcd,
+        depth=cfg.depth,
+        width=cfg.width,
+        scale=cfg.scale,
+        linear_fit=cfg.linear_fit,
+    )
+    return mesh, densities
 
 
 def _prepare_cloud(cloud: np.ndarray, deduplicate_decimals: int) -> np.ndarray:
