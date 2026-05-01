@@ -9,6 +9,19 @@ import pytest
 from scanner.export import export_obj, export_point_cloud_ply, export_stl
 
 
+POISSON_TEST_CFG = {
+    "normal_radius_mm": 20.0,
+    "normal_max_nn": 30,
+    "orientation_k": 20,
+    "depth": 5,
+    "density_quantile": 0.0,
+}
+
+
+def _requires_open3d() -> None:
+    pytest.importorskip("open3d")
+
+
 def _make_sphere_cloud(n: int = 300, radius: float = 30.0) -> np.ndarray:
     """Generate a non-degenerate spherical point cloud for testing."""
     rng = np.random.default_rng(7)
@@ -42,66 +55,68 @@ class TestExportSTL:
 
     def test_creates_file(self) -> None:
         """export_stl should create a file at the given path."""
+        _requires_open3d()
         cloud = _make_sphere_cloud()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.stl")
-            export_stl(cloud, path)
+            export_stl(cloud, path, poisson=POISSON_TEST_CFG)
             assert os.path.exists(path), "STL file was not created"
 
     def test_file_nonempty(self) -> None:
         """The STL file should have non-zero size."""
+        _requires_open3d()
         cloud = _make_sphere_cloud()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.stl")
-            export_stl(cloud, path)
+            export_stl(cloud, path, poisson=POISSON_TEST_CFG)
             assert os.path.getsize(path) > 0
 
     def test_binary_stl_header(self) -> None:
         """Binary STL files start with an 80-byte header."""
+        _requires_open3d()
         cloud = _make_sphere_cloud()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.stl")
-            export_stl(cloud, path)
+            export_stl(cloud, path, poisson=POISSON_TEST_CFG)
             with open(path, "rb") as fh:
                 header = fh.read(5)
             # Binary STL does NOT start with "solid" (that would be ASCII)
-            # trimesh writes binary STL with a non-"solid" header
+            # Open3D writes binary STL with a non-"solid" header
             # Just check we have a valid binary file (size > 84 bytes)
             assert os.path.getsize(path) > 84
 
     def test_too_few_points_raises(self) -> None:
         """Fewer than 4 points should raise ValueError."""
+        _requires_open3d()
         cloud = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.stl")
-            with pytest.raises(ValueError):
-                export_stl(cloud, path)
+            with pytest.raises(ValueError, match="at least 4"):
+                export_stl(cloud, path, poisson=POISSON_TEST_CFG)
 
     def test_creates_parent_dirs(self) -> None:
         """export_stl should create any missing parent directories."""
+        _requires_open3d()
         cloud = _make_sphere_cloud()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "sub", "dir", "out.stl")
-            export_stl(cloud, path)
+            export_stl(cloud, path, poisson=POISSON_TEST_CFG)
             assert os.path.exists(path)
 
-    def test_profile_strip_mesh_creates_file(self) -> None:
-        """export_stl should support ordered profiles for strip meshing."""
+    def test_deprecated_profile_arguments_are_accepted(self) -> None:
+        """Legacy profile arguments should not break Poisson STL export."""
+        _requires_open3d()
         profiles = _make_hourglass_profiles()
         cloud = np.vstack(profiles)
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "hourglass.stl")
-            export_stl(cloud, path, profiles=profiles, mesh_mode="profiles")
-            assert os.path.exists(path)
-            assert os.path.getsize(path) > 0
-
-    def test_cylindrical_mesh_creates_file(self) -> None:
-        """export_stl should support cylindrical meshing from ordered profiles."""
-        profiles = _make_hourglass_profiles()
-        cloud = np.vstack(profiles)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "hourglass_cyl.stl")
-            export_stl(cloud, path, profiles=profiles, mesh_mode="cylindrical")
+            export_stl(
+                cloud,
+                path,
+                profiles=profiles,
+                mesh_mode="profiles",
+                poisson=POISSON_TEST_CFG,
+            )
             assert os.path.exists(path)
             assert os.path.getsize(path) > 0
 
@@ -111,64 +126,65 @@ class TestExportOBJ:
 
     def test_creates_file(self) -> None:
         """export_obj should create a file at the given path."""
+        _requires_open3d()
         cloud = _make_sphere_cloud()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.obj")
-            export_obj(cloud, path)
+            export_obj(cloud, path, poisson=POISSON_TEST_CFG)
             assert os.path.exists(path)
 
     def test_file_nonempty(self) -> None:
         """The OBJ file should have non-zero size."""
+        _requires_open3d()
         cloud = _make_sphere_cloud()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.obj")
-            export_obj(cloud, path)
+            export_obj(cloud, path, poisson=POISSON_TEST_CFG)
             assert os.path.getsize(path) > 0
 
     def test_obj_has_vertices(self) -> None:
         """The OBJ file should contain at least one 'v' vertex line."""
+        _requires_open3d()
         cloud = _make_sphere_cloud()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.obj")
-            export_obj(cloud, path)
+            export_obj(cloud, path, poisson=POISSON_TEST_CFG)
             with open(path, "r", encoding="utf-8", errors="replace") as fh:
                 content = fh.read()
             assert "v " in content, "OBJ file has no vertex lines"
 
     def test_too_few_points_raises(self) -> None:
         """Fewer than 4 points should raise ValueError."""
+        _requires_open3d()
         cloud = np.eye(3)
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test.obj")
-            with pytest.raises(ValueError):
-                export_obj(cloud, path)
+            with pytest.raises(ValueError, match="at least 4"):
+                export_obj(cloud, path, poisson=POISSON_TEST_CFG)
 
     def test_creates_parent_dirs(self) -> None:
         """export_obj should create any missing parent directories."""
+        _requires_open3d()
         cloud = _make_sphere_cloud()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "deep", "path", "out.obj")
-            export_obj(cloud, path)
+            export_obj(cloud, path, poisson=POISSON_TEST_CFG)
             assert os.path.exists(path)
 
-    def test_profile_strip_obj_has_faces(self) -> None:
-        """export_obj should write profile-strip faces when profiles are provided."""
+    def test_deprecated_profile_arguments_create_obj_faces(self) -> None:
+        """Legacy profile arguments should not break Poisson OBJ export."""
+        _requires_open3d()
         profiles = _make_hourglass_profiles()
         cloud = np.vstack(profiles)
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "hourglass.obj")
-            export_obj(cloud, path, profiles=profiles, mesh_mode="profiles")
-            with open(path, "r", encoding="utf-8") as fh:
-                content = fh.read()
-            assert "f " in content
-
-    def test_cylindrical_obj_has_faces(self) -> None:
-        """export_obj should write cylindrical-surface faces when profiles are provided."""
-        profiles = _make_hourglass_profiles()
-        cloud = np.vstack(profiles)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "hourglass_cyl.obj")
-            export_obj(cloud, path, profiles=profiles, mesh_mode="cylindrical")
+            export_obj(
+                cloud,
+                path,
+                profiles=profiles,
+                mesh_mode="cylindrical",
+                poisson=POISSON_TEST_CFG,
+            )
             with open(path, "r", encoding="utf-8") as fh:
                 content = fh.read()
             assert "f " in content

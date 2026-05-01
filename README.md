@@ -44,7 +44,7 @@ scanner3d-pmd/
 │   ├── calibration/       Calibration caméra et plan laser
 │   ├── processing/        Extraction ligne laser + triangulation 3D
 │   ├── reconstruction/    Fusion des profils en nuage de points
-│   ├── export/            Génération STL / OBJ (trimesh convex hull)
+│   ├── export/            Génération STL / OBJ (Open3D Poisson)
 │   ├── orchestration/     Machine d'états, boucle de scan
 │   └── interface/         Serveur web Flask + affichage écran local
 ├── config/                Paramètres YAML de scan et calibration

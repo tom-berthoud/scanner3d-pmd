@@ -51,8 +51,16 @@ calibration:
 export:
   default_format: stl       # format par défaut : stl / obj
   output_dir: /tmp/scans    # dossier de sortie des fichiers 3D
-  mesh_mode: cylindrical    # surface reguliere issue des profils du scanner, puis fallback si echec
-  alpha: 0                  # 0 = auto; sinon rayon alpha-shape en mm, plus petit = plus de details
+  poisson:
+    normal_radius_mm: 8.0   # rayon voisinage pour estimer les normales (mm)
+    normal_max_nn: 30       # nombre max de voisins pour chaque normale
+    orientation_k: 50       # voisins utilisés pour orienter automatiquement les normales
+    depth: 8                # profondeur Octree Poisson; +1 = plus fin mais plus lent/memoire
+    width: 0                # 0 = auto Open3D; laisser 0 sauf besoin spécifique
+    scale: 1.1              # marge autour du nuage pour la reconstruction Poisson
+    linear_fit: false       # true = surface parfois plus nette, mais plus sensible au bruit
+    density_quantile: 0.02  # retire les 2% sommets les moins denses (artefacts de bord)
+    deduplicate_decimals: 4 # précision de dedoublonnage des points avant maillage
 
 interface:
   web_host: 0.0.0.0         # écouter sur toutes les interfaces

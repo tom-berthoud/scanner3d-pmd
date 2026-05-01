@@ -522,9 +522,9 @@ def _export_mesh_with_fallback(
             export_stl(cloud, str(mesh_path))
         return
     except RuntimeError as exc:
-        if "trimesh not available" not in str(exc):
+        if "open3d not available" not in str(exc):
             raise
-        logger.warning("trimesh indisponible, fallback mesh via scipy ConvexHull.")
+        logger.warning("open3d indisponible, fallback mesh via scipy ConvexHull.")
 
     points, faces = _build_convex_hull_mesh(cloud)
     if mesh_format == "obj":
