@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 import logging
 import os
@@ -26,6 +27,8 @@ class PoissonMeshConfig:
     linear_fit: bool = False
     density_quantile: float = 0.02
     deduplicate_decimals: int = 4
+    close_horizontal_holes: bool = True
+    horizontal_normal_tolerance: float = 0.85
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any] | None) -> "PoissonMeshConfig":
@@ -43,6 +46,15 @@ class PoissonMeshConfig:
             density_quantile=float(values.get("density_quantile", cls.density_quantile)),
             deduplicate_decimals=int(
                 values.get("deduplicate_decimals", cls.deduplicate_decimals)
+            ),
+            close_horizontal_holes=bool(
+                values.get("close_horizontal_holes", cls.close_horizontal_holes)
+            ),
+            horizontal_normal_tolerance=float(
+                values.get(
+                    "horizontal_normal_tolerance",
+                    cls.horizontal_normal_tolerance,
+                )
             ),
         ).validated()
 
@@ -64,6 +76,8 @@ class PoissonMeshConfig:
             raise ValueError("poisson.density_quantile must be in [0, 1)")
         if self.deduplicate_decimals < 0:
             raise ValueError("poisson.deduplicate_decimals must be >= 0")
+        if not 0.0 <= self.horizontal_normal_tolerance <= 1.0:
+            raise ValueError("poisson.horizontal_normal_tolerance must be in [0, 1]")
         return self
 
 
@@ -139,6 +153,11 @@ def _cloud_to_poisson_mesh(
 
     _remove_low_density_vertices(mesh, densities, cfg.density_quantile)
     _clean_mesh(mesh)
+    if cfg.close_horizontal_holes:
+        _cap_horizontal_boundary_loops(
+            mesh,
+            normal_tolerance=cfg.horizontal_normal_tolerance,
+        )
 
     if len(mesh.vertices) == 0 or len(mesh.triangles) == 0:
         raise RuntimeError("Poisson reconstruction produced an empty mesh")
@@ -255,3 +274,114 @@ def _clean_mesh(mesh: "o3d.geometry.TriangleMesh") -> None:  # type: ignore[name
     mesh.remove_degenerate_triangles()
     mesh.remove_unreferenced_vertices()
     mesh.remove_non_manifold_edges()
+
+
+def _cap_horizontal_boundary_loops(
+    mesh: "o3d.geometry.TriangleMesh",  # type: ignore[name-defined]
+    normal_tolerance: float = 0.85,
+) -> int:
+    """Fill open boundary loops whose best-fit plane is horizontal.
+
+    The scanner uses Y as the vertical axis. This intentionally only closes
+    nearly horizontal holes, such as missing top/bottom caps on a cylinder,
+    without trying to invent arbitrary side geometry.
+    """
+    vertices = np.asarray(mesh.vertices)
+    triangles = np.asarray(mesh.triangles)
+    if vertices.size == 0 or triangles.size == 0:
+        return 0
+
+    boundary_components = _find_boundary_components(triangles)
+    if not boundary_components:
+        return 0
+
+    new_vertices = vertices.tolist()
+    new_triangles = triangles.tolist()
+    caps_added = 0
+    vertical_axis = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+
+    for component in boundary_components:
+        if len(component) < 3:
+            continue
+
+        component_indices = np.array(sorted(component), dtype=np.int64)
+        points = vertices[component_indices]
+        centroid = points.mean(axis=0)
+        centered = points - centroid
+        if np.linalg.matrix_rank(centered) < 2:
+            continue
+
+        _, _, vh = np.linalg.svd(centered, full_matrices=False)
+        normal = vh[-1]
+        if abs(float(np.dot(normal, vertical_axis))) < normal_tolerance:
+            continue
+
+        ordered_indices = _order_horizontal_loop_vertices(component_indices, points, centroid)
+        if ordered_indices.size < 3:
+            continue
+
+        center_idx = len(new_vertices)
+        new_vertices.append(centroid.tolist())
+
+        upward = centroid[1] >= vertices[:, 1].mean()
+        for i, v0 in enumerate(ordered_indices):
+            v1 = ordered_indices[(i + 1) % ordered_indices.size]
+            if upward:
+                new_triangles.append([int(center_idx), int(v0), int(v1)])
+            else:
+                new_triangles.append([int(center_idx), int(v1), int(v0)])
+        caps_added += 1
+
+    if caps_added == 0:
+        return 0
+
+    o3d = _require_open3d()
+    mesh.vertices = o3d.utility.Vector3dVector(np.asarray(new_vertices, dtype=np.float64))
+    mesh.triangles = o3d.utility.Vector3iVector(np.asarray(new_triangles, dtype=np.int32))
+    mesh.remove_duplicated_triangles()
+    mesh.remove_degenerate_triangles()
+    mesh.remove_unreferenced_vertices()
+    logger.info("Poisson mesh: capped %d horizontal boundary loop(s)", caps_added)
+    return caps_added
+
+
+def _find_boundary_components(triangles: np.ndarray) -> list[set[int]]:
+    edge_counts: dict[tuple[int, int], int] = defaultdict(int)
+    for tri in triangles:
+        a, b, c = (int(tri[0]), int(tri[1]), int(tri[2]))
+        for u, v in ((a, b), (b, c), (c, a)):
+            edge_counts[tuple(sorted((u, v)))] += 1
+
+    adjacency: dict[int, set[int]] = defaultdict(set)
+    for (u, v), count in edge_counts.items():
+        if count == 1:
+            adjacency[u].add(v)
+            adjacency[v].add(u)
+
+    components: list[set[int]] = []
+    visited: set[int] = set()
+    for start in adjacency:
+        if start in visited:
+            continue
+        stack = [start]
+        component: set[int] = set()
+        visited.add(start)
+        while stack:
+            current = stack.pop()
+            component.add(current)
+            for neighbor in adjacency[current]:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    stack.append(neighbor)
+        components.append(component)
+    return components
+
+
+def _order_horizontal_loop_vertices(
+    indices: np.ndarray,
+    points: np.ndarray,
+    centroid: np.ndarray,
+) -> np.ndarray:
+    offsets = points - centroid
+    angles = np.arctan2(offsets[:, 2], offsets[:, 0])
+    return indices[np.argsort(angles)]

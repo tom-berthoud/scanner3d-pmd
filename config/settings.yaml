@@ -59,7 +59,9 @@ export:
     width: 0                # 0 = auto Open3D; laisser 0 sauf besoin spécifique
     scale: 1.1              # marge autour du nuage pour la reconstruction Poisson
     linear_fit: false       # true = surface parfois plus nette, mais plus sensible au bruit
-    density_quantile: 0.00  # retire les 2% sommets les moins denses (artefacts de bord)
+    density_quantile: 0.00  # 0 = ne retire aucune surface faible; >0 retire les artefacts de bord
+    close_horizontal_holes: true       # bouche les trous horizontaux (haut/bas) après Poisson
+    horizontal_normal_tolerance: 0.85  # 1.0 = strictement horizontal, 0.0 = tous les trous
     deduplicate_decimals: 4 # précision de dedoublonnage des points avant maillage
 
 interface:

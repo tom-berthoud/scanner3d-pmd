@@ -50,6 +50,39 @@ def _make_hourglass_profiles(n_profiles: int = 24, n_rows: int = 18) -> list[np.
     return profiles
 
 
+def _boundary_edge_count(mesh: object) -> int:
+    triangles = np.asarray(mesh.triangles)
+    edge_counts: dict[tuple[int, int], int] = {}
+    for tri in triangles:
+        a, b, c = (int(tri[0]), int(tri[1]), int(tri[2]))
+        for u, v in ((a, b), (b, c), (c, a)):
+            edge = tuple(sorted((u, v)))
+            edge_counts[edge] = edge_counts.get(edge, 0) + 1
+    return sum(1 for count in edge_counts.values() if count == 1)
+
+
+def _make_open_cylinder_mesh(o3d: object, n_segments: int = 24) -> object:
+    radius = 20.0
+    half_height = 15.0
+    vertices: list[list[float]] = []
+    for y in (-half_height, half_height):
+        for angle in np.linspace(0.0, 2.0 * np.pi, n_segments, endpoint=False):
+            vertices.append([radius * np.cos(angle), y, radius * np.sin(angle)])
+
+    triangles: list[list[int]] = []
+    for idx in range(n_segments):
+        nxt = (idx + 1) % n_segments
+        bottom0, bottom1 = idx, nxt
+        top0, top1 = idx + n_segments, nxt + n_segments
+        triangles.append([bottom0, bottom1, top1])
+        triangles.append([bottom0, top1, top0])
+
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(np.asarray(vertices, dtype=np.float64))
+    mesh.triangles = o3d.utility.Vector3iVector(np.asarray(triangles, dtype=np.int32))
+    return mesh
+
+
 class TestExportSTL:
     """Tests for scanner.export.stl.export_stl."""
 
@@ -113,6 +146,22 @@ class TestExportSTL:
             export_stl(cloud, path, poisson=POISSON_TEST_CFG)
             assert os.path.exists(path)
             assert os.path.getsize(path) > 0
+
+
+class TestHorizontalHoleCapping:
+    """Tests for closing horizontal mesh holes after Poisson."""
+
+    def test_caps_top_and_bottom_boundary_loops(self) -> None:
+        o3d = pytest.importorskip("open3d")
+        from scanner.export.stl import _cap_horizontal_boundary_loops
+
+        mesh = _make_open_cylinder_mesh(o3d)
+        assert _boundary_edge_count(mesh) == 48
+
+        capped = _cap_horizontal_boundary_loops(mesh)
+
+        assert capped == 2
+        assert _boundary_edge_count(mesh) == 0
 
 
 class TestExportOBJ:
