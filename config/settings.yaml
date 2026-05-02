@@ -4,7 +4,7 @@
 # avec de vraies valeurs — utiliser les .example.yaml comme templates.
 
 scan:
-  n_steps: 200           # nombre de photos pour 360° (1 photo = steps_per_rev*microstepping/n_steps pas moteur)
+  n_steps: 100           # nombre de photos pour 360° (1 photo = steps_per_rev*microstepping/n_steps pas moteur)
   direction: clockwise      # sens de rotation : clockwise / counterclockwise
 
 camera:
@@ -51,8 +51,8 @@ cameras:
       # Mechanical optical-axis angles:
       # angle_camera_laser_deg = yaw in XZ plane, from +Z toward +X.
       # angle_planxz_camera_deg = elevation from the XZ plane.
-      angle_camera_laser_deg: -30.0
-      angle_planxz_camera_deg: 25.5
+      angle_camera_laser_deg: -25.5
+      angle_planxz_camera_deg: -20.0
       up_mm: [0.0, 1.0, 0.0]
   - id: left
     display_name: USB Arducam
@@ -104,7 +104,7 @@ cameras:
       # angle_camera_laser_deg = yaw in XZ plane, from +Z toward +X.
       # angle_planxz_camera_deg = elevation from the XZ plane.
       angle_camera_laser_deg: 32.5
-      angle_planxz_camera_deg: -20.0
+      angle_planxz_camera_deg: 20.0
       up_mm: [0.0, 1.0, 0.0]
 
 laser:
