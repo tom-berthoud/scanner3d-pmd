@@ -4,7 +4,7 @@
 # avec de vraies valeurs — utiliser les .example.yaml comme templates.
 
 scan:
-  n_steps: 100           # nombre de photos pour 360° (1 photo = steps_per_rev*microstepping/n_steps pas moteur)
+  n_steps: 200           # nombre de photos pour 360° (1 photo = steps_per_rev*microstepping/n_steps pas moteur)
   direction: clockwise      # sens de rotation : clockwise / counterclockwise
 
 camera:
