@@ -23,7 +23,7 @@ cameras:
     type: pi
     resolution: [640, 480]
     mock_shape: cube
-    exposure_us: 1000
+    exposure_us: 5000
     gain: 1
     calibration_exposure_us: 20000
     calibration_gain: 4
