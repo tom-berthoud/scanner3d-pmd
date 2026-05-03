@@ -4,7 +4,7 @@
 # avec de vraies valeurs — utiliser les .example.yaml comme templates.
 
 scan:
-  n_steps: 200           # nombre de photos pour 360° (1 photo = steps_per_rev*microstepping/n_steps pas moteur)
+  n_steps: 100           # nombre de photos pour 360° (1 photo = steps_per_rev*microstepping/n_steps pas moteur)
   direction: clockwise      # sens de rotation : clockwise / counterclockwise
   exposure_calibration:
     enabled: true
@@ -182,7 +182,7 @@ reconstruction:
   half_turn_profile_fusion:
     enabled: true
     offset_tolerance_steps: 1
-    max_pair_distance_mm: 30.0
+    max_pair_distance_mm: 10.0
     distance_axes: xyz
     min_profile_points: 8
 
