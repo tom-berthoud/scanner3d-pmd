@@ -147,7 +147,7 @@ reconstruction:
   outlier_nb_neighbors: 20  # voisins pour filtrage outliers (SciPy KDTree)
   outlier_std_ratio: 2.0    # ratio écart-type pour filtrage outliers
   flat_caps:
-    enabled: true
+    enabled: false
     axis_mode: pca
     axis_index: 2
     grid_mm: 0.8
