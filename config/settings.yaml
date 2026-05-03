@@ -127,9 +127,9 @@ laser:
 motor:
   # Moteur : Generic 17HS3401 (NEMA 17, 1.8°/pas, 200 pas/tour, 1.5A)
   # Driver : DM320T (microstepping STEP/DIR, 20V max)
-  step_pin: 17              # broche GPIO STEP
+  step_pin: 22              # broche GPIO STEP
   dir_pin: 27               # broche GPIO DIR
-  enable_pin: 22            # broche GPIO ENABLE (actif bas sur DM320T)
+  enable_pin: 17            # broche GPIO ENABLE (actif bas sur DM320T)
   steps_per_rev: 200        # pas physiques du NEMA 17 (1.8°/pas)
   microstepping: 16          # facteur de microstepping du driver DM320T
   speed_rpm: 5             # vitesse de rotation (tours/min)
