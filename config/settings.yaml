@@ -47,12 +47,12 @@ cameras:
       # +Z follows the laser axis from the laser toward the turntable center.
       # +X points right when looking from the laser toward the turntable.
       # +Y is vertical up and is the turntable rotation axis.
-      position_mm: [124.000, 128.000, -255.000]
+      position_mm: [120.300, 125.700, -254.000]
       # Mechanical optical-axis angles:
       # angle_camera_laser_deg = yaw in XZ plane, from +Z toward +X.
       # angle_planxz_camera_deg = elevation from the XZ plane.
       angle_camera_laser_deg: -25.400
-      angle_planxz_camera_deg: -20.000
+      angle_planxz_camera_deg: -20.100
       up_mm: [0.0, 1.0, 0.0]
   - id: left
     display_name: USB Arducam
@@ -99,12 +99,12 @@ cameras:
       # +Z follows the laser axis from the laser toward the turntable center.
       # +X points right when looking from the laser toward the turntable.
       # +Y is vertical up and is the turntable rotation axis.
-      position_mm: [-161.400, -21.200, -265.200]
+      position_mm: [-161.400, -21.600, -265.100]
       # Mechanical optical-axis angles:
       # angle_camera_laser_deg = yaw in XZ plane, from +Z toward +X.
       # angle_planxz_camera_deg = elevation from the XZ plane.
       angle_camera_laser_deg: 32.800
-      angle_planxz_camera_deg: 19.800
+      angle_planxz_camera_deg: 19.700
       up_mm: [0.0, 1.0, 0.0]
 
 laser:
