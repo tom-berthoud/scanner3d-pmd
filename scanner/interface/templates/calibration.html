@@ -18,6 +18,46 @@
     min-height: 44px;
     font-size: 0.9rem;
   }
+  .calib-live {
+    width: 100%;
+    min-height: 240px;
+    background: #000;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    object-fit: contain;
+  }
+  .calib-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .calib-stat {
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: rgba(255,255,255,0.03);
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #8b949e;
+  }
+  .calib-stat strong {
+    display: block;
+    color: #c9d1d9;
+    font-size: 1rem;
+  }
+  .calib-thumbs {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px;
+  }
+  .calib-thumbs img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #30363d;
+    background: #000;
+  }
 </style>
 {% endblock %}
 
@@ -49,47 +89,95 @@
 
         <hr style="border-color:#30363d; margin:0;" />
 
-        <form id="form-camera" enctype="multipart/form-data" class="d-flex flex-column gap-3">
-
-          <div>
-            <label class="form-label">Images du damier</label>
-            <input
-              class="form-control"
-              type="file"
-              id="camera-images"
-              name="images"
-              accept="image/*"
-              multiple
-              required
-            />
-            <div class="form-text" style="color:#6e7681;">Formats acceptes : JPG, PNG</div>
-          </div>
+        <div class="d-flex flex-column gap-3">
 
           <div class="row g-3">
             <div class="col">
               <label class="form-label form-label-sm">Colonnes internes</label>
               <input class="form-control form-control-sm" type="number"
-                     name="board_cols" value="9" min="3" max="20" />
+                     id="cam-board-cols" name="board_cols" value="9" min="3" max="20" />
               <div class="form-text" style="color:#6e7681;">coins interieurs</div>
             </div>
             <div class="col">
               <label class="form-label form-label-sm">Lignes internes</label>
               <input class="form-control form-control-sm" type="number"
-                     name="board_rows" value="6" min="3" max="20" />
+                     id="cam-board-rows" name="board_rows" value="6" min="3" max="20" />
               <div class="form-text" style="color:#6e7681;">coins interieurs</div>
             </div>
             <div class="col">
               <label class="form-label form-label-sm">Taille case (mm)</label>
               <input class="form-control form-control-sm" type="number"
-                     name="square_size_mm" value="25" min="1" step="0.5" />
+                     id="cam-square-mm" name="square_size_mm" value="25" min="1" step="0.5" />
               <div class="form-text" style="color:#6e7681;">ex. 25 mm</div>
             </div>
           </div>
 
-          <button type="submit" class="btn btn-primary calib-btn" {% if not use_checkerboard %}disabled{% endif %}>
-            <i class="bi bi-cpu me-2"></i>Lancer la calibration camera
-          </button>
-        </form>
+          <img id="checker-live-img" class="calib-live" alt="Retour damier" />
+
+          <div class="calib-stat-grid">
+            <div class="calib-stat">Images valides<strong id="checker-count">{{ camera_calib.count }}</strong></div>
+            <div class="calib-stat">Etat<strong id="checker-status">En attente</strong></div>
+            <div class="calib-stat">Luminosite<strong id="checker-brightness">-</strong></div>
+            <div class="calib-stat">Saturation<strong id="checker-saturation">-</strong></div>
+          </div>
+
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="checker-auto-bracket" checked>
+            <label class="form-check-label" for="checker-auto-bracket">Auto-bracketing exposition</label>
+          </div>
+
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline-secondary calib-btn" id="btn-checker-live" onclick="toggleCheckerLive()">
+              <i class="bi bi-play-circle me-2"></i>Live
+            </button>
+            <button type="button" class="btn btn-info calib-btn" id="btn-checker-capture" onclick="toggleCheckerAutoCapture()">
+              <i class="bi bi-camera me-2"></i>Auto-capture
+            </button>
+            <button type="button" class="btn btn-outline-secondary calib-btn" id="btn-checker-reset" onclick="resetCheckerboardSession()">
+              <i class="bi bi-arrow-counterclockwise me-2"></i>Reinitialiser
+            </button>
+            <button type="button" class="btn btn-primary calib-btn" id="btn-checker-run" onclick="runGuidedCameraCalibration()" {% if not use_checkerboard %}disabled{% endif %}>
+              <i class="bi bi-cpu me-2"></i>Lancer avec les captures
+            </button>
+          </div>
+
+          <div class="form-text" style="color:#6e7681;">
+            Visez 12 a 20 poses differentes. Minimum technique: 4 images acceptees.
+          </div>
+
+          <div id="checker-thumbs" class="calib-thumbs">
+            {% for capture in camera_calib.captures %}
+            {% if capture.preview_jpeg_base64 %}
+            <img src="data:image/jpeg;base64,{{ capture.preview_jpeg_base64 }}" alt="Capture {{ capture.index }}" />
+            {% endif %}
+            {% endfor %}
+          </div>
+
+          <details>
+            <summary style="color:#8b949e; cursor:pointer;">Mode secours: importer des images</summary>
+            <form id="form-camera" enctype="multipart/form-data" class="d-flex flex-column gap-3 mt-3">
+              <div>
+                <label class="form-label">Images du damier</label>
+                <input
+                  class="form-control"
+                  type="file"
+                  id="camera-images"
+                  name="images"
+                  accept="image/*"
+                  multiple
+                  required
+                />
+                <div class="form-text" style="color:#6e7681;">Formats acceptes : JPG, PNG</div>
+              </div>
+              <input type="hidden" name="board_cols" id="upload-board-cols" value="9" />
+              <input type="hidden" name="board_rows" id="upload-board-rows" value="6" />
+              <input type="hidden" name="square_size_mm" id="upload-square-mm" value="25" />
+              <button type="submit" class="btn btn-outline-primary calib-btn" {% if not use_checkerboard %}disabled{% endif %}>
+                <i class="bi bi-upload me-2"></i>Lancer avec images importees
+              </button>
+            </form>
+          </details>
+        </div>
 
         <div id="camera-result"></div>
       </div>
@@ -148,6 +236,22 @@
               required
             />
           </div>
+
+          <div class="row g-3">
+            <div class="col">
+              <label class="form-label form-label-sm">Seuil test laser</label>
+              <input class="form-control form-control-sm" type="number" id="laser-test-threshold" value="70" min="0" max="255" />
+            </div>
+            <div class="col">
+              <label class="form-label form-label-sm">Min points</label>
+              <input class="form-control form-control-sm" type="number" id="laser-test-min-pixels" value="15" min="1" max="4096" />
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-outline-warning calib-btn" id="btn-laser-test" onclick="testLaserExtraction()">
+            <i class="bi bi-eye me-2"></i>Tester extraction laser
+          </button>
+          <div id="laser-test-result"></div>
 
           <button type="submit" class="btn btn-warning text-dark calib-btn">
             <i class="bi bi-bounding-box me-2"></i>Lancer la calibration laser
@@ -228,6 +332,180 @@
 
 {% block extra_scripts %}
 <script>
+let _checkerLiveTimer = null;
+let _checkerCaptureTimer = null;
+
+function checkerPayload() {
+  return {
+    board_cols: parseInt(document.getElementById('cam-board-cols').value || '9', 10),
+    board_rows: parseInt(document.getElementById('cam-board-rows').value || '6', 10),
+    square_size_mm: parseFloat(document.getElementById('cam-square-mm').value || '25'),
+    auto_bracket: !!document.getElementById('checker-auto-bracket').checked
+  };
+}
+
+function syncUploadFields() {
+  var p = checkerPayload();
+  var cols = document.getElementById('upload-board-cols');
+  var rows = document.getElementById('upload-board-rows');
+  var sq = document.getElementById('upload-square-mm');
+  if (cols) cols.value = p.board_cols;
+  if (rows) rows.value = p.board_rows;
+  if (sq) sq.value = p.square_size_mm;
+}
+
+function setCheckerStatsFromHeaders(resp) {
+  var status = resp.headers.get('X-Checkerboard-Status') || 'En attente';
+  var accepted = resp.headers.get('X-Checkerboard-Accepted') === 'true';
+  var found = resp.headers.get('X-Checkerboard-Found') === 'true';
+  document.getElementById('checker-status').textContent = accepted ? 'OK' : (found ? status : 'Damier introuvable');
+  document.getElementById('checker-brightness').textContent = resp.headers.get('X-Brightness-Mean') || '-';
+  document.getElementById('checker-saturation').textContent = (resp.headers.get('X-Saturated-Pct') || '-') + ' %';
+}
+
+async function refreshCheckerLiveFrame() {
+  var img = document.getElementById('checker-live-img');
+  if (!img) return;
+  var p = checkerPayload();
+  try {
+    var url = '/calibration/camera/frame?board_cols=' + p.board_cols +
+      '&board_rows=' + p.board_rows + '&t=' + Date.now();
+    var resp = await fetch(url);
+    if (!resp.ok) {
+      document.getElementById('checker-status').textContent = 'Erreur ' + resp.status;
+      return;
+    }
+    setCheckerStatsFromHeaders(resp);
+    var blob = await resp.blob();
+    img.src = URL.createObjectURL(blob);
+  } catch (e) {
+    document.getElementById('checker-status').textContent = 'Erreur live';
+  }
+}
+
+function toggleCheckerLive() {
+  var btn = document.getElementById('btn-checker-live');
+  if (_checkerLiveTimer) {
+    clearInterval(_checkerLiveTimer);
+    _checkerLiveTimer = null;
+    if (btn) btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>Live';
+    return;
+  }
+  refreshCheckerLiveFrame();
+  _checkerLiveTimer = setInterval(refreshCheckerLiveFrame, 900);
+  if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-2"></i>Stop live';
+}
+
+function renderCheckerSession(data) {
+  document.getElementById('checker-count').textContent = data.count || 0;
+  var box = document.getElementById('checker-thumbs');
+  if (!box) return;
+  box.innerHTML = '';
+  (data.captures || []).forEach(function(c) {
+    if (!c.preview_jpeg_base64) return;
+    var img = document.createElement('img');
+    img.src = 'data:image/jpeg;base64,' + c.preview_jpeg_base64;
+    img.alt = 'Capture ' + c.index;
+    box.appendChild(img);
+  });
+}
+
+function renderCameraResultOk(title, data) {
+  var result = document.getElementById('camera-result');
+  result.innerHTML =
+    '<div class="alert alert-success py-2 mb-0 mt-2">' +
+    '<i class="bi bi-check-circle-fill me-2"></i><strong>' + title + '</strong>' +
+    '<pre class="mb-0 mt-2" style="font-size:0.75rem; color:#adbac7;">' +
+    JSON.stringify(data, null, 2) + '</pre></div>';
+}
+
+function renderCameraResultError(msg) {
+  var result = document.getElementById('camera-result');
+  result.innerHTML =
+    '<div class="alert alert-danger py-2 mb-0 mt-2">' +
+    '<i class="bi bi-exclamation-triangle-fill me-2"></i>' + msg +
+    '</div>';
+}
+
+async function captureCheckerboardOnce() {
+  var p = checkerPayload();
+  try {
+    var resp = await fetch('/calibration/camera/capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(p)
+    });
+    var data = await resp.json();
+    if (data.preview_jpeg_base64) {
+      document.getElementById('checker-live-img').src = 'data:image/jpeg;base64,' + data.preview_jpeg_base64;
+    }
+    if (data.quality && data.quality.metrics) {
+      document.getElementById('checker-brightness').textContent = Number(data.quality.metrics.brightness_mean).toFixed(1);
+      document.getElementById('checker-saturation').textContent = Number(data.quality.metrics.saturated_pct).toFixed(1) + ' %';
+      document.getElementById('checker-status').textContent = data.accepted ? 'Capture acceptee' : data.quality.status;
+    }
+    renderCheckerSession(data);
+    if (data.accepted && typeof showToast === 'function') showToast('Capture damier acceptee', 'success');
+    if ((data.count || 0) >= 20 && _checkerCaptureTimer) {
+      toggleCheckerAutoCapture();
+    }
+    return !!data.accepted;
+  } catch (e) {
+    renderCameraResultError('Erreur capture damier : ' + e);
+    return false;
+  }
+}
+
+function toggleCheckerAutoCapture() {
+  var btn = document.getElementById('btn-checker-capture');
+  if (_checkerCaptureTimer) {
+    clearInterval(_checkerCaptureTimer);
+    _checkerCaptureTimer = null;
+    if (btn) btn.innerHTML = '<i class="bi bi-camera me-2"></i>Auto-capture';
+    return;
+  }
+  captureCheckerboardOnce();
+  _checkerCaptureTimer = setInterval(captureCheckerboardOnce, 1600);
+  if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-2"></i>Stop auto';
+}
+
+async function resetCheckerboardSession() {
+  try {
+    var resp = await fetch('/calibration/camera/reset', { method: 'POST' });
+    var data = await resp.json();
+    renderCheckerSession(data);
+    document.getElementById('checker-status').textContent = 'Session vide';
+    document.getElementById('camera-result').innerHTML = '';
+  } catch (e) {
+    renderCameraResultError('Erreur reset : ' + e);
+  }
+}
+
+async function runGuidedCameraCalibration() {
+  var btn = document.getElementById('btn-checker-run');
+  btn.disabled = true;
+  try {
+    var resp = await fetch('/calibration/camera/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(checkerPayload())
+    });
+    var data = await resp.json();
+    if (!resp.ok) {
+      renderCameraResultError(data.error || 'Erreur calibration');
+      if (typeof showToast === 'function') showToast(data.error || 'Erreur', 'error');
+      return;
+    }
+    var rms = data.report ? Number(data.report.rms_error).toFixed(3) : '?';
+    renderCameraResultOk('Calibration reussie, RMS=' + rms + ' px', data);
+    if (typeof showToast === 'function') showToast('Calibration camera reussie', 'success');
+  } catch (e) {
+    renderCameraResultError('Erreur calibration : ' + e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function submitCalibForm(formId, endpoint, resultId) {
   var form   = document.getElementById(formId);
   var result = document.getElementById(resultId);
@@ -273,6 +551,7 @@ var camForm = document.getElementById('form-camera');
 if (camForm) {
   camForm.addEventListener('submit', function(e) {
     e.preventDefault();
+    syncUploadFields();
     submitCalibForm('form-camera', '/calibration/camera', 'camera-result');
   });
 }
@@ -281,6 +560,49 @@ document.getElementById('form-laser').addEventListener('submit', function(e) {
   e.preventDefault();
   submitCalibForm('form-laser', '/calibration/laser', 'laser-result');
 });
+
+async function testLaserExtraction() {
+  var result = document.getElementById('laser-test-result');
+  var btn = document.getElementById('btn-laser-test');
+  var payload = {
+    threshold: parseInt(document.getElementById('laser-test-threshold').value || '70', 10),
+    min_pixels: parseInt(document.getElementById('laser-test-min-pixels').value || '15', 10)
+  };
+  btn.disabled = true;
+  result.innerHTML =
+    '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
+    '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
+    'Test extraction en cours\u2026</div>';
+  try {
+    var resp = await fetch('/calibration/laser/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    var data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.error || 'Erreur inconnue');
+    }
+    var saturation = Number(data.saturated_pct || 0);
+    var satLabel = saturation > 5 ? 'attention saturation' : 'exposition OK';
+    result.innerHTML =
+      '<div class="alert alert-info py-2 mb-0 mt-2">' +
+      '<strong>' + data.detected_points + ' points detectes</strong>' +
+      '<div class="mt-1" style="font-size:0.8rem; color:#8b949e;">G max=' + data.green_max +
+      ', G mean=' + Number(data.green_mean).toFixed(1) +
+      ', saturation=' + saturation.toFixed(1) + '% (' + satLabel + ')</div>' +
+      '<img src="data:image/jpeg;base64,' + data.preview_jpeg_base64 + '" ' +
+      'style="width:100%; border-radius:8px; margin-top:12px; border:1px solid #30363d;" />' +
+      '</div>';
+  } catch (e) {
+    result.innerHTML =
+      '<div class="alert alert-danger py-2 mb-0 mt-2">' +
+      '<i class="bi bi-exclamation-triangle-fill me-2"></i>' + e +
+      '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 async function calibrateBackgroundFilter() {
   var result = document.getElementById('bg-result');
@@ -359,5 +681,9 @@ async function disableBackgroundFilter() {
     btn.disabled = false;
   }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+  refreshCheckerLiveFrame();
+});
 </script>
 {% endblock %}

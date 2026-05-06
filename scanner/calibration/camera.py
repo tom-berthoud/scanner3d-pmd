@@ -24,6 +24,148 @@ _DEFAULT_INTRINSICS_PATH = str(
 )
 
 
+def _detect_checkerboard(
+    image: np.ndarray,
+    board_size: tuple[int, int] = (9, 6),
+) -> tuple[bool, np.ndarray | None, np.ndarray]:
+    """Detect checkerboard corners with the robust SB detector, then fallback."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+    flags = cv2.CALIB_CB_NORMALIZE_IMAGE | getattr(cv2, "CALIB_CB_EXHAUSTIVE", 0)
+
+    if hasattr(cv2, "findChessboardCornersSB"):
+        try:
+            found, corners = cv2.findChessboardCornersSB(gray, board_size, flags)
+            if found and corners is not None:
+                return True, corners.astype(np.float32), gray
+        except cv2.error:
+            logger.debug("findChessboardCornersSB failed, falling back", exc_info=True)
+
+    found, corners = cv2.findChessboardCorners(gray, board_size, None)
+    if found and corners is not None:
+        criteria = (
+            cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+            30,
+            0.001,
+        )
+        corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+        return True, corners.astype(np.float32), gray
+    return False, None, gray
+
+
+def checkerboard_capture_quality(
+    image: np.ndarray,
+    board_size: tuple[int, int] = (9, 6),
+    previous_poses: Optional[list[list[float]]] = None,
+) -> dict:
+    """Return detection, exposure and pose-diversity quality for one frame."""
+    found, corners, gray = _detect_checkerboard(image, board_size)
+    mean = float(gray.mean())
+    contrast = float(gray.std())
+    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    saturated_pct = float(np.mean(gray >= 250) * 100.0)
+    dark_pct = float(np.mean(gray <= 5) * 100.0)
+
+    issues: list[str] = []
+    if mean < 35.0:
+        issues.append("trop sombre")
+    if mean > 225.0 or saturated_pct > 8.0:
+        issues.append("surexpose")
+    if contrast < 18.0:
+        issues.append("contraste faible")
+    if sharpness < 25.0:
+        issues.append("image floue")
+    if dark_pct > 30.0:
+        issues.append("beaucoup de zones noires")
+    if not found:
+        issues.append("damier introuvable")
+
+    pose: list[float] | None = None
+    pose_distance = None
+    if found and corners is not None:
+        pts = corners.reshape(-1, 2)
+        center = pts.mean(axis=0)
+        span = np.ptp(pts, axis=0)
+        angle = float(np.degrees(np.arctan2(pts[-1, 1] - pts[0, 1], pts[-1, 0] - pts[0, 0])))
+        pose = [
+            float(center[0] / max(gray.shape[1], 1)),
+            float(center[1] / max(gray.shape[0], 1)),
+            float(span[0] / max(gray.shape[1], 1)),
+            float(span[1] / max(gray.shape[0], 1)),
+            angle / 180.0,
+        ]
+        if previous_poses:
+            pose_distance = min(float(np.linalg.norm(np.array(pose) - np.array(p))) for p in previous_poses)
+            if pose_distance < 0.08:
+                issues.append("pose trop similaire")
+
+    accepted = found and not issues
+    if found and issues == ["pose trop similaire"]:
+        accepted = False
+
+    score = 0.0
+    if found:
+        score += 50.0
+    score += max(0.0, 25.0 - abs(mean - 125.0) / 4.0)
+    score += min(20.0, contrast / 3.0)
+    score += min(20.0, sharpness / 30.0)
+    score -= saturated_pct * 2.0
+    if pose_distance is not None:
+        score += min(15.0, pose_distance * 80.0)
+
+    return {
+        "found": bool(found),
+        "accepted": bool(accepted),
+        "status": "ok" if accepted else ", ".join(issues),
+        "issues": issues,
+        "pose": pose,
+        "pose_distance": pose_distance,
+        "score": float(score),
+        "metrics": {
+            "brightness_mean": mean,
+            "contrast_std": contrast,
+            "sharpness": sharpness,
+            "saturated_pct": saturated_pct,
+            "dark_pct": dark_pct,
+        },
+        "corners": corners,
+    }
+
+
+def draw_checkerboard_overlay(
+    image: np.ndarray,
+    board_size: tuple[int, int] = (9, 6),
+    quality: Optional[dict] = None,
+) -> np.ndarray:
+    """Draw checkerboard corners and a compact status overlay."""
+    overlay = image.copy()
+    quality = quality or checkerboard_capture_quality(image, board_size)
+    corners = quality.get("corners")
+    found = bool(quality.get("found"))
+    if corners is not None:
+        cv2.drawChessboardCorners(overlay, board_size, corners, found)
+
+    color = (0, 200, 0) if quality.get("accepted") else (0, 165, 255)
+    if not found:
+        color = (0, 0, 255)
+    text = "damier OK" if quality.get("accepted") else str(quality.get("status", "capture refusee"))
+    cv2.rectangle(overlay, (8, 8), (min(overlay.shape[1] - 8, 460), 42), (0, 0, 0), -1)
+    cv2.putText(overlay, text[:48], (16, 31), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
+    return overlay
+
+
+def calibrate_camera_with_report(
+    images: list[np.ndarray],
+    board_size: tuple[int, int] = (9, 6),
+    square_size_mm: float = 25.0,
+    output_path: Optional[str] = None,
+) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Calibrate camera intrinsics and return a compact quality report."""
+    camera_matrix, dist_coeffs, report = _calibrate_camera_impl(
+        images, board_size=board_size, square_size_mm=square_size_mm, output_path=output_path
+    )
+    return camera_matrix, dist_coeffs, report
+
+
 def calibrate_camera(
     images: list[np.ndarray],
     board_size: tuple[int, int] = (9, 6),
@@ -50,6 +192,18 @@ def calibrate_camera(
         CalibrationError: if fewer than 4 usable checkerboard images are found
             or if OpenCV calibration fails to converge.
     """
+    camera_matrix, dist_coeffs, _report = _calibrate_camera_impl(
+        images, board_size=board_size, square_size_mm=square_size_mm, output_path=output_path
+    )
+    return camera_matrix, dist_coeffs
+
+
+def _calibrate_camera_impl(
+    images: list[np.ndarray],
+    board_size: tuple[int, int] = (9, 6),
+    square_size_mm: float = 25.0,
+    output_path: Optional[str] = None,
+) -> tuple[np.ndarray, np.ndarray, dict]:
     from scanner.calibration import CalibrationError
 
     obj_cols, obj_rows = board_size
@@ -63,12 +217,6 @@ def calibrate_camera(
     image_points: list[np.ndarray] = []
     image_size: Optional[tuple[int, int]] = None
 
-    criteria = (
-        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
-        30,
-        0.001,
-    )
-
     logger.info(
         "Searching for %dx%d checkerboard corners in %d images",
         obj_cols,
@@ -81,15 +229,12 @@ def calibrate_camera(
         if image_size is None:
             image_size = (gray.shape[1], gray.shape[0])
 
-        found, corners = cv2.findChessboardCorners(gray, board_size, None)
+        found, corners, _gray = _detect_checkerboard(img, board_size)
         if not found:
             logger.debug("Image %d: checkerboard not found", idx)
             continue
 
-        # Refine corner positions to sub-pixel accuracy
-        corners_refined = cv2.cornerSubPix(
-            gray, corners, (11, 11), (-1, -1), criteria
-        )
+        corners_refined = corners
         object_points.append(objp)
         image_points.append(corners_refined)
         logger.debug("Image %d: %d corners found", idx, len(corners_refined))
@@ -126,7 +271,14 @@ def calibrate_camera(
     out_path = output_path or _DEFAULT_INTRINSICS_PATH
     _save_camera_calibration(camera_matrix, dist_coeffs, image_size, rms, out_path)
 
-    return camera_matrix, dist_coeffs.flatten()
+    report = {
+        "rms_error": float(rms),
+        "usable_images": len(object_points),
+        "input_images": len(images),
+        "image_size": list(image_size),
+        "quality": "good" if rms < 0.5 else "ok" if rms < 1.5 else "poor",
+    }
+    return camera_matrix, dist_coeffs.flatten(), report
 
 
 def _save_camera_calibration(

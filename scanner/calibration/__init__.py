@@ -19,6 +19,9 @@ from scanner.calibration.background_filter import (
 from scanner.calibration.camera import (
     approximate_camera_intrinsics,
     calibrate_camera,
+    calibrate_camera_with_report,
+    checkerboard_capture_quality,
+    draw_checkerboard_overlay,
     load_camera_calibration,
 )
 from scanner.calibration.laser_plane import calibrate_laser_plane, load_laser_plane
@@ -31,6 +34,9 @@ class CalibrationError(Exception):
 __all__ = [
     "CalibrationError",
     "calibrate_camera",
+    "calibrate_camera_with_report",
+    "checkerboard_capture_quality",
+    "draw_checkerboard_overlay",
     "approximate_camera_intrinsics",
     "save_background_filter",
     "load_background_filter",

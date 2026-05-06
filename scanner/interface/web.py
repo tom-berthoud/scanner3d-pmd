@@ -105,11 +105,17 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     }
     _scan_lock = threading.Lock()
     _sse_queue: queue.Queue = queue.Queue(maxsize=50)
+    _camera_calib_lock = threading.Lock()
+    _camera_calib_session: dict = {
+        "images": [],
+        "captures": [],
+        "last_report": None,
+    }
 
     def _load_background_filter_config() -> dict:
-        from scanner.calibration import load_background_filter
-
         try:
+            from scanner.calibration import load_background_filter
+
             return load_background_filter()
         except Exception as exc:
             logger.warning("Background filter config unreadable: %s", exc)
@@ -131,6 +137,100 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         value = data.get("crop_left_of_col")
         return None if value is None else float(value)
 
+    def _camera_calib_summary() -> dict:
+        with _camera_calib_lock:
+            captures = list(_camera_calib_session["captures"])
+            report = _camera_calib_session.get("last_report")
+        return {
+            "count": len(captures),
+            "recommended_min": 12,
+            "recommended_max": 20,
+            "captures": captures,
+            "last_report": report,
+        }
+
+    def _parse_camera_board_payload() -> tuple[tuple[int, int], float, bool]:
+        payload = request.get_json(silent=True) or {}
+        source = payload if payload else request.values
+        board_size = (
+            int(source.get("board_cols", 9)),
+            int(source.get("board_rows", 6)),
+        )
+        square_mm = float(source.get("square_size_mm", 25.0))
+        auto_bracket = str(source.get("auto_bracket", "false")).lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        return board_size, square_mm, auto_bracket
+
+    def _encode_jpeg_base64(frame, quality: int = 85) -> str:
+        import cv2
+
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        if not ok:
+            raise RuntimeError("Could not encode JPEG")
+        return base64.b64encode(buf.tobytes()).decode("ascii")
+
+    def _capture_checkerboard_candidate(
+        board_size: tuple[int, int],
+        auto_bracket: bool,
+    ) -> tuple:
+        from scanner.calibration import checkerboard_capture_quality, draw_checkerboard_overlay
+        from scanner.hardware import HardwareError, camera_capture, camera_set_exposure, laser_set
+
+        cam_cfg = settings.get("camera", {})
+        scan_exposure = int(cam_cfg.get("exposure_us", 1000))
+        base_exposure = int(cam_cfg.get("calibration_exposure_us", max(5000, scan_exposure * 6)))
+        gain = float(cam_cfg.get("gain", 1.0))
+        exposures = [base_exposure]
+        exposure_note = None
+        if auto_bracket:
+            exposures = [max(100, int(base_exposure * factor)) for factor in (0.5, 1.0, 2.0, 4.0)]
+
+        with _camera_calib_lock:
+            previous_poses = [c["pose"] for c in _camera_calib_session["captures"] if c.get("pose")]
+
+        best = None
+        try:
+            laser_set(False)
+            for exposure in exposures:
+                try:
+                    camera_set_exposure(exposure, gain)
+                    time.sleep(0.08)
+                except HardwareError as exc:
+                    exposure_note = f"reglage exposition indisponible: {exc}"
+                    if auto_bracket:
+                        logger.warning("Calibration exposure bracketing unavailable: %s", exc)
+                    exposures = [base_exposure]
+                frame = camera_capture()
+                quality = checkerboard_capture_quality(frame, board_size, previous_poses=previous_poses)
+                candidate = (quality.get("score", 0.0), exposure, frame, quality)
+                if best is None or candidate[0] > best[0]:
+                    best = candidate
+                if quality.get("accepted") or exposure_note:
+                    break
+        finally:
+            try:
+                laser_set(False)
+            except Exception:
+                pass
+            try:
+                camera_set_exposure(scan_exposure, gain)
+            except Exception:
+                pass
+
+        if best is None:
+            raise HardwareError("Camera capture failed")
+        _score, exposure, frame, quality = best
+        overlay = draw_checkerboard_overlay(frame, board_size, quality)
+        quality = dict(quality)
+        quality.pop("corners", None)
+        quality["exposure_us"] = exposure
+        if exposure_note:
+            quality["exposure_note"] = exposure_note
+        return frame, overlay, quality
 
     def _push_sse(data: dict) -> None:
         """Push a dict as an SSE event."""
@@ -553,14 +653,168 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             "calibration.html",
             use_checkerboard=use_checkerboard,
             background_filter=_load_background_filter_config(),
+            camera_calib=_camera_calib_summary(),
         )
+
+    @app.route("/calibration/camera/session")
+    def calibration_camera_session() -> Response:
+        """Return current in-memory checkerboard capture session."""
+        return jsonify(_camera_calib_summary())
+
+    @app.route("/calibration/camera/reset", methods=["POST"])
+    def calibration_camera_reset() -> Response:
+        """Clear captured checkerboard images."""
+        with _camera_calib_lock:
+            _camera_calib_session["images"] = []
+            _camera_calib_session["captures"] = []
+            _camera_calib_session["last_report"] = None
+        return jsonify(_camera_calib_summary())
+
+    @app.route("/calibration/camera/frame")
+    def calibration_camera_frame() -> Response:
+        """Return one live checkerboard frame with detection overlay."""
+        import cv2
+        from scanner.calibration import checkerboard_capture_quality, draw_checkerboard_overlay
+        from scanner.hardware import HardwareError, camera_capture, laser_set
+
+        if not _manual_allowed():
+            return Response(status=409)
+        try:
+            board_size, _square_mm, _auto_bracket = _parse_camera_board_payload()
+        except (TypeError, ValueError):
+            board_size = (9, 6)
+
+        try:
+            laser_set(False)
+            frame = camera_capture()
+        except HardwareError:
+            return Response(status=503)
+        finally:
+            try:
+                laser_set(False)
+            except Exception:
+                pass
+
+        with _camera_calib_lock:
+            previous_poses = [c["pose"] for c in _camera_calib_session["captures"] if c.get("pose")]
+        quality = checkerboard_capture_quality(frame, board_size, previous_poses=previous_poses)
+        overlay = draw_checkerboard_overlay(frame, board_size, quality)
+        ok, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not ok:
+            return Response(status=500)
+
+        metrics = quality.get("metrics", {})
+        resp = Response(buf.tobytes(), mimetype="image/jpeg")
+        resp.headers["X-Checkerboard-Found"] = str(bool(quality.get("found"))).lower()
+        resp.headers["X-Checkerboard-Accepted"] = str(bool(quality.get("accepted"))).lower()
+        resp.headers["X-Checkerboard-Status"] = str(quality.get("status", ""))
+        resp.headers["X-Brightness-Mean"] = f"{metrics.get('brightness_mean', 0.0):.2f}"
+        resp.headers["X-Saturated-Pct"] = f"{metrics.get('saturated_pct', 0.0):.2f}"
+        resp.headers["X-Contrast-Std"] = f"{metrics.get('contrast_std', 0.0):.2f}"
+        resp.headers["X-Sharpness"] = f"{metrics.get('sharpness', 0.0):.2f}"
+        resp.headers["Access-Control-Expose-Headers"] = (
+            "X-Checkerboard-Found,X-Checkerboard-Accepted,X-Checkerboard-Status,"
+            "X-Brightness-Mean,X-Saturated-Pct,X-Contrast-Std,X-Sharpness"
+        )
+        return resp
+
+    @app.route("/calibration/camera/capture", methods=["POST"])
+    def calibration_camera_capture() -> Response:
+        """Capture one checkerboard image and keep it if quality is acceptable."""
+        from scanner.hardware import HardwareError
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+        try:
+            board_size, _square_mm, auto_bracket = _parse_camera_board_payload()
+            frame, overlay, quality = _capture_checkerboard_candidate(board_size, auto_bracket)
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
+        except HardwareError as exc:
+            return jsonify({"error": str(exc)}), 503
+        except Exception as exc:
+            logger.error("Checkerboard capture error: %s", exc)
+            return jsonify({"error": "Internal error during checkerboard capture"}), 500
+
+        preview = _encode_jpeg_base64(overlay)
+        accepted = bool(quality.get("accepted"))
+        if accepted:
+            metrics = quality.get("metrics", {})
+            with _camera_calib_lock:
+                idx = len(_camera_calib_session["images"]) + 1
+                _camera_calib_session["images"].append(frame)
+                _camera_calib_session["captures"].append(
+                    {
+                        "index": idx,
+                        "pose": quality.get("pose"),
+                        "metrics": metrics,
+                        "exposure_us": quality.get("exposure_us"),
+                        "preview_jpeg_base64": preview,
+                    }
+                )
+
+        result = _camera_calib_summary()
+        result.update(
+            {
+                "accepted": accepted,
+                "quality": quality,
+                "preview_jpeg_base64": preview,
+            }
+        )
+        return jsonify(result), 200 if accepted else 422
+
+    @app.route("/calibration/camera/run", methods=["POST"])
+    def calibration_camera_run() -> Response:
+        """Run calibration from the in-memory guided capture session."""
+        from scanner.calibration import CalibrationError, calibrate_camera_with_report
+
+        if not bool(settings.get("calibration", {}).get("use_checkerboard", True)):
+            return jsonify(
+                {
+                    "error": (
+                        "Checkerboard calibration is disabled in settings "
+                        "(calibration.use_checkerboard=false)."
+                    )
+                }
+            ), 409
+        try:
+            board_size, square_mm, _auto_bracket = _parse_camera_board_payload()
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
+
+        with _camera_calib_lock:
+            images = list(_camera_calib_session["images"])
+        if len(images) < 4:
+            return jsonify({"error": f"At least 4 accepted images are required, got {len(images)}"}), 422
+
+        try:
+            camera_matrix, dist_coeffs, report = calibrate_camera_with_report(
+                images, board_size=board_size, square_size_mm=square_mm
+            )
+            result = {
+                "status": "ok",
+                "fx": float(camera_matrix[0, 0]),
+                "fy": float(camera_matrix[1, 1]),
+                "cx": float(camera_matrix[0, 2]),
+                "cy": float(camera_matrix[1, 2]),
+                "dist_coeffs": dist_coeffs.tolist(),
+                "report": report,
+            }
+            with _camera_calib_lock:
+                _camera_calib_session["last_report"] = report
+            return jsonify(result)
+        except CalibrationError as exc:
+            return jsonify({"error": str(exc)}), 422
+        except Exception as exc:
+            logger.error("Guided camera calibration error: %s", exc)
+            return jsonify({"error": "Internal error during calibration"}), 500
 
     @app.route("/calibration/camera", methods=["POST"])
     def calibration_camera() -> Response:
         """Accept uploaded checkerboard images and run camera calibration."""
         import cv2  # type: ignore[import]
         import numpy as np
-        from scanner.calibration import calibrate_camera, CalibrationError
+        from scanner.calibration import CalibrationError, calibrate_camera_with_report
 
         if not bool(settings.get("calibration", {}).get("use_checkerboard", True)):
             return jsonify(
@@ -593,7 +847,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         square_mm = float(request.form.get("square_size_mm", 25.0))
 
         try:
-            camera_matrix, dist_coeffs = calibrate_camera(
+            camera_matrix, dist_coeffs, report = calibrate_camera_with_report(
                 images, board_size=board_size, square_size_mm=square_mm
             )
             return jsonify(
@@ -604,6 +858,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                     "cx": float(camera_matrix[0, 2]),
                     "cy": float(camera_matrix[1, 2]),
                     "dist_coeffs": dist_coeffs.tolist(),
+                    "report": report,
                 }
             )
         except CalibrationError as exc:
@@ -686,6 +941,71 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except Exception as exc:
             logger.error("Laser calibration error: %s", exc)
             return jsonify({"error": "Internal error during laser calibration"}), 500
+
+    @app.route("/calibration/laser/test", methods=["POST"])
+    def calibration_laser_test() -> Response:
+        """Capture one laser test frame and return extraction overlay + metrics."""
+        import cv2
+        from scanner.hardware import HardwareError, camera_capture, laser_set
+        from scanner.processing import crop_laser_line, extract_laser_line
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+
+        proc_cfg = settings.get("processing", {})
+        payload = request.get_json(silent=True) or {}
+        try:
+            threshold = int(payload.get("threshold", proc_cfg.get("laser_threshold", 60)))
+            min_px = int(payload.get("min_pixels", proc_cfg.get("min_line_pixels", 15)))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid laser test payload: {exc}"}), 400
+        threshold = max(0, min(255, threshold))
+        min_px = max(1, min(4096, min_px))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+
+        try:
+            laser_set(True)
+            time.sleep(float(settings.get("laser", {}).get("warmup_ms", 50)) / 1000.0)
+            frame = camera_capture()
+        except HardwareError as exc:
+            return jsonify({"error": str(exc)}), 503
+        finally:
+            try:
+                laser_set(False)
+            except Exception:
+                pass
+
+        line = extract_laser_line(
+            frame,
+            threshold=threshold,
+            min_pixels=min_px,
+            subpixel=True,
+            mode=extraction_mode,
+        )
+        line = crop_laser_line(
+            line,
+            crop_left_of_col=_background_crop_left_col(),
+            min_points=min_px,
+        )
+        overlay = frame.copy()
+        for i in range(line.shape[0]):
+            col, row = int(round(line[i, 0])), int(round(line[i, 1]))
+            cv2.circle(overlay, (col, row), 2, (0, 0, 255), -1)
+
+        green = frame[:, :, 1]
+        saturated_pct = float((green >= 250).mean() * 100.0)
+        return jsonify(
+            {
+                "status": "ok",
+                "detected_points": int(line.shape[0]),
+                "green_max": int(green.max()),
+                "green_mean": float(green.mean()),
+                "saturated_pct": saturated_pct,
+                "threshold": threshold,
+                "min_pixels": min_px,
+                "preview_jpeg_base64": _encode_jpeg_base64(overlay),
+            }
+        )
 
     @app.route("/calibration/background-filter", methods=["POST"])
     def calibration_background_filter() -> Response:

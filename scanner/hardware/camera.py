@@ -105,6 +105,25 @@ class PiCamera:
         except Exception as exc:
             raise HardwareError(f"Camera capture failed: {exc}") from exc
 
+    def set_exposure(self, exposure_us: int, gain: Optional[float] = None) -> None:
+        """Set manual exposure while keeping focus locked."""
+        from scanner.hardware import HardwareError
+
+        self._exposure_us = int(exposure_us)
+        if gain is not None:
+            self._gain = float(gain)
+        try:
+            controls = {
+                "AfMode": 0,
+                "LensPosition": 2.53,
+                "ExposureTime": self._exposure_us,
+                "AnalogueGain": self._gain,
+            }
+            self._cam.set_controls(controls)
+            logger.info("PiCamera exposure set to %d us, gain=%.2f", self._exposure_us, self._gain)
+        except Exception as exc:
+            raise HardwareError(f"Camera exposure update failed: {exc}") from exc
+
     def close(self) -> None:
         """Release the camera resource."""
         try:

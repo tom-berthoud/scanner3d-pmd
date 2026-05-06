@@ -155,6 +155,13 @@ class MockCamera:
         """
         self._rotation_angle_rad = angle_rad
 
+    def set_exposure(self, exposure_us: int, gain: Optional[float] = None) -> None:
+        """Store exposure settings for API parity with the real camera."""
+        self._exposure_us = int(exposure_us)
+        if gain is not None:
+            self._gain = float(gain)
+        logger.debug("MockCamera exposure set to %d us, gain=%.2f", self._exposure_us, self._gain)
+
     def capture(self) -> np.ndarray:
         """Generate a synthetic BGR image with a geometrically correct laser line.
 

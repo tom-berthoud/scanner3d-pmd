@@ -7,6 +7,7 @@ Exports:
     HardwareError: raised for any hardware-level failure.
     init_hardware: initialise all hardware singletons from config.
     camera_capture: capture a BGR frame from the camera.
+    camera_set_exposure: update manual exposure when supported by the camera.
     motor_step: advance the stepper motor N steps.
     laser_set: enable / disable the laser.
     led_set: set an LED color on/off.
@@ -123,6 +124,15 @@ def camera_capture() -> np.ndarray:
     return _camera_instance.capture()
 
 
+def camera_set_exposure(exposure_us: int, gain: Optional[float] = None) -> None:
+    """Set camera exposure if the active camera driver supports it."""
+    if _camera_instance is None:
+        raise HardwareError("Camera not initialised — call init_hardware() first")
+    if not hasattr(_camera_instance, "set_exposure"):
+        raise HardwareError("Camera exposure control is not supported by this driver")
+    _camera_instance.set_exposure(exposure_us, gain)
+
+
 def motor_step(n: int, direction: str = "clockwise") -> None:
     """Move the stepper motor *n* steps in *direction*.
 
@@ -218,6 +228,7 @@ __all__ = [
     "HardwareError",
     "init_hardware",
     "camera_capture",
+    "camera_set_exposure",
     "motor_step",
     "laser_set",
     "led_set",

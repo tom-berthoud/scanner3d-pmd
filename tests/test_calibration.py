@@ -10,6 +10,7 @@ import yaml
 from scanner.calibration import CalibrationError, load_camera_calibration, load_laser_plane
 from scanner.calibration.camera import _save_camera_calibration
 from scanner.calibration.camera import approximate_camera_intrinsics
+from scanner.calibration.camera import checkerboard_capture_quality
 from scanner.calibration.laser_plane import _save_laser_plane
 
 
@@ -202,3 +203,20 @@ class TestApproximateCameraIntrinsics:
     def test_invalid_scale_raises(self) -> None:
         with pytest.raises(ValueError, match="focal_scale"):
             approximate_camera_intrinsics((640, 480), focal_scale=0.0)
+
+
+class TestCheckerboardCaptureQuality:
+    """Tests for guided checkerboard capture quality checks."""
+
+    def test_rejects_blank_image_without_checkerboard(self) -> None:
+        img = np.zeros((240, 320, 3), dtype=np.uint8)
+        quality = checkerboard_capture_quality(img, (9, 6))
+        assert quality["found"] is False
+        assert quality["accepted"] is False
+        assert "damier introuvable" in quality["issues"]
+
+    def test_rejects_overexposed_image(self) -> None:
+        img = np.full((240, 320, 3), 255, dtype=np.uint8)
+        quality = checkerboard_capture_quality(img, (9, 6))
+        assert quality["accepted"] is False
+        assert "surexpose" in quality["issues"]
