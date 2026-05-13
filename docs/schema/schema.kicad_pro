@@ -582,14 +582,26 @@
           "label": "Datasheet",
           "name": "Datasheet",
           "show": true
+        },
+        {
+          "group_by": false,
+          "label": "Description",
+          "name": "Description",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "#",
+          "name": "${ITEM_NUMBER}",
+          "show": false
         }
       ],
       "filter_string": "",
       "group_symbols": true,
       "include_excluded_from_bom": true,
-      "name": "Default Editing",
+      "name": "",
       "sort_asc": true,
-      "sort_field": "Référence"
+      "sort_field": "Reference"
     },
     "bus_aliases": {},
     "connection_grid_size": 50.0,
@@ -632,7 +644,7 @@
         "uuid": "b5f0736d-188b-4a2a-9d72-b6406c626165"
       }
     ],
-    "used_designators": "R1-4,J1-12,#PWR5-17,Q1-4",
+    "used_designators": "Q1-4,R5-8",
     "variants": []
   },
   "sheets": [
