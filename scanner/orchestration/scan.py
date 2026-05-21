@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 def run_scan(
     config: dict,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    artifact_callback: Optional[Callable[[dict], None]] = None,
     state_machine: Optional[StateMachine] = None,
 ) -> str:
     """Run a full 3D scan and return the path to the exported file.
@@ -107,6 +108,24 @@ def run_scan(
     fmt: str = export_cfg.get("default_format", "stl").lower()
     output_dir: str = export_cfg.get("output_dir", "/tmp/scans")
     poisson_cfg = export_cfg.get("poisson", {})
+    os.makedirs(output_dir, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    output_path = os.path.join(output_dir, f"scan_{timestamp}.{fmt}")
+    cloud_path = os.path.join(output_dir, f"scan_{timestamp}_cloud.ply")
+
+    def _artifact(kind: str, path: str, label: str, media_type: str, points: int | None = None) -> None:
+        if artifact_callback is None:
+            return
+        payload = {
+            "kind": kind,
+            "path": os.path.abspath(path),
+            "label": label,
+            "media_type": media_type,
+            "available": os.path.exists(path),
+        }
+        if points is not None:
+            payload["points"] = int(points)
+        artifact_callback(payload)
 
     def _progress(current: int, total: int, message: str) -> None:
         if progress_callback is not None:
@@ -166,6 +185,14 @@ def run_scan(
             config,
             progress_callback=_capture_progress,
         )
+        for camera_id in frames_by_camera:
+            latest = os.path.join("/tmp/scan_frames", f"latest_{camera_id}.jpg")
+            _artifact(
+                f"extract_{camera_id}",
+                latest,
+                f"Extraction {camera_id}",
+                "image/jpeg",
+            )
     except (HardwareError, Exception) as exc:
         _go_error(exc)
         raise
@@ -181,6 +208,7 @@ def run_scan(
         raise
 
     profiles: list[np.ndarray] = []
+    profiles_by_camera: dict[str, list[np.ndarray]] = {}
     angle_step_rad = 2.0 * math.pi / n_steps
 
     try:
@@ -217,11 +245,31 @@ def run_scan(
                         camera_to_platform_translation=cam_trans,
                     )
                     profiles.append(pts_3d)
+                    profiles_by_camera.setdefault(camera_id, []).append(pts_3d)
                 processed += 1
                 _progress(
                     processed,
                     total_processing,
                     f"Processing {camera_id} frame {idx + 1}/{len(frames)}",
+                )
+
+            camera_profiles = profiles_by_camera.get(camera_id, [])
+            if camera_profiles:
+                camera_cloud = merge_profiles(camera_profiles)
+                if camera_cloud.shape[0] >= 20:
+                    camera_cloud = filter_outliers(
+                        camera_cloud,
+                        nb_neighbors=nb_neighbors,
+                        std_ratio=std_ratio,
+                    )
+                camera_cloud_path = os.path.join(output_dir, f"scan_{timestamp}_cloud_{camera_id}.ply")
+                export_point_cloud_ply(camera_cloud, camera_cloud_path)
+                _artifact(
+                    f"cloud_{camera_id}",
+                    camera_cloud_path,
+                    f"Nuage {camera_id}",
+                    "model/ply",
+                    points=camera_cloud.shape[0],
                 )
 
         cloud = merge_profiles(profiles)
@@ -247,13 +295,15 @@ def run_scan(
         _go_error(exc)
         raise
 
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"scan_{timestamp}.{fmt}")
-    cloud_path = os.path.join(output_dir, f"scan_{timestamp}_cloud.ply")
-
     try:
         export_point_cloud_ply(cloud, cloud_path)
+        _artifact(
+            "cloud_combined",
+            cloud_path,
+            "Nuage combine",
+            "model/ply",
+            points=cloud.shape[0],
+        )
         logger.info("Raw point cloud exported to %s", cloud_path)
 
         _progress(n_steps, n_steps, "Exporting mesh…")
@@ -261,6 +311,8 @@ def run_scan(
             export_obj(cloud, output_path, poisson=poisson_cfg)
         else:
             export_stl(cloud, output_path, poisson=poisson_cfg)
+
+        _artifact("mesh", output_path, "STL final" if fmt == "stl" else "OBJ final", f"model/{fmt}")
 
         logger.info("Scan exported to %s", output_path)
 

@@ -102,6 +102,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         "message": "Ready",
         "last_file": None,
         "error": None,
+        "artifacts": {},
     }
     _scan_lock = threading.Lock()
     _sse_queue: queue.Queue = queue.Queue(maxsize=50)
@@ -172,6 +173,64 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not ok:
             raise RuntimeError("Could not encode JPEG")
         return base64.b64encode(buf.tobytes()).decode("ascii")
+
+    def _camera_label(camera_id: str) -> str:
+        for cam_cfg in settings.get("cameras", []):
+            if str(cam_cfg.get("id")) != str(camera_id):
+                continue
+            cam_type = str(cam_cfg.get("type", "")).lower()
+            if cam_type == "usb":
+                return "USB"
+            if cam_type in ("pi", "picamera", "csi"):
+                return "Nape"
+        return str(camera_id).upper()
+
+    def _artifact_public(item: dict) -> dict:
+        path = item.get("path")
+        result = dict(item)
+        result["available"] = bool(path and os.path.exists(path))
+        result.pop("path", None)
+        return result
+
+    def _initial_artifacts() -> dict:
+        artifacts: dict = {}
+        for cam_cfg in settings.get("cameras", []):
+            camera_id = str(cam_cfg.get("id", "main"))
+            label = _camera_label(camera_id)
+            artifacts[f"extract_{camera_id}"] = {
+                "kind": f"extract_{camera_id}",
+                "path": os.path.join("/tmp/scan_frames", f"latest_{camera_id}.jpg"),
+                "label": f"Extraction {label}",
+                "media_type": "image/jpeg",
+                "stage": "extraction",
+            }
+            artifacts[f"cloud_{camera_id}"] = {
+                "kind": f"cloud_{camera_id}",
+                "path": None,
+                "label": f"Nuage {label}",
+                "media_type": "model/ply",
+                "stage": "cloud",
+            }
+        artifacts["cloud_combined"] = {
+            "kind": "cloud_combined",
+            "path": None,
+            "label": "Nuage combine",
+            "media_type": "model/ply",
+            "stage": "cloud",
+        }
+        artifacts["mesh"] = {
+            "kind": "mesh",
+            "path": None,
+            "label": "STL final",
+            "media_type": "model/stl",
+            "stage": "mesh",
+        }
+        return artifacts
+
+    def _public_artifacts() -> dict:
+        with _scan_lock:
+            artifacts = dict(_scan_state.get("artifacts", {}))
+        return {key: _artifact_public(value) for key, value in artifacts.items()}
 
     def _capture_checkerboard_candidate(
         board_size: tuple[int, int],
@@ -258,6 +317,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     def index() -> str:
         with _scan_lock:
             state = dict(_scan_state)
+            state["artifacts"] = {
+                key: _artifact_public(value)
+                for key, value in _scan_state.get("artifacts", {}).items()
+            }
         return render_template("index.html", scan_state=state)
 
     # ------------------------------------------------------------------ #
@@ -276,6 +339,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             _scan_state["state"] = "IDLE"
             _scan_state["progress"] = 0
             _scan_state["error"] = None
+            _scan_state["artifacts"] = _initial_artifacts()
 
         def _run() -> None:
             from scanner.orchestration.scan import run_scan
@@ -289,8 +353,36 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 from scanner.interface.display_local import update_display
                 update_display(_scan_state["state"], pct)
 
+            def _artifact_cb(artifact: dict) -> None:
+                kind = str(artifact.get("kind", ""))
+                if not kind:
+                    return
+                with _scan_lock:
+                    current = dict(_scan_state.get("artifacts", {}).get(kind, {}))
+                    current.update(artifact)
+                    if kind.startswith("extract_"):
+                        camera_id = kind.removeprefix("extract_")
+                        current["label"] = f"Extraction {_camera_label(camera_id)}"
+                        current["stage"] = "extraction"
+                    elif kind.startswith("cloud_") and kind not in ("cloud_combined",):
+                        camera_id = kind.removeprefix("cloud_")
+                        current["label"] = f"Nuage {_camera_label(camera_id)}"
+                        current["stage"] = "cloud"
+                    elif kind == "cloud_combined":
+                        current["stage"] = "cloud"
+                    elif kind == "mesh":
+                        current["stage"] = "mesh"
+                    _scan_state.setdefault("artifacts", {})[kind] = current
+                    public = _artifact_public(current)
+                _push_sse({"artifact": public, "artifacts": _public_artifacts()})
+
             try:
-                path = run_scan(settings, progress_callback=_cb, state_machine=_sm)
+                path = run_scan(
+                    settings,
+                    progress_callback=_cb,
+                    artifact_callback=_artifact_cb,
+                    state_machine=_sm,
+                )
                 with _scan_lock:
                     _scan_state["last_file"] = path
                     _scan_state["error"] = None
@@ -308,7 +400,32 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         """Return current scan state as JSON."""
         with _scan_lock:
             state = dict(_scan_state)
+            state["artifacts"] = {
+                key: _artifact_public(value)
+                for key, value in _scan_state.get("artifacts", {}).items()
+            }
         return jsonify(state)
+
+    @app.route("/scan/artifacts")
+    def scan_artifacts() -> Response:
+        """Return scan intermediate artifacts and availability."""
+        return jsonify(_public_artifacts())
+
+    @app.route("/scan/artifact/<kind>")
+    def scan_artifact(kind: str) -> Response:
+        """Serve one scan artifact by stable key."""
+        with _scan_lock:
+            artifact = dict(_scan_state.get("artifacts", {}).get(kind, {}))
+        path = artifact.get("path")
+        if not path or not os.path.exists(path):
+            return jsonify({"error": f"Artifact unavailable: {kind}"}), 404
+        media_type = str(artifact.get("media_type") or "application/octet-stream")
+        return send_file(
+            path,
+            mimetype=media_type,
+            as_attachment=False,
+            download_name=os.path.basename(path),
+        )
 
     @app.route("/scan/download")
     def scan_download() -> Response:

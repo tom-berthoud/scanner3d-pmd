@@ -43,16 +43,103 @@ function log(msg, cls) {
 
 // ---- Frame polling ----
 let _poll = null;
+let _artifactPoll = null;
+let _selectedArtifact = 'extract_left';
+let _artifacts = {};
+
+function isImageArtifact(kind) {
+  return kind && kind.indexOf('extract_') === 0;
+}
+
+function artifactUrl(kind) {
+  return '/scan/artifact/' + encodeURIComponent(kind) + '?t=' + Date.now();
+}
+
+function setArtifactTabs() {
+  document.querySelectorAll('.artifact-tab').forEach(function(btn) {
+    var kind = btn.getAttribute('data-kind');
+    var artifact = _artifacts[kind];
+    btn.classList.toggle('active', kind === _selectedArtifact);
+    btn.classList.toggle('available', !!(artifact && artifact.available));
+    btn.disabled = !!(artifact && artifact.path === null && !artifact.available);
+  });
+}
+
+function showImageArtifact(kind) {
+  var img = document.getElementById('live-frame');
+  var stage = document.getElementById('artifact-stage');
+  var label = document.getElementById('frame-label');
+  var canvas = document.getElementById('stl-canvas');
+  var placeholder = document.getElementById('viewer-placeholder');
+  if (canvas) canvas.style.display = 'none';
+  if (placeholder) placeholder.style.display = 'flex';
+  if (img) img.src = artifactUrl(kind);
+  var artifact = _artifacts[kind] || {};
+  if (stage) stage.textContent = artifact.available ? 'EXTRACTION' : 'EN ATTENTE';
+  if (label) label.textContent = artifact.label || kind;
+}
+
+function loadSelectedArtifact() {
+  var artifact = _artifacts[_selectedArtifact];
+  setArtifactTabs();
+  if (isImageArtifact(_selectedArtifact)) {
+    showImageArtifact(_selectedArtifact);
+    return;
+  }
+  var img = document.getElementById('live-frame');
+  var stage = document.getElementById('artifact-stage');
+  var label = document.getElementById('frame-label');
+  if (img) img.removeAttribute('src');
+  if (stage) stage.textContent = artifact && artifact.available ? 'MODELE' : 'EN ATTENTE';
+  if (label) label.textContent = artifact ? artifact.label : _selectedArtifact;
+  if (!artifact || !artifact.available) {
+    var vs = document.getElementById('viewer-status');
+    if (vs) vs.textContent = 'EN ATTENTE';
+    return;
+  }
+  if (typeof window._loadArtifact === 'function') {
+    window._loadArtifact(_selectedArtifact, artifact.media_type || 'model/stl');
+  }
+}
+
+function applyArtifacts(artifacts) {
+  _artifacts = artifacts || {};
+  setArtifactTabs();
+  loadSelectedArtifact();
+}
+
+async function refreshArtifacts() {
+  try {
+    var resp = await fetch('/scan/artifacts?t=' + Date.now());
+    if (!resp.ok) return;
+    applyArtifacts(await resp.json());
+  } catch (_) {}
+}
+
+function selectArtifact(kind) {
+  _selectedArtifact = kind;
+  loadSelectedArtifact();
+}
+
 function startPolling() {
   const fc = document.getElementById('frame-card');
   if (fc) fc.classList.add('show');
   if (_poll) return;
   _poll = setInterval(function() {
-    const img = document.getElementById('live-frame');
-    if (img) img.src = '/scan/frame/latest?t=' + Date.now();
+    refreshArtifacts();
   }, 600);
 }
 function stopPolling() { clearInterval(_poll); _poll = null; }
+
+function startArtifactPolling() {
+  if (_artifactPoll) return;
+  _artifactPoll = setInterval(refreshArtifacts, 1500);
+}
+
+function stopArtifactPolling() {
+  clearInterval(_artifactPoll);
+  _artifactPoll = null;
+}
 
 // ---- Kiosk UI update ----
 function updateKiosk(d) {
@@ -141,12 +228,15 @@ function updateUI(d) {
     if (pb) pb.classList.add('active');
     startPolling();
   }
+  if (['PROCESSING','EXPORTING'].includes(d.state)) {
+    startArtifactPolling();
+  }
   if (['COMPLETE','ERROR','IDLE'].includes(d.state)) {
     if (pb) pb.classList.remove('active');
     stopPolling();
+    stopArtifactPolling();
     if (d.state === 'COMPLETE') {
-      var img = document.getElementById('live-frame');
-      if (img) img.src = '/scan/frame/latest?t=' + Date.now();
+      refreshArtifacts();
       if (dl) dl.classList.remove('off');
       var usbBtn = document.getElementById('btn-usb');
       if (usbBtn) usbBtn.classList.remove('off');
@@ -167,8 +257,9 @@ function connectSSE() {
   es.onmessage = function(e) {
     try {
       var d = JSON.parse(e.data);
+      if (d.artifacts) applyArtifacts(d.artifacts);
       updateUI(d);
-      if (d.state === 'COMPLETE' && typeof loadModel === 'function') loadModel();
+      if (d.state === 'COMPLETE') selectArtifact('mesh');
     } catch(_) {}
   };
   es.onerror = function() { es.close(); setTimeout(connectSSE, 3000); };
@@ -223,6 +314,9 @@ function loadModel() {
     }
   }, 50);
 }
+
+window.selectArtifact = selectArtifact;
+window.refreshArtifacts = refreshArtifacts;
 
 // ---- Gear panel ----
 function toggleGearPanel() {

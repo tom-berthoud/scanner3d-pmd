@@ -448,6 +448,44 @@ body {
 .cam-pnl { display: none; }
 .cam-pnl.show { display: block; }
 
+.artifact-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px;
+  background: #070d17;
+  border-bottom: 1px solid var(--bdr);
+}
+.artifact-tab {
+  min-height: 34px;
+  border: 1px solid var(--bdr-hi);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--txt-mid);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color .2s, color .2s, background .2s;
+}
+.artifact-tab:hover,
+.artifact-tab.active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: var(--cyan-d);
+}
+.artifact-tab.available::after {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+
 .cam-feed {
   position: relative;
   background: #000;
