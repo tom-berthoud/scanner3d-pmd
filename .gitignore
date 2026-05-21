@@ -62,3 +62,8 @@ docs/cahier_des_charges/*.toc
 
 
 CLAUDE.md
+
+# PCB manufacturing outputs
+*.gbr
+*.drl
+*.gbrjob
