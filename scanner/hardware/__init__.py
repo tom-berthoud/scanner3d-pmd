@@ -1,19 +1,7 @@
-"""scanner.hardware — Hardware abstraction layer.
+"""scanner.hardware - Hardware abstraction layer.
 
-Auto-detects whether running on a Raspberry Pi (gpiozero available) and
-selects real hardware drivers or mock implementations accordingly.
-
-Exports:
-    HardwareError: raised for any hardware-level failure.
-    init_hardware: initialise all hardware singletons from config.
-    camera_capture: capture a BGR frame from the camera.
-    camera_set_exposure: update manual exposure when supported by the camera.
-    motor_step: advance the stepper motor N steps.
-    laser_set: enable / disable the laser.
-    led_set: set an LED color on/off.
-    led_blink: blink an LED at a given frequency.
-    display_text: write text to the display.
-    display_status: update display with scanner state.
+The public API remains compatible with the original single-camera code while
+also exposing camera-id aware helpers for the two-camera scanner layout.
 """
 
 import logging
@@ -23,34 +11,23 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# --------------------------------------------------------------------------- #
-# Custom exception
-# --------------------------------------------------------------------------- #
-
 
 class HardwareError(Exception):
     """Raised when a hardware operation fails or the hardware is unavailable."""
 
 
-# --------------------------------------------------------------------------- #
-# Auto-detect platform
-# --------------------------------------------------------------------------- #
-
 _ON_PI: bool = False
-
 try:
     import gpiozero  # noqa: F401
 
     _ON_PI = True
-    logger.info("gpiozero detected — using real hardware drivers")
+    logger.info("gpiozero detected - using real hardware drivers")
 except ImportError:
-    logger.info("gpiozero not found — using mock hardware drivers")
+    logger.info("gpiozero not found - using mock hardware drivers")
 
-# --------------------------------------------------------------------------- #
-# Singleton instances (lazy-initialised via init_hardware)
-# --------------------------------------------------------------------------- #
 
 _camera_instance = None
+_camera_instances: dict[str, object] = {}
 _motor_instance = None
 _laser_instance = None
 _led_instance = None
@@ -58,19 +35,13 @@ _display_instance = None
 
 
 def init_hardware(config: dict) -> None:
-    """Initialise all hardware singletons from *config*.
-
-    Args:
-        config: Full settings dict (loaded from settings.yaml).
-
-    Raises:
-        HardwareError: if any hardware component fails to initialise.
-    """
-    global _camera_instance, _motor_instance, _laser_instance
+    """Initialise all hardware singletons from *config*."""
+    global _camera_instance, _camera_instances, _motor_instance, _laser_instance
     global _led_instance, _display_instance
 
-    logger.info("Initialising hardware (on_pi=%s)", _ON_PI)
+    from scanner.calibration import camera_configs
 
+    logger.info("Initialising hardware (on_pi=%s)", _ON_PI)
     iface_cfg = config.get("interface", {})
     display_type = str(iface_cfg.get("display_type", "oled")).lower()
     display_enabled = display_type not in ("none", "off", "disabled")
@@ -78,149 +49,122 @@ def init_hardware(config: dict) -> None:
     try:
         if _ON_PI:
             from scanner.hardware.camera import PiCamera
-            from scanner.hardware.motor import StepperMotor
+            from scanner.hardware.display import Display
             from scanner.hardware.laser import Laser
             from scanner.hardware.led import LED
-            from scanner.hardware.display import Display
+            from scanner.hardware.motor import StepperMotor
+            from scanner.hardware.usb_camera import USBCamera
 
-            _camera_instance = PiCamera(config.get("camera", {}))
+            _camera_instances = {}
+            for cam_cfg in camera_configs(config):
+                cam_id = str(cam_cfg.get("id", "main"))
+                cam_type = str(cam_cfg.get("type", "pi")).lower()
+                _camera_instances[cam_id] = (
+                    USBCamera(cam_cfg) if cam_type == "usb" else PiCamera(cam_cfg)
+                )
             _motor_instance = StepperMotor(config.get("motor", {}))
             _laser_instance = Laser(config.get("laser", {}))
             _led_instance = LED(iface_cfg)
-            if display_enabled:
-                _display_instance = Display(iface_cfg)
-            else:
-                _display_instance = None
-                logger.info("Display disabled by config (interface.display_type=%s)", display_type)
+            _display_instance = Display(iface_cfg) if display_enabled else None
         else:
-            from scanner.hardware.mock import MockCamera, MockMotor, MockLaser, MockLED, MockDisplay
+            from scanner.hardware.mock import MockCamera, MockDisplay, MockLED, MockLaser, MockMotor
 
-            _camera_instance = MockCamera(config.get("camera", {}))
+            _camera_instances = {
+                str(cam_cfg.get("id", "main")): MockCamera(cam_cfg)
+                for cam_cfg in camera_configs(config)
+            }
             _motor_instance = MockMotor(config.get("motor", {}))
             _laser_instance = MockLaser(config.get("laser", {}))
             _led_instance = MockLED(iface_cfg)
-            if display_enabled:
-                _display_instance = MockDisplay(iface_cfg)
-            else:
-                _display_instance = None
-                logger.info("Mock display disabled by config (interface.display_type=%s)", display_type)
+            _display_instance = MockDisplay(iface_cfg) if display_enabled else None
+
+        if not _camera_instances:
+            raise HardwareError("No camera configured")
+        _camera_instance = next(iter(_camera_instances.values()))
+        if _display_instance is None:
+            logger.info("Display disabled by config (interface.display_type=%s)", display_type)
     except HardwareError:
         raise
     except Exception as exc:
         raise HardwareError(f"Hardware initialisation failed: {exc}") from exc
 
 
-def camera_capture() -> np.ndarray:
-    """Capture one frame from the camera.
+def camera_capture(camera_id: str | None = None) -> np.ndarray:
+    """Capture one frame from one camera.
 
-    Returns:
-        BGR image as numpy array of shape (H, W, 3), dtype uint8.
-
-    Raises:
-        HardwareError: if the camera is not initialised or capture fails.
+    If *camera_id* is omitted, the first configured camera is used for legacy
+    callers.
     """
-    if _camera_instance is None:
-        raise HardwareError("Camera not initialised — call init_hardware() first")
-    return _camera_instance.capture()
+    cam = _camera_instance if camera_id is None else _camera_instances.get(str(camera_id))
+    if cam is None:
+        raise HardwareError("Camera not initialised")
+    return cam.capture()
 
 
-def camera_set_exposure(exposure_us: int, gain: Optional[float] = None) -> None:
+def camera_capture_all() -> dict[str, np.ndarray]:
+    """Capture one frame from every configured camera in acquisition order."""
+    if not _camera_instances:
+        raise HardwareError("Camera not initialised")
+    return {camera_id: cam.capture() for camera_id, cam in _camera_instances.items()}
+
+
+def camera_set_exposure(
+    exposure_us: int,
+    gain: Optional[float] = None,
+    camera_id: str | None = None,
+) -> None:
     """Set camera exposure if the active camera driver supports it."""
-    if _camera_instance is None:
-        raise HardwareError("Camera not initialised — call init_hardware() first")
-    if not hasattr(_camera_instance, "set_exposure"):
+    cam = _camera_instance if camera_id is None else _camera_instances.get(str(camera_id))
+    if cam is None:
+        raise HardwareError("Camera not initialised")
+    if not hasattr(cam, "set_exposure"):
         raise HardwareError("Camera exposure control is not supported by this driver")
-    _camera_instance.set_exposure(exposure_us, gain)
+    cam.set_exposure(exposure_us, gain)
 
 
 def motor_step(n: int, direction: str = "clockwise") -> None:
-    """Move the stepper motor *n* steps in *direction*.
-
-    Args:
-        n: Number of steps (positive integer).
-        direction: 'clockwise' or 'counterclockwise'.
-
-    Raises:
-        HardwareError: if the motor is not initialised.
-    """
+    """Move the stepper motor *n* steps in *direction*."""
     if _motor_instance is None:
-        raise HardwareError("Motor not initialised — call init_hardware() first")
+        raise HardwareError("Motor not initialised")
     _motor_instance.motor_step(n, direction)
-    # Keep MockCamera in sync with MockMotor rotation angle.
-    if not _ON_PI and _camera_instance is not None and hasattr(_motor_instance, "current_angle_rad"):
-        _camera_instance.set_rotation_angle(_motor_instance.current_angle_rad)
+    if not _ON_PI and hasattr(_motor_instance, "current_angle_rad"):
+        for cam in _camera_instances.values():
+            if hasattr(cam, "set_rotation_angle"):
+                cam.set_rotation_angle(_motor_instance.current_angle_rad)
 
 
 def laser_set(state: bool) -> None:
-    """Enable or disable the laser.
-
-    Args:
-        state: True to turn the laser on, False to turn it off.
-
-    Raises:
-        HardwareError: if the laser is not initialised.
-    """
+    """Enable or disable the laser."""
     if _laser_instance is None:
-        raise HardwareError("Laser not initialised — call init_hardware() first")
+        raise HardwareError("Laser not initialised")
     _laser_instance.laser_set(state)
 
 
 def led_set(color: str, state: bool) -> None:
-    """Set an LED on or off.
-
-    Args:
-        color: LED colour string, e.g. 'green', 'orange', 'red'.
-        state: True = on, False = off.
-
-    Raises:
-        HardwareError: if the LED controller is not initialised.
-    """
+    """Set an LED on or off."""
     if _led_instance is None:
-        raise HardwareError("LED not initialised — call init_hardware() first")
+        raise HardwareError("LED not initialised")
     _led_instance.led_set(color, state)
 
 
 def led_blink(color: str, frequency_hz: float) -> None:
-    """Start blinking an LED at the given frequency.
-
-    Args:
-        color: LED colour string.
-        frequency_hz: Blink frequency in Hz (0 stops blinking).
-
-    Raises:
-        HardwareError: if the LED controller is not initialised.
-    """
+    """Start blinking an LED at the given frequency."""
     if _led_instance is None:
-        raise HardwareError("LED not initialised — call init_hardware() first")
+        raise HardwareError("LED not initialised")
     _led_instance.led_blink(color, frequency_hz)
 
 
 def display_text(text: str, line: int = 0) -> None:
-    """Write *text* on the display at *line*.
-
-    Args:
-        text: String to display.
-        line: Line number (0-based).
-
-    Raises:
-        HardwareError: if the display is not initialised.
-    """
+    """Write *text* on the display at *line*."""
     if _display_instance is None:
-        raise HardwareError("Display not initialised — call init_hardware() first")
+        raise HardwareError("Display not initialised")
     _display_instance.display_text(text, line)
 
 
 def display_status(state: str) -> None:
-    """Update the display to show the current scanner *state*.
-
-    Args:
-        state: State string, e.g. 'IDLE', 'SCANNING', 'ERROR'.
-
-    Raises:
-        HardwareError: if the display is not initialised.
-    """
+    """Update the display to show the current scanner *state*."""
     if _display_instance is None:
-        raise HardwareError("Display not initialised — call init_hardware() first")
+        raise HardwareError("Display not initialised")
     _display_instance.display_status(state)
 
 
@@ -228,6 +172,7 @@ __all__ = [
     "HardwareError",
     "init_hardware",
     "camera_capture",
+    "camera_capture_all",
     "camera_set_exposure",
     "motor_step",
     "laser_set",

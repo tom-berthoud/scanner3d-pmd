@@ -14,6 +14,7 @@ import numpy as np
 from scanner.hardware import (
     HardwareError,
     camera_capture,
+    camera_capture_all,
     laser_set,
     motor_step,
 )
@@ -23,7 +24,12 @@ logger = logging.getLogger(__name__)
 _FRAME_DIR = "/tmp/scan_frames"
 
 
-def _save_frame(frame: np.ndarray, step_idx: int, config: dict) -> None:
+def _save_frame(
+    frame: np.ndarray,
+    step_idx: int,
+    config: dict,
+    camera_id: str | None = None,
+) -> None:
     """Save *frame* to disk with laser-line overlay."""
     try:
         import cv2
@@ -60,11 +66,15 @@ def _save_frame(frame: np.ndarray, step_idx: int, config: dict) -> None:
         except Exception:
             pass  # Save frame without overlay if extraction fails
 
-        path = os.path.join(_FRAME_DIR, f"frame_{step_idx:03d}.jpg")
+        suffix = "" if camera_id is None else f"_{camera_id}"
+        path = os.path.join(_FRAME_DIR, f"frame_{step_idx:03d}{suffix}.jpg")
         cv2.imwrite(path, overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
         # Also write a "latest" symlink-equivalent (overwrite)
-        latest = os.path.join(_FRAME_DIR, "latest.jpg")
+        latest_name = "latest.jpg" if camera_id is None else f"latest_{camera_id}.jpg"
+        latest = os.path.join(_FRAME_DIR, latest_name)
         cv2.imwrite(latest, overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if camera_id is not None:
+            cv2.imwrite(os.path.join(_FRAME_DIR, "latest.jpg"), overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
     except Exception as exc:
         logger.debug("Could not save frame %d: %s", step_idx, exc)
 
@@ -166,3 +176,74 @@ def run_capture_sequence(
         "Capture sequence complete: %d frames collected", len(frames)
     )
     return frames
+
+
+def run_capture_sequence_multi(
+    n_steps: int,
+    config: dict,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+    save_frames: bool = True,
+) -> dict[str, list[np.ndarray]]:
+    """Drive the scanner and collect one image per camera at each step.
+
+    The motor is moved once per step. The laser is then enabled, every camera
+    is captured sequentially, and the laser is disabled immediately after the
+    last capture.
+    """
+    direction: str = config.get("scan", {}).get("direction", "clockwise")
+    frames_by_camera: dict[str, list[np.ndarray]] = {}
+
+    motor_cfg = config.get("motor", {})
+    total_motor_steps = int(motor_cfg.get("steps_per_rev", 200)) * int(
+        motor_cfg.get("microstepping", 1)
+    )
+    steps_per_photo = max(1, total_motor_steps // n_steps)
+
+    if save_frames:
+        try:
+            import shutil
+
+            if os.path.exists(_FRAME_DIR):
+                shutil.rmtree(_FRAME_DIR)
+        except Exception:
+            pass
+
+    logger.info(
+        "Starting multi-camera capture sequence: %d photos, %d motor steps/photo",
+        n_steps,
+        steps_per_photo,
+    )
+
+    try:
+        for step_idx in range(n_steps):
+            motor_step(steps_per_photo, direction)
+            laser_set(True)
+            step_frames = camera_capture_all()
+            laser_set(False)
+
+            for camera_id, frame in step_frames.items():
+                frames_by_camera.setdefault(camera_id, []).append(frame)
+                if save_frames:
+                    _save_frame(frame, step_idx, config, camera_id=camera_id)
+
+            if progress_callback is not None:
+                progress_callback(step_idx + 1, n_steps)
+
+    except HardwareError:
+        try:
+            laser_set(False)
+        except HardwareError as safety_err:
+            logger.error("Could not turn off laser during error recovery: %s", safety_err)
+        raise
+    except Exception as exc:
+        try:
+            laser_set(False)
+        except HardwareError as safety_err:
+            logger.error("Could not turn off laser during error recovery: %s", safety_err)
+        raise HardwareError(f"Multi-camera capture failed at step {step_idx}: {exc}") from exc
+
+    logger.info(
+        "Multi-camera capture complete: %s",
+        {camera_id: len(frames) for camera_id, frames in frames_by_camera.items()},
+    )
+    return frames_by_camera

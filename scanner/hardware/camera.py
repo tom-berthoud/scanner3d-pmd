@@ -40,6 +40,9 @@ class PiCamera:
             raise HardwareError("picamera2 not available — install it on the Pi") from exc
 
         res = config.get("resolution", [1920, 1080])
+        self._camera_num: int | None = (
+            int(config["camera_num"]) if config.get("camera_num") is not None else None
+        )
         self._width: int = int(res[0])
         self._height: int = int(res[1])
         self._exposure_us: int = int(config.get("exposure_us", 5000))
@@ -49,7 +52,7 @@ class PiCamera:
         self._awb_gains: tuple[float, float] = (float(awb_gains[0]), float(awb_gains[1]))
 
         try:
-            self._cam = Picamera2()
+            self._cam = Picamera2() if self._camera_num is None else Picamera2(self._camera_num)
             capture_cfg = self._cam.create_still_configuration(
                 main={"size": (self._width, self._height), "format": "BGR888"},
             )

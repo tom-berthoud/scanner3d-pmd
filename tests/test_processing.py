@@ -241,6 +241,19 @@ class TestTriangulate:
         )
         assert result.shape[0] == 0, "Parallel ray should produce no intersection"
 
+    def test_camera_to_platform_translation(self) -> None:
+        """Camera-frame points can be translated into a shared platform frame."""
+        line = np.array([[320.0, 240.0]], dtype=np.float32)
+        result = triangulate(
+            line,
+            _make_camera_matrix(cx=320.0, cy=240.0),
+            _zero_dist(),
+            np.array([0.0, 0.0, 1.0, -300.0]),
+            0.0,
+            camera_to_platform_translation=np.array([10.0, 20.0, 30.0]),
+        )
+        np.testing.assert_allclose(result[0], np.array([10.0, 20.0, 330.0]), atol=1e-6)
+
     def test_bad_shape_raises(self) -> None:
         """Wrong line shape should raise ValueError."""
         with pytest.raises(ValueError):

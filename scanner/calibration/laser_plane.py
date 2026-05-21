@@ -16,7 +16,6 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import cv2  # type: ignore[import]
 import numpy as np
 import yaml
 
@@ -63,6 +62,7 @@ def calibrate_laser_plane(
     """
     from scanner.calibration import CalibrationError
     from scanner.processing.laser_line import crop_laser_line, extract_laser_line
+    import cv2  # type: ignore[import]
 
     if len(reference_images) != len(reference_distances_mm):
         raise CalibrationError(

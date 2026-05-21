@@ -25,6 +25,13 @@ from scanner.calibration.camera import (
     load_camera_calibration,
 )
 from scanner.calibration.laser_plane import calibrate_laser_plane, load_laser_plane
+from scanner.calibration.multi_camera import (
+    camera_config_by_id,
+    camera_configs,
+    camera_ids,
+    default_camera_id,
+    load_camera_model,
+)
 
 
 class CalibrationError(Exception):
@@ -44,4 +51,9 @@ __all__ = [
     "load_camera_calibration",
     "calibrate_laser_plane",
     "load_laser_plane",
+    "camera_configs",
+    "camera_config_by_id",
+    "camera_ids",
+    "default_camera_id",
+    "load_camera_model",
 ]

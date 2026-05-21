@@ -56,12 +56,11 @@ def run_scan(
     from scanner.hardware import HardwareError, laser_set, led_set, led_blink
     from scanner.calibration import (
         CalibrationError,
-        approximate_camera_intrinsics,
+        camera_ids,
         load_background_filter,
-        load_camera_calibration,
-        load_laser_plane,
+        load_camera_model,
     )
-    from scanner.acquisition import run_capture_sequence
+    from scanner.acquisition import run_capture_sequence_multi
     from scanner.processing import crop_laser_line, extract_laser_line, triangulate
     from scanner.reconstruction import merge_profiles, filter_outliers
     from scanner.export import export_stl, export_obj, export_point_cloud_ply
@@ -137,25 +136,11 @@ def run_scan(
     # ------------------------------------------------------------------ #
     # Load calibration
     # ------------------------------------------------------------------ #
-    calib_cfg = config.get("calibration", {})
-    use_checkerboard = bool(calib_cfg.get("use_checkerboard", True))
-    focal_scale = float(calib_cfg.get("approx_focal_scale", 1.25))
-
-    cam_cfg = config.get("camera", {})
-    resolution = cam_cfg.get("resolution", [640, 480])
+    configured_camera_ids = camera_ids(config)
+    camera_models = {}
     try:
-        cam_res = (int(resolution[0]), int(resolution[1]))
-    except Exception:
-        cam_res = (640, 480)
-
-    try:
-        if use_checkerboard:
-            camera_matrix, dist_coeffs = load_camera_calibration()
-        else:
-            camera_matrix, dist_coeffs = approximate_camera_intrinsics(
-                cam_res, focal_scale=focal_scale
-            )
-        laser_plane = load_laser_plane()
+        for camera_id in configured_camera_ids:
+            camera_models[camera_id] = load_camera_model(config, camera_id)
     except (CalibrationError, ValueError) as exc:
         _go_error(exc)
         raise
@@ -171,12 +156,16 @@ def run_scan(
         _go_error(exc)
         raise
 
-    frames: list[np.ndarray] = []
+    frames_by_camera: dict[str, list[np.ndarray]] = {}
     try:
         def _capture_progress(step: int, total: int) -> None:
             _progress(step, total, f"Capturing step {step}/{total}")
 
-        frames = run_capture_sequence(n_steps, config, progress_callback=_capture_progress)
+        frames_by_camera = run_capture_sequence_multi(
+            n_steps,
+            config,
+            progress_callback=_capture_progress,
+        )
     except (HardwareError, Exception) as exc:
         _go_error(exc)
         raise
@@ -195,27 +184,45 @@ def run_scan(
     angle_step_rad = 2.0 * math.pi / n_steps
 
     try:
-        for idx, frame in enumerate(frames):
-            angle_rad = idx * angle_step_rad
-            line_px = extract_laser_line(
-                frame,
-                threshold=threshold,
-                min_pixels=min_pixels,
-                subpixel=subpixel,
-                mode=extraction_mode,
-            )
-            line_px = crop_laser_line(
-                line_px,
-                crop_left_of_col=crop_left_of_col,
-                min_points=min_pixels,
-            )
-            if line_px.shape[0] > 0:
-                pts_3d = triangulate(
-                    line_px, camera_matrix, dist_coeffs, laser_plane, angle_rad,
-                    axis_point=_axis_point,
+        total_processing = max(1, sum(len(frames) for frames in frames_by_camera.values()))
+        processed = 0
+        for camera_id, frames in frames_by_camera.items():
+            if camera_id not in camera_models:
+                logger.warning("No calibration model loaded for camera %s", camera_id)
+                continue
+            camera_matrix, dist_coeffs, laser_plane, cam_rot, cam_trans = camera_models[camera_id]
+            for idx, frame in enumerate(frames):
+                angle_rad = idx * angle_step_rad
+                line_px = extract_laser_line(
+                    frame,
+                    threshold=threshold,
+                    min_pixels=min_pixels,
+                    subpixel=subpixel,
+                    mode=extraction_mode,
                 )
-                profiles.append(pts_3d)
-            _progress(idx + 1, n_steps, f"Processing frame {idx + 1}/{n_steps}")
+                line_px = crop_laser_line(
+                    line_px,
+                    crop_left_of_col=crop_left_of_col,
+                    min_points=min_pixels,
+                )
+                if line_px.shape[0] > 0:
+                    pts_3d = triangulate(
+                        line_px,
+                        camera_matrix,
+                        dist_coeffs,
+                        laser_plane,
+                        angle_rad,
+                        axis_point=_axis_point,
+                        camera_to_platform_rotation=cam_rot,
+                        camera_to_platform_translation=cam_trans,
+                    )
+                    profiles.append(pts_3d)
+                processed += 1
+                _progress(
+                    processed,
+                    total_processing,
+                    f"Processing {camera_id} frame {idx + 1}/{len(frames)}",
+                )
 
         cloud = merge_profiles(profiles)
 

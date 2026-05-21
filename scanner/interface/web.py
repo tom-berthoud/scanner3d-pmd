@@ -326,7 +326,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     @app.route("/scan/frame/latest")
     def scan_frame_latest() -> Response:
         """Return the most recently saved scan frame as JPEG."""
-        path = "/tmp/scan_frames/latest.jpg"
+        camera_id = request.args.get("camera")
+        name = "latest.jpg" if not camera_id else f"latest_{camera_id}.jpg"
+        path = os.path.join("/tmp/scan_frames", name)
         if not os.path.exists(path):
             return Response(status=404)
         return send_file(path, mimetype="image/jpeg")
@@ -334,7 +336,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     @app.route("/scan/frame/<int:step>")
     def scan_frame_step(step: int) -> Response:
         """Return the JPEG frame captured at the given step index."""
-        path = f"/tmp/scan_frames/frame_{step:03d}.jpg"
+        camera_id = request.args.get("camera")
+        suffix = "" if not camera_id else f"_{camera_id}"
+        path = f"/tmp/scan_frames/frame_{step:03d}{suffix}.jpg"
         if not os.path.exists(path):
             return Response(status=404)
         return send_file(path, mimetype="image/jpeg")
@@ -468,7 +472,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not _manual_allowed():
             return Response(status=409)
         try:
-            frame = camera_capture()
+            frame = camera_capture(request.args.get("camera"))
             ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
             if not ok:
                 return Response(status=500)
@@ -509,7 +513,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         min_px = max(1, min(640, min_px))
 
         try:
-            frame = camera_capture()
+            frame = camera_capture(request.args.get("camera"))
         except HardwareError:
             return Response(status=503)
 

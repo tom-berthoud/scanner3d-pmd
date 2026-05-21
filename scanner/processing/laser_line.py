@@ -188,6 +188,32 @@ def _extract_component_centerline(
     return result.astype(np.float32)
 
 
+def _connected_components_numpy(mask: np.ndarray) -> list[np.ndarray]:
+    """Return boolean masks for 8-connected components without OpenCV."""
+    height, width = mask.shape
+    seen = np.zeros_like(mask, dtype=bool)
+    components: list[np.ndarray] = []
+    for start_r, start_c in zip(*np.nonzero(mask)):
+        if seen[start_r, start_c]:
+            continue
+        stack = [(int(start_r), int(start_c))]
+        seen[start_r, start_c] = True
+        pixels: list[tuple[int, int]] = []
+        while stack:
+            row, col = stack.pop()
+            pixels.append((row, col))
+            for nr in range(max(0, row - 1), min(height, row + 2)):
+                for nc in range(max(0, col - 1), min(width, col + 2)):
+                    if not seen[nr, nc] and mask[nr, nc]:
+                        seen[nr, nc] = True
+                        stack.append((nr, nc))
+        comp = np.zeros_like(mask, dtype=bool)
+        rows, cols = zip(*pixels)
+        comp[np.asarray(rows), np.asarray(cols)] = True
+        components.append(comp)
+    return components
+
+
 def extract_laser_line(
     frame: np.ndarray,
     threshold: int = 180,
@@ -237,24 +263,34 @@ def extract_laser_line(
         logger.debug("extract_laser_line: no pixels above threshold=%d", threshold)
         return _empty_line()
 
-    import cv2  # type: ignore[import]
+    try:
+        import cv2  # type: ignore[import]
 
-    mask_u8 = (mask.astype(np.uint8) * 255)
-    kernel = np.ones((_CLOSE_KERNEL_SIZE, _CLOSE_KERNEL_SIZE), dtype=np.uint8)
-    mask_closed = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, kernel)
-
-    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask_closed, connectivity=8)
+        mask_u8 = (mask.astype(np.uint8) * 255)
+        kernel = np.ones((_CLOSE_KERNEL_SIZE, _CLOSE_KERNEL_SIZE), dtype=np.uint8)
+        mask_closed = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, kernel)
+        n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask_closed, connectivity=8)
+        component_masks = [
+            labels == label_idx
+            for label_idx in range(1, n_labels)
+            if int(stats[label_idx, cv2.CC_STAT_AREA]) >= max(4, min_pixels // 3)
+        ]
+    except ModuleNotFoundError:
+        component_masks = [
+            component
+            for component in _connected_components_numpy(mask)
+            if int(component.sum()) >= max(4, min_pixels // 3)
+        ]
 
     components: list[tuple[float, np.ndarray]] = []
     min_component_area = max(4, min_pixels // 3)
     min_component_points = max(3, min_pixels // 3)
 
-    for label_idx in range(1, n_labels):
-        area = int(stats[label_idx, cv2.CC_STAT_AREA])
+    for component_mask in component_masks:
+        area = int(component_mask.sum())
         if area < min_component_area:
             continue
 
-        component_mask = labels == label_idx
         centerline = _extract_component_centerline(component_mask, laser_signal, subpixel=subpixel)
         if centerline.shape[0] < min_component_points:
             continue

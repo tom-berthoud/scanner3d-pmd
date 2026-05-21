@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import cv2  # type: ignore[import]
 import numpy as np
 import yaml
 
@@ -29,6 +28,12 @@ def _detect_checkerboard(
     board_size: tuple[int, int] = (9, 6),
 ) -> tuple[bool, np.ndarray | None, np.ndarray]:
     """Detect checkerboard corners with the robust SB detector, then fallback."""
+    try:
+        import cv2  # type: ignore[import]
+    except ModuleNotFoundError:
+        gray = image.mean(axis=2).astype(np.uint8) if image.ndim == 3 else image
+        return False, None, gray
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     flags = cv2.CALIB_CB_NORMALIZE_IMAGE | getattr(cv2, "CALIB_CB_EXHAUSTIVE", 0)
 
@@ -58,10 +63,15 @@ def checkerboard_capture_quality(
     previous_poses: Optional[list[list[float]]] = None,
 ) -> dict:
     """Return detection, exposure and pose-diversity quality for one frame."""
+    try:
+        import cv2  # type: ignore[import]
+    except ModuleNotFoundError:
+        cv2 = None
+
     found, corners, gray = _detect_checkerboard(image, board_size)
     mean = float(gray.mean())
     contrast = float(gray.std())
-    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var()) if cv2 is not None else 0.0
     saturated_pct = float(np.mean(gray >= 250) * 100.0)
     dark_pct = float(np.mean(gray <= 5) * 100.0)
 
@@ -137,6 +147,8 @@ def draw_checkerboard_overlay(
     quality: Optional[dict] = None,
 ) -> np.ndarray:
     """Draw checkerboard corners and a compact status overlay."""
+    import cv2  # type: ignore[import]
+
     overlay = image.copy()
     quality = quality or checkerboard_capture_quality(image, board_size)
     corners = quality.get("corners")
@@ -204,6 +216,8 @@ def _calibrate_camera_impl(
     square_size_mm: float = 25.0,
     output_path: Optional[str] = None,
 ) -> tuple[np.ndarray, np.ndarray, dict]:
+    import cv2  # type: ignore[import]
+
     from scanner.calibration import CalibrationError
 
     obj_cols, obj_rows = board_size
