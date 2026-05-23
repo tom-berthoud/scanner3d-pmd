@@ -23,8 +23,8 @@ cameras:
     type: pi
     resolution: [640, 480]
     mock_shape: duck
-    exposure_us: 1000
-    gain: 1.0
+    exposure_us: 3000
+    gain: 10
     lens_position: 2.7
     awb_mode: off
     awb_gains: [0.5, 1.0]
@@ -47,11 +47,12 @@ cameras:
     pixel_format: YUYV
     flush_frames: 3
     v4l2_exposure_scale_us: 100
-    resolution: [1280, 720]
+    resolution: [2312, 1736]
     mock_shape: duck
-    exposure_us: 1000
+    exposure_us: 8000
     # V4L2 gain range reported by this camera: 100..1494.
     gain: 100
+    focus_absolute: 500
     intrinsics_path: config/camera_intrinsics_left.yaml
     laser_plane_path: config/laser_plane_left.yaml
     extrinsics:
