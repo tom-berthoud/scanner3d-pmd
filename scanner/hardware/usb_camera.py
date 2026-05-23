@@ -40,6 +40,7 @@ class USBCamera:
         self._flush_frames = int(config.get("flush_frames", 3))
         self._v4l2_exposure_scale_us = int(config.get("v4l2_exposure_scale_us", 100))
         self._capture_device = str(self._device_path) if self._device_path else self._device_index
+        self._v4l2_ctrl_names: set[str] = set()
 
         self._backend = config.get("backend")
         self._open_capture()
@@ -56,6 +57,7 @@ class USBCamera:
         from scanner.hardware import HardwareError
 
         cv2 = self._cv2
+        self._set_v4l2_format()
         if self._backend:
             backend_value = getattr(cv2, str(self._backend), None)
             self._cap = (
@@ -79,6 +81,7 @@ class USBCamera:
             self._cap.set(cv2.CAP_PROP_FOURCC, fourcc)
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+        self._v4l2_ctrl_names = self._list_v4l2_control_names()
         self.set_exposure(self._exposure_us, self._gain)
         if self._focus_absolute not in (None, ""):
             self._apply_v4l2_controls({"focus_absolute": int(float(self._focus_absolute))})
@@ -113,11 +116,58 @@ class USBCamera:
                 logger.debug("v4l2 control %s=%s failed: %s", key, value, exc)
         return applied
 
+    def _set_v4l2_format(self) -> None:
+        """Force the requested V4L2 stream mode before OpenCV opens the device."""
+        if not self._device_path or not shutil.which("v4l2-ctl"):
+            return
+        fmt = f"width={self._width},height={self._height}"
+        if self._pixel_format:
+            fmt = f"{fmt},pixelformat={str(self._pixel_format)[:4]}"
+        cmd = ["v4l2-ctl", "-d", str(self._device_path), f"--set-fmt-video={fmt}"]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=2.0)
+        except Exception as exc:
+            logger.debug("v4l2 format request failed (%s): %s", fmt, exc)
+
+    def _list_v4l2_control_names(self) -> set[str]:
+        if not self._device_path or not shutil.which("v4l2-ctl"):
+            return set()
+        try:
+            proc = subprocess.run(
+                ["v4l2-ctl", "-d", str(self._device_path), "--list-ctrls-menus"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=2.0,
+            )
+        except Exception:
+            return set()
+        names = set()
+        for line in proc.stdout.splitlines():
+            stripped = line.strip()
+            if not stripped or " " not in stripped:
+                continue
+            names.add(stripped.split()[0])
+        return names
+
+    def _control_exists(self, name: str) -> bool:
+        return not self._v4l2_ctrl_names or name in self._v4l2_ctrl_names
+
     def _get_v4l2_controls(self) -> dict[str, str]:
         if not self._device_path or not shutil.which("v4l2-ctl"):
             return {}
         result = {}
-        for key in ("exposure_auto", "exposure_absolute", "gain", "focus_auto", "focus_absolute"):
+        for key in (
+            "auto_exposure",
+            "exposure_auto",
+            "exposure_auto_priority",
+            "exposure_absolute",
+            "exposure_time_absolute",
+            "gain",
+            "white_balance_temperature_auto",
+            "focus_auto",
+            "focus_absolute",
+        ):
             cmd = ["v4l2-ctl", "-d", str(self._device_path), "--get-ctrl", key]
             try:
                 proc = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=2.0)
@@ -169,13 +219,22 @@ class USBCamera:
         except Exception as exc:
             logger.warning("USB camera exposure update failed: %s", exc)
         exposure_abs = max(1, int(round(self._exposure_us / max(1, self._v4l2_exposure_scale_us))))
-        self._apply_v4l2_controls(
-            {
-                "exposure_auto": 1,
-                "exposure_absolute": exposure_abs,
-                "gain": max(0, int(round(self._gain))),
-            }
-        )
+        v4l2_controls: dict[str, int] = {}
+        if self._control_exists("auto_exposure"):
+            v4l2_controls["auto_exposure"] = 1
+        if self._control_exists("exposure_auto"):
+            v4l2_controls["exposure_auto"] = 1
+        if self._control_exists("exposure_auto_priority"):
+            v4l2_controls["exposure_auto_priority"] = 0
+        if self._control_exists("white_balance_temperature_auto"):
+            v4l2_controls["white_balance_temperature_auto"] = 0
+        if self._control_exists("exposure_absolute"):
+            v4l2_controls["exposure_absolute"] = exposure_abs
+        if self._control_exists("exposure_time_absolute"):
+            v4l2_controls["exposure_time_absolute"] = exposure_abs
+        if self._control_exists("gain"):
+            v4l2_controls["gain"] = max(0, int(round(self._gain)))
+        self._apply_v4l2_controls(v4l2_controls)
 
     def set_controls(self, controls: dict) -> dict:
         """Apply runtime USB camera controls and return driver-reported info."""
