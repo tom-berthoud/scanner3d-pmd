@@ -42,13 +42,16 @@ cameras:
     device_index: 2
     device_path: /dev/video2
     backend: CAP_V4L2
-    pixel_format: MJPG
+    # Arducam B0475 reports only YUYV modes on this Raspberry Pi.
+    # Supported sizes: 1280x720, 1920x1080, 2312x1736, 3840x2160, 4624x3472, 9248x6944.
+    pixel_format: YUYV
     flush_frames: 3
     v4l2_exposure_scale_us: 100
-    resolution: [640, 480]
+    resolution: [1280, 720]
     mock_shape: duck
     exposure_us: 1000
-    gain: 1.0
+    # V4L2 gain range reported by this camera: 100..1494.
+    gain: 100
     intrinsics_path: config/camera_intrinsics_left.yaml
     laser_plane_path: config/laser_plane_left.yaml
     extrinsics:

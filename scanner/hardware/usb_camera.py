@@ -164,6 +164,7 @@ class USBCamera:
             "exposure_absolute",
             "exposure_time_absolute",
             "gain",
+            "white_balance_automatic",
             "white_balance_temperature_auto",
             "focus_auto",
             "focus_absolute",
@@ -226,6 +227,8 @@ class USBCamera:
             v4l2_controls["exposure_auto"] = 1
         if self._control_exists("exposure_auto_priority"):
             v4l2_controls["exposure_auto_priority"] = 0
+        if self._control_exists("white_balance_automatic"):
+            v4l2_controls["white_balance_automatic"] = 0
         if self._control_exists("white_balance_temperature_auto"):
             v4l2_controls["white_balance_temperature_auto"] = 0
         if self._control_exists("exposure_absolute"):

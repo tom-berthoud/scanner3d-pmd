@@ -63,7 +63,7 @@
           </div>
           <div class="col-6 col-md-3">
             <label class="form-label mb-1" for="gain-{{ camera.id }}">Gain</label>
-            <input class="form-control cam-gain" id="gain-{{ camera.id }}" data-camera="{{ camera.id }}" type="number" min="0" max="64" step="0.1" value="{{ camera.gain }}" />
+            <input class="form-control cam-gain" id="gain-{{ camera.id }}" data-camera="{{ camera.id }}" type="number" min="{% if camera.type == 'usb' %}100{% else %}0{% endif %}" max="{% if camera.type == 'usb' %}1494{% else %}64{% endif %}" step="{% if camera.type == 'usb' %}1{% else %}0.1{% endif %}" value="{{ camera.gain }}" />
           </div>
           <div class="col-6 col-md-3">
             <label class="form-label mb-1" for="lens-{{ camera.id }}">Focus</label>
