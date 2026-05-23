@@ -89,10 +89,10 @@ def run_scan(
     direction: str = scan_cfg.get("direction", "clockwise")
 
     proc_cfg = config.get("processing", {})
-    threshold: int = int(proc_cfg.get("laser_threshold", 180))
+    default_threshold: int = int(proc_cfg.get("laser_threshold", 180))
     min_pixels: int = int(proc_cfg.get("min_line_pixels", 10))
     subpixel: bool = bool(proc_cfg.get("subpixel", True))
-    extraction_mode: str = str(proc_cfg.get("extraction_mode", "component_axis"))
+    extraction_mode: str = str(proc_cfg.get("extraction_mode", "row_mean"))
     background_filter = load_background_filter()
     crop_left_of_col = (
         float(background_filter["crop_left_of_col"])
@@ -218,6 +218,16 @@ def run_scan(
             if camera_id not in camera_models:
                 logger.warning("No calibration model loaded for camera %s", camera_id)
                 continue
+            cam_cfg = next(
+                (
+                    item
+                    for item in config.get("cameras", [])
+                    if str(item.get("id")) == str(camera_id)
+                ),
+                {},
+            )
+            threshold = int(cam_cfg.get("laser_threshold", default_threshold))
+            mask_rects = cam_cfg.get("laser_mask", []) or []
             camera_matrix, dist_coeffs, laser_plane, cam_rot, cam_trans = camera_models[camera_id]
             for idx, frame in enumerate(frames):
                 angle_rad = idx * angle_step_rad
@@ -227,6 +237,8 @@ def run_scan(
                     min_pixels=min_pixels,
                     subpixel=subpixel,
                     mode=extraction_mode,
+                    camera_id=camera_id,
+                    mask_rects=mask_rects,
                 )
                 line_px = crop_laser_line(
                     line_px,

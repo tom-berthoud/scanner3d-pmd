@@ -24,6 +24,22 @@ logger = logging.getLogger(__name__)
 _FRAME_DIR = "/tmp/scan_frames"
 
 
+def _camera_processing_config(config: dict, camera_id: str | None = None) -> tuple[int, list]:
+    proc_cfg = config.get("processing", {})
+    threshold = int(proc_cfg.get("laser_threshold", 180))
+    mask = []
+    if camera_id is not None:
+        try:
+            from scanner.calibration import camera_config_by_id
+
+            cam_cfg = camera_config_by_id(config, str(camera_id))
+            threshold = int(cam_cfg.get("laser_threshold", threshold))
+            mask = cam_cfg.get("laser_mask", []) or []
+        except Exception:
+            pass
+    return threshold, mask
+
+
 def _save_frame(
     frame: np.ndarray,
     step_idx: int,
@@ -39,10 +55,10 @@ def _save_frame(
         os.makedirs(_FRAME_DIR, exist_ok=True)
 
         proc_cfg = config.get("processing", {})
-        threshold = int(proc_cfg.get("laser_threshold", 180))
+        threshold, mask_rects = _camera_processing_config(config, camera_id)
         min_px = int(proc_cfg.get("min_line_pixels", 10))
         subpixel = bool(proc_cfg.get("subpixel", True))
-        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
         background_filter = load_background_filter()
         crop_left_of_col = (
             float(background_filter["crop_left_of_col"])
@@ -58,6 +74,8 @@ def _save_frame(
                 min_pixels=min_px,
                 subpixel=subpixel,
                 mode=extraction_mode,
+                camera_id=camera_id,
+                mask_rects=mask_rects,
             )
             line = crop_laser_line(line, crop_left_of_col=crop_left_of_col, min_points=min_px)
             for i in range(line.shape[0]):

@@ -209,6 +209,20 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             for cam_cfg in camera_configs(settings)
         ]
 
+    def _camera_processing_config(camera_id: str | None = None) -> tuple[int, list]:
+        proc_cfg = settings.get("processing", {})
+        threshold = int(proc_cfg.get("laser_threshold", 180))
+        mask = []
+        if camera_id:
+            from scanner.calibration import camera_configs
+
+            for cam_cfg in camera_configs(settings):
+                if str(cam_cfg.get("id")) == str(camera_id):
+                    threshold = int(cam_cfg.get("laser_threshold", threshold))
+                    mask = cam_cfg.get("laser_mask", []) or []
+                    break
+        return threshold, mask
+
     def _artifact_tabs() -> list[dict]:
         tabs: list[dict] = []
         for cam in _camera_view_configs():
@@ -578,10 +592,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         frame = cam.capture()
 
         proc_cfg = settings.get("processing", {})
-        threshold = int(proc_cfg.get("laser_threshold", 180))
+        threshold, mask_rects = _camera_processing_config()
         min_px = int(proc_cfg.get("min_line_pixels", 10))
         subpixel = bool(proc_cfg.get("subpixel", True))
-        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
 
         line = extract_laser_line(
             frame,
@@ -589,6 +603,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels=min_px,
             subpixel=subpixel,
             mode=extraction_mode,
+            mask_rects=mask_rects,
         )
         line = crop_laser_line(
             line,
@@ -754,9 +769,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return Response(status=409)
 
         proc_cfg = settings.get("processing", {})
-        default_threshold = int(proc_cfg.get("laser_threshold", 60))
+        camera_id = request.args.get("camera")
+        default_threshold, mask_rects = _camera_processing_config(camera_id)
         default_min_px = int(proc_cfg.get("min_line_pixels", 15))
-        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
 
         try:
             threshold = int(request.args.get("threshold", default_threshold))
@@ -770,7 +786,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         min_px = max(1, min(640, min_px))
 
         try:
-            frame = camera_capture(request.args.get("camera"))
+            frame = camera_capture(camera_id)
         except HardwareError:
             return Response(status=503)
 
@@ -780,6 +796,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels=min_px,
             subpixel=True,
             mode=extraction_mode,
+            camera_id=camera_id,
+            mask_rects=mask_rects,
         )
         line = crop_laser_line(
             line,
@@ -1216,13 +1234,14 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         proc_cfg = settings.get("processing", {})
         payload = request.get_json(silent=True) or {}
         try:
-            threshold = int(payload.get("threshold", proc_cfg.get("laser_threshold", 60)))
+            default_threshold, mask_rects = _camera_processing_config()
+            threshold = int(payload.get("threshold", default_threshold))
             min_px = int(payload.get("min_pixels", proc_cfg.get("min_line_pixels", 15)))
         except (TypeError, ValueError) as exc:
             return jsonify({"error": f"Invalid laser test payload: {exc}"}), 400
         threshold = max(0, min(255, threshold))
         min_px = max(1, min(4096, min_px))
-        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
 
         try:
             laser_set(True)
@@ -1242,6 +1261,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels=min_px,
             subpixel=True,
             mode=extraction_mode,
+            mask_rects=mask_rects,
         )
         line = crop_laser_line(
             line,
@@ -1281,9 +1301,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return jsonify({"error": "Calibration disabled while scan is running"}), 409
 
         proc_cfg = settings.get("processing", {})
-        default_threshold = int(proc_cfg.get("laser_threshold", 60))
+        default_threshold, mask_rects = _camera_processing_config()
         default_min_px = int(proc_cfg.get("min_line_pixels", 15))
-        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
 
         payload = request.get_json(silent=True) or {}
         try:
@@ -1318,6 +1338,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels=min_px,
             subpixel=True,
             mode=extraction_mode,
+            mask_rects=mask_rects,
         )
         if line.shape[0] < min_px:
             return jsonify(
