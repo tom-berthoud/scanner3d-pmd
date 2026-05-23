@@ -97,46 +97,93 @@
     <div class="pnl">
       <div class="pnl-head">
         <span class="pip"></span>
-        <span>Tuning Laser (live)</span>
+        <span>Test Processing</span>
       </div>
       <div class="trigger-body">
         <div class="err-strip" style="display:block;">
-          Regle le seuil jusqu'a voir des points rouges sur toute la ligne laser verte. Puis reporte les valeurs dans config/settings.yaml.
+          Tester le seuil et un masque rectangulaire par camera. Appliquer met a jour les valeurs en memoire du serveur.
         </div>
-        <img id="tuning-img" src="" alt="Tuning detection" class="img-fluid rounded" style="background:#000;min-height:220px;object-fit:contain;" />
-
-        <label for="tuning-camera" class="form-label mb-1">Camera</label>
-        <select id="tuning-camera" class="form-select" onchange="refreshTuningFrame()">
+        <div class="row g-2">
           {% for camera in cameras %}
-          <option value="{{ camera.id }}">{{ camera.label }} ({{ camera.id }})</option>
+          {% set mask = camera.laser_mask[0] if camera.laser_mask else [0, 0, 0, 0] %}
+          <div class="col-12 col-xl-6">
+            <div class="pnl">
+              <div class="pnl-head">
+                <span class="pip"></span>
+                <span>{{ camera.label }} Processing</span>
+              </div>
+              <div class="trigger-body">
+                <div class="cam-feed" style="border:1px solid #30363d;">
+                  <img id="proc-img-{{ camera.id }}" src="" alt="Processing {{ camera.label }}" style="background:#000;min-height:220px;object-fit:contain;" />
+                  <span class="cam-tag tl">{{ camera.label }}</span>
+                  <span class="cam-tag br" id="proc-shape-{{ camera.id }}">-</span>
+                </div>
+
+                <label for="proc-threshold-{{ camera.id }}" class="form-label mb-1">
+                  Threshold : <span id="proc-threshold-val-{{ camera.id }}">{{ camera.laser_threshold }}</span>
+                </label>
+                <input
+                  id="proc-threshold-{{ camera.id }}"
+                  type="range"
+                  min="0"
+                  max="255"
+                  value="{{ camera.laser_threshold }}"
+                  class="form-range"
+                  oninput="document.getElementById('proc-threshold-val-{{ camera.id }}').textContent=this.value;"
+                />
+
+                <label for="proc-minpx-{{ camera.id }}" class="form-label mb-1">
+                  min_line_pixels : <span id="proc-minpx-val-{{ camera.id }}">15</span>
+                </label>
+                <input
+                  id="proc-minpx-{{ camera.id }}"
+                  type="range"
+                  min="1"
+                  max="200"
+                  value="15"
+                  class="form-range"
+                  oninput="document.getElementById('proc-minpx-val-{{ camera.id }}').textContent=this.value;"
+                />
+
+                <label class="form-label mb-1">Masque</label>
+                <div class="form-check">
+                  <input id="proc-mask-enabled-{{ camera.id }}" class="form-check-input" type="checkbox" {% if camera.laser_mask %}checked{% endif %} />
+                  <label class="form-check-label" for="proc-mask-enabled-{{ camera.id }}">Actif</label>
+                </div>
+                <div class="row g-2">
+                  <div class="col-3">
+                    <input id="proc-mask-x0-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[0] }}" placeholder="x0" />
+                  </div>
+                  <div class="col-3">
+                    <input id="proc-mask-y0-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[1] }}" placeholder="y0" />
+                  </div>
+                  <div class="col-3">
+                    <input id="proc-mask-x1-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[2] }}" placeholder="x1" />
+                  </div>
+                  <div class="col-3">
+                    <input id="proc-mask-y1-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[3] }}" placeholder="y1" />
+                  </div>
+                </div>
+
+                <div id="proc-stats-{{ camera.id }}" class="state-msg" style="font-family:monospace;font-size:0.85em;">
+                  En attente...
+                </div>
+
+                <div class="d-flex gap-2 flex-wrap">
+                  <button class="btn btn-outline-secondary" onclick="refreshProcessingFrame('{{ camera.id }}')">
+                    <i class="bi bi-arrow-repeat me-1"></i>Tester
+                  </button>
+                  <button class="btn btn-outline-info" onclick="applyProcessingConfig('{{ camera.id }}')">
+                    <i class="bi bi-check2-circle me-1"></i>Appliquer
+                  </button>
+                  <button class="btn btn-outline-secondary" id="btn-proc-auto-{{ camera.id }}" onclick="toggleProcessingAuto('{{ camera.id }}')">
+                    <i class="bi bi-play-circle me-1"></i>Auto
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
           {% endfor %}
-        </select>
-
-        <div style="margin-top:8px;">
-          <label for="tuning-threshold" class="form-label mb-1">
-            Seuil canal vert : <span id="tuning-threshold-val">60</span>
-          </label>
-          <input id="tuning-threshold" type="range" min="0" max="255" value="60" class="form-range" oninput="document.getElementById('tuning-threshold-val').textContent=this.value;" />
-        </div>
-
-        <div>
-          <label for="tuning-minpx" class="form-label mb-1">
-            min_line_pixels : <span id="tuning-minpx-val">15</span>
-          </label>
-          <input id="tuning-minpx" type="range" min="1" max="100" value="15" class="form-range" oninput="document.getElementById('tuning-minpx-val').textContent=this.value;" />
-        </div>
-
-        <div id="tuning-stats" class="state-msg" style="font-family:monospace;font-size:0.85em;">
-          En attente...
-        </div>
-
-        <div class="d-flex gap-2">
-          <button class="btn btn-outline-secondary" id="btn-tuning-refresh" onclick="refreshTuningFrame()">
-            <i class="bi bi-arrow-repeat me-1"></i>Capturer
-          </button>
-          <button class="btn btn-outline-secondary" id="btn-tuning-toggle" onclick="toggleTuningAuto()">
-            <i class="bi bi-play-circle me-1"></i>Auto
-          </button>
         </div>
       </div>
     </div>
@@ -320,10 +367,92 @@ function toggleTuningAuto() {
   if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Stop';
 }
 
+let _processingTimers = {};
+
+function processingMask(camera) {
+  var enabled = document.getElementById('proc-mask-enabled-' + camera);
+  if (!enabled || !enabled.checked) return [];
+  var x0 = parseInt((document.getElementById('proc-mask-x0-' + camera) || {}).value || '0', 10);
+  var y0 = parseInt((document.getElementById('proc-mask-y0-' + camera) || {}).value || '0', 10);
+  var x1 = parseInt((document.getElementById('proc-mask-x1-' + camera) || {}).value || '0', 10);
+  var y1 = parseInt((document.getElementById('proc-mask-y1-' + camera) || {}).value || '0', 10);
+  if (x1 <= x0 || y1 <= y0) return [];
+  return [[x0, y0, x1, y1]];
+}
+
+async function refreshProcessingFrame(camera) {
+  var img = document.getElementById('proc-img-' + camera);
+  var stats = document.getElementById('proc-stats-' + camera);
+  var shape = document.getElementById('proc-shape-' + camera);
+  if (!img) return;
+  var th = document.getElementById('proc-threshold-' + camera).value;
+  var mp = document.getElementById('proc-minpx-' + camera).value;
+  var mask = JSON.stringify(processingMask(camera));
+  try {
+    var r = await fetch(
+      '/manual/camera/tuning?camera=' + encodeURIComponent(camera) +
+      '&threshold=' + th +
+      '&min_pixels=' + mp +
+      '&mask=' + encodeURIComponent(mask) +
+      '&t=' + Date.now()
+    );
+    if (!r.ok) {
+      if (stats) stats.textContent = 'Erreur ' + r.status + ' - scan en cours ?';
+      return;
+    }
+    var detected = r.headers.get('X-Detected-Columns') || '?';
+    var grMax = r.headers.get('X-GR-Max') || '?';
+    var grMean = r.headers.get('X-GR-Mean') || '?';
+    var masks = r.headers.get('X-Mask-Rects') || '0';
+    var blob = await r.blob();
+    img.src = URL.createObjectURL(blob);
+    if (shape) shape.textContent = detected + ' pts';
+    if (stats) {
+      stats.textContent = 'Points: ' + detected + ' | G max=' + grMax + ' mean=' + grMean + ' | threshold=' + th + ' min_px=' + mp + ' | masks=' + masks;
+    }
+  } catch (e) {
+    if (stats) stats.textContent = 'Erreur: ' + e;
+  }
+}
+
+async function applyProcessingConfig(camera) {
+  var th = parseInt((document.getElementById('proc-threshold-' + camera) || {}).value || '0', 10);
+  var r = await fetch('/manual/processing/apply', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({camera: camera, threshold: th, mask: processingMask(camera)})
+  });
+  var data = await r.json();
+  if (!r.ok) {
+    mlog(data.error || 'Erreur processing', 'log-err');
+    if (typeof showToast === 'function') showToast(data.error || 'Erreur processing', 'error');
+    return;
+  }
+  mlog('Processing applique ' + camera + ': ' + JSON.stringify(data), 'log-ok');
+  if (typeof showToast === 'function') showToast('Processing applique: ' + camera, 'success');
+  refreshProcessingFrame(camera);
+}
+
+function toggleProcessingAuto(camera) {
+  var btn = document.getElementById('btn-proc-auto-' + camera);
+  if (_processingTimers[camera]) {
+    clearInterval(_processingTimers[camera]);
+    delete _processingTimers[camera];
+    if (btn) btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Auto';
+    return;
+  }
+  refreshProcessingFrame(camera);
+  _processingTimers[camera] = setInterval(function() { refreshProcessingFrame(camera); }, 900);
+  if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Stop';
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   refreshManualStatus();
   setInterval(refreshManualStatus, 2000);
   refreshCameraFrame();
+  document.querySelectorAll('[id^="proc-img-"]').forEach(function(img) {
+    refreshProcessingFrame(img.id.replace('proc-img-', ''));
+  });
   mlog('Mode manuel pret.');
 });
 </script>

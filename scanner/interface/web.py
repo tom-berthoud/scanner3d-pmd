@@ -205,9 +205,40 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 "focus_absolute": cam_cfg.get("focus_absolute"),
                 "pixel_format": cam_cfg.get("pixel_format", ""),
                 "device_path": cam_cfg.get("device_path"),
+                "laser_threshold": int(
+                    cam_cfg.get(
+                        "laser_threshold",
+                        settings.get("processing", {}).get("laser_threshold", 180),
+                    )
+                ),
+                "laser_mask": cam_cfg.get("laser_mask", []) or [],
             }
             for cam_cfg in camera_configs(settings)
         ]
+
+    def _parse_mask_rects(raw) -> list[list[int]]:
+        if raw in (None, "", []):
+            return []
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+        if isinstance(raw, dict) and raw.get("enabled"):
+            raw = [[raw.get("x0", 0), raw.get("y0", 0), raw.get("x1", 0), raw.get("y1", 0)]]
+        if not isinstance(raw, list):
+            return []
+
+        rects = []
+        for item in raw:
+            if isinstance(item, dict):
+                item = [
+                    item.get("x0", 0),
+                    item.get("y0", 0),
+                    item.get("x1", 0),
+                    item.get("y1", 0),
+                ]
+            if not isinstance(item, list | tuple) or len(item) != 4:
+                continue
+            rects.append([int(float(value)) for value in item])
+        return rects
 
     def _camera_processing_config(camera_id: str | None = None) -> tuple[int, list]:
         proc_cfg = settings.get("processing", {})
@@ -784,6 +815,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_px = default_min_px
         threshold = max(0, min(255, threshold))
         min_px = max(1, min(640, min_px))
+        if "mask" in request.args:
+            try:
+                mask_rects = _parse_mask_rects(request.args.get("mask"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                pass
 
         try:
             frame = camera_capture(camera_id)
@@ -810,6 +846,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         gr_mean = float(signal.mean())
 
         overlay = frame.copy()
+        for rect in mask_rects:
+            if len(rect) != 4:
+                continue
+            x0, y0, x1, y1 = [int(v) for v in rect]
+            cv2.rectangle(overlay, (x0, y0), (x1, y1), (255, 255, 0), 2)
         for i in range(line.shape[0]):
             col, row = int(round(line[i, 0])), int(round(line[i, 1]))
             cv2.circle(overlay, (col, row), 2, (0, 0, 255), -1)
@@ -824,10 +865,41 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         resp.headers["X-GR-Mean"] = f"{gr_mean:.2f}"
         resp.headers["X-Threshold"] = str(threshold)
         resp.headers["X-Min-Pixels"] = str(min_px)
+        resp.headers["X-Mask-Rects"] = str(len(mask_rects))
         resp.headers["Access-Control-Expose-Headers"] = (
-            "X-Detected-Columns,X-GR-Max,X-GR-Mean,X-Threshold,X-Min-Pixels"
+            "X-Detected-Columns,X-GR-Max,X-GR-Mean,X-Threshold,X-Min-Pixels,X-Mask-Rects"
         )
         return resp
+
+    @app.route("/manual/processing/apply", methods=["POST"])
+    def manual_processing_apply() -> Response:
+        if not _manual_allowed():
+            return jsonify({"error": "Manual control disabled while scan is running"}), 409
+
+        data = request.get_json(silent=True) or {}
+        camera_id = str(data.get("camera", ""))
+        if not camera_id:
+            return jsonify({"error": "camera is required"}), 400
+
+        try:
+            threshold = max(0, min(255, int(data.get("threshold"))))
+            mask_rects = _parse_mask_rects(data.get("mask"))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            return jsonify({"error": f"Invalid processing config: {exc}"}), 400
+
+        for cam_cfg in settings.get("cameras", []):
+            if str(cam_cfg.get("id")) == camera_id:
+                cam_cfg["laser_threshold"] = threshold
+                cam_cfg["laser_mask"] = mask_rects
+                return jsonify(
+                    {
+                        "status": "ok",
+                        "camera": camera_id,
+                        "laser_threshold": threshold,
+                        "laser_mask": mask_rects,
+                    }
+                )
+        return jsonify({"error": f"Unknown camera: {camera_id}"}), 404
 
     @app.route("/manual/laser", methods=["POST"])
     def manual_laser() -> Response:
