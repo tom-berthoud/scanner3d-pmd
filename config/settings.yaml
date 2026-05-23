@@ -45,7 +45,8 @@ cameras:
     # Arducam B0475 reports only YUYV modes on this Raspberry Pi.
     # Supported sizes: 1280x720, 1920x1080, 2312x1736, 3840x2160, 4624x3472, 9248x6944.
     pixel_format: YUYV
-    flush_frames: 3
+    # High-resolution YUYV frames are heavy on USB; keep flush low to reduce bus load.
+    flush_frames: 1
     v4l2_exposure_scale_us: 100
     resolution: [2312, 1736]
     mock_shape: duck

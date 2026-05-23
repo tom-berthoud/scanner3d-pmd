@@ -28,19 +28,23 @@ except ImportError:
 
 _camera_instance = None
 _camera_instances: dict[str, object] = {}
+_camera_configs: dict[str, dict] = {}
+_failed_camera_configs: dict[str, dict] = {}
 _motor_instance = None
 _laser_instance = None
 _led_instance = None
 _display_instance = None
+_hardware_config: dict = {}
 
 
 def init_hardware(config: dict) -> None:
     """Initialise all hardware singletons from *config*."""
-    global _camera_instance, _camera_instances, _motor_instance, _laser_instance
-    global _led_instance, _display_instance
+    global _camera_instance, _camera_instances, _camera_configs, _failed_camera_configs
+    global _motor_instance, _laser_instance, _led_instance, _display_instance, _hardware_config
 
     from scanner.calibration import camera_configs
 
+    _hardware_config = config
     logger.info("Initialising hardware (on_pi=%s)", _ON_PI)
     iface_cfg = config.get("interface", {})
     display_type = str(iface_cfg.get("display_type", "oled")).lower()
@@ -56,12 +60,19 @@ def init_hardware(config: dict) -> None:
             from scanner.hardware.usb_camera import USBCamera
 
             _camera_instances = {}
+            _camera_configs = {}
+            _failed_camera_configs = {}
             for cam_cfg in camera_configs(config):
                 cam_id = str(cam_cfg.get("id", "main"))
                 cam_type = str(cam_cfg.get("type", "pi")).lower()
-                _camera_instances[cam_id] = (
-                    USBCamera(cam_cfg) if cam_type == "usb" else PiCamera(cam_cfg)
-                )
+                _camera_configs[cam_id] = cam_cfg
+                try:
+                    _camera_instances[cam_id] = (
+                        USBCamera(cam_cfg) if cam_type == "usb" else PiCamera(cam_cfg)
+                    )
+                except Exception as exc:
+                    _failed_camera_configs[cam_id] = cam_cfg
+                    logger.warning("Camera %s init failed: %s", cam_id, exc)
             _motor_instance = StepperMotor(config.get("motor", {}))
             _laser_instance = Laser(config.get("laser", {}))
             _led_instance = LED(iface_cfg)
@@ -69,9 +80,12 @@ def init_hardware(config: dict) -> None:
         else:
             from scanner.hardware.mock import MockCamera, MockDisplay, MockLED, MockLaser, MockMotor
 
+            _camera_configs = {
+                str(cam_cfg.get("id", "main")): cam_cfg for cam_cfg in camera_configs(config)
+            }
+            _failed_camera_configs = {}
             _camera_instances = {
-                str(cam_cfg.get("id", "main")): MockCamera(cam_cfg)
-                for cam_cfg in camera_configs(config)
+                camera_id: MockCamera(cam_cfg) for camera_id, cam_cfg in _camera_configs.items()
             }
             _motor_instance = MockMotor(config.get("motor", {}))
             _laser_instance = MockLaser(config.get("laser", {}))
@@ -79,8 +93,10 @@ def init_hardware(config: dict) -> None:
             _display_instance = MockDisplay(iface_cfg) if display_enabled else None
 
         if not _camera_instances:
-            raise HardwareError("No camera configured")
-        _camera_instance = next(iter(_camera_instances.values()))
+            logger.warning("No camera initialised")
+            _camera_instance = None
+        else:
+            _camera_instance = next(iter(_camera_instances.values()))
         if _display_instance is None:
             logger.info("Display disabled by config (interface.display_type=%s)", display_type)
     except HardwareError:
@@ -89,13 +105,42 @@ def init_hardware(config: dict) -> None:
         raise HardwareError(f"Hardware initialisation failed: {exc}") from exc
 
 
+def _ensure_camera(camera_id: str | None = None) -> object | None:
+    global _camera_instance
+
+    cam = _camera_instance if camera_id is None else _camera_instances.get(str(camera_id))
+    if cam is not None:
+        return cam
+    if not _ON_PI or camera_id is None:
+        return None
+    cam_cfg = _failed_camera_configs.get(str(camera_id)) or _camera_configs.get(str(camera_id))
+    if not cam_cfg:
+        return None
+    try:
+        from scanner.hardware.camera import PiCamera
+        from scanner.hardware.usb_camera import USBCamera
+
+        cam_type = str(cam_cfg.get("type", "pi")).lower()
+        cam = USBCamera(cam_cfg) if cam_type == "usb" else PiCamera(cam_cfg)
+        _camera_instances[str(camera_id)] = cam
+        _failed_camera_configs.pop(str(camera_id), None)
+        if _camera_instance is None:
+            _camera_instance = cam
+        logger.info("Camera %s initialised after retry", camera_id)
+        return cam
+    except Exception as exc:
+        _failed_camera_configs[str(camera_id)] = cam_cfg
+        logger.warning("Camera %s retry init failed: %s", camera_id, exc)
+        return None
+
+
 def camera_capture(camera_id: str | None = None) -> np.ndarray:
     """Capture one frame from one camera.
 
     If *camera_id* is omitted, the first configured camera is used for legacy
     callers.
     """
-    cam = _camera_instance if camera_id is None else _camera_instances.get(str(camera_id))
+    cam = _ensure_camera(camera_id)
     if cam is None:
         raise HardwareError("Camera not initialised")
     return cam.capture()
@@ -114,7 +159,7 @@ def camera_set_exposure(
     camera_id: str | None = None,
 ) -> None:
     """Set camera exposure if the active camera driver supports it."""
-    cam = _camera_instance if camera_id is None else _camera_instances.get(str(camera_id))
+    cam = _ensure_camera(camera_id)
     if cam is None:
         raise HardwareError("Camera not initialised")
     if not hasattr(cam, "set_exposure"):
@@ -124,7 +169,7 @@ def camera_set_exposure(
 
 def camera_set_controls(camera_id: str, controls: dict) -> dict:
     """Apply camera controls such as resolution, exposure, gain and focus."""
-    cam = _camera_instances.get(str(camera_id))
+    cam = _ensure_camera(camera_id)
     if cam is None:
         raise HardwareError(f"Camera not initialised: {camera_id}")
     if not hasattr(cam, "set_controls"):
@@ -134,7 +179,7 @@ def camera_set_controls(camera_id: str, controls: dict) -> dict:
 
 def camera_get_info(camera_id: str | None = None) -> dict:
     """Return requested and driver-reported camera settings."""
-    cam = _camera_instance if camera_id is None else _camera_instances.get(str(camera_id))
+    cam = _ensure_camera(camera_id)
     if cam is None:
         raise HardwareError("Camera not initialised")
     if hasattr(cam, "get_info"):

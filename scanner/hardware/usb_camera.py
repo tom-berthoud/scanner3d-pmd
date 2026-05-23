@@ -199,7 +199,14 @@ class USBCamera:
         self._flush_buffer()
         ok, frame = self._cap.read()
         if not ok or frame is None:
-            raise HardwareError(f"USB camera {self._device_index} capture failed")
+            logger.warning("USB camera %s capture failed, reopening once", self._capture_device)
+            try:
+                self._reopen_capture()
+                ok, frame = self._cap.read()
+            except Exception as exc:
+                raise HardwareError(f"USB camera {self._capture_device} reconnect failed: {exc}") from exc
+        if not ok or frame is None:
+            raise HardwareError(f"USB camera {self._capture_device} capture failed")
         return frame
 
     def set_exposure(self, exposure_us: int, gain: Optional[float] = None) -> None:
