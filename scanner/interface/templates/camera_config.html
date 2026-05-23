@@ -30,7 +30,7 @@
       <div class="trigger-body">
         <div class="state-msg" style="font-size:0.8rem;line-height:1.6;">
           1. Choisir une resolution commune.<br>
-          2. Regler le focus sur la ligne laser au centre plateau.<br>
+          2. Regler le focus sur la ligne laser au centre plateau si le driver le supporte.<br>
           3. Baisser exposition/gain jusqu'a eviter la saturation.<br>
           4. Garder une ligne fine et continue avant le scan.
         </div>
@@ -67,7 +67,7 @@
           </div>
           <div class="col-6 col-md-3">
             <label class="form-label mb-1" for="lens-{{ camera.id }}">Focus</label>
-            <input class="form-control cam-lens" id="lens-{{ camera.id }}" data-camera="{{ camera.id }}" type="number" min="0" max="20" step="0.05" value="{{ camera.lens_position or '' }}" placeholder="Pi only" />
+            <input class="form-control cam-lens" id="lens-{{ camera.id }}" data-camera="{{ camera.id }}" type="number" min="0" max="1023" step="{% if camera.type == 'usb' %}1{% else %}0.05{% endif %}" value="{{ camera.lens_position or camera.focus_absolute or '' }}" placeholder="{% if camera.type == 'usb' %}si V4L2{% else %}dioptries{% endif %}" />
           </div>
           <div class="col-6 col-md-3">
             <label class="form-label mb-1" for="format-{{ camera.id }}">Format</label>
@@ -85,6 +85,11 @@
           <button class="btn btn-outline-secondary" onclick="refreshCameraInfo('{{ camera.id }}')">
             <i class="bi bi-info-circle me-1"></i>Infos
           </button>
+          {% if camera.type == 'usb' %}
+          <button class="btn btn-outline-secondary" onclick="loadCameraFormats('{{ camera.id }}')">
+            <i class="bi bi-list-ul me-1"></i>Formats
+          </button>
+          {% endif %}
         </div>
 
         <div class="cam-feed" style="border:1px solid #30363d;">
@@ -110,6 +115,7 @@ function cameraPayload(camera) {
     exposure_us: document.getElementById('exposure-' + camera).value,
     gain: document.getElementById('gain-' + camera).value,
     lens_position: document.getElementById('lens-' + camera).value,
+    focus_absolute: document.getElementById('lens-' + camera).value,
     pixel_format: document.getElementById('format-' + camera).value
   };
 }
@@ -159,6 +165,13 @@ function captureConfigFrame(camera) {
   var img = document.getElementById('cfg-img-' + camera);
   if (img) img.src = '/manual/camera/frame?camera=' + encodeURIComponent(camera) + '&t=' + Date.now();
   setTimeout(function() { refreshCameraInfo(camera); }, 250);
+}
+
+async function loadCameraFormats(camera) {
+  var box = document.getElementById('cfg-info-' + camera);
+  var r = await fetch('/camera-config/formats?camera=' + encodeURIComponent(camera) + '&t=' + Date.now());
+  var data = await r.json();
+  if (box) box.textContent = data.formats || JSON.stringify(data, null, 2);
 }
 
 document.addEventListener('DOMContentLoaded', refreshAllCameraInfo);

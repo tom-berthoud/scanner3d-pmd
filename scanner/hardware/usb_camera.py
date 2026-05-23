@@ -1,6 +1,9 @@
 """USB camera driver using OpenCV VideoCapture."""
 
 import logging
+import shutil
+import subprocess
+import time
 from typing import Optional
 
 import numpy as np
@@ -33,21 +36,43 @@ class USBCamera:
         self._exposure_us = int(config.get("exposure_us", 1000))
         self._gain = float(config.get("gain", 1.0))
         self._pixel_format = config.get("pixel_format")
+        self._focus_absolute = config.get("focus_absolute")
+        self._flush_frames = int(config.get("flush_frames", 3))
+        self._v4l2_exposure_scale_us = int(config.get("v4l2_exposure_scale_us", 100))
+        self._capture_device = str(self._device_path) if self._device_path else self._device_index
 
-        backend = config.get("backend")
-        capture_device = str(self._device_path) if self._device_path else self._device_index
-        if backend:
-            backend_value = getattr(cv2, str(backend), None)
+        self._backend = config.get("backend")
+        self._open_capture()
+
+        logger.info(
+            "USBCamera initialised (device=%s, %dx%d)",
+            self._capture_device,
+            self._width,
+            self._height,
+        )
+
+    def _open_capture(self) -> None:
+        """Open VideoCapture and apply requested USB camera properties."""
+        from scanner.hardware import HardwareError
+
+        cv2 = self._cv2
+        if self._backend:
+            backend_value = getattr(cv2, str(self._backend), None)
             self._cap = (
-                cv2.VideoCapture(capture_device, backend_value)
+                cv2.VideoCapture(self._capture_device, backend_value)
                 if backend_value
-                else cv2.VideoCapture(capture_device)
+                else cv2.VideoCapture(self._capture_device)
             )
         else:
-            self._cap = cv2.VideoCapture(capture_device)
+            self._cap = cv2.VideoCapture(self._capture_device)
 
         if not self._cap.isOpened():
-            raise HardwareError(f"USB camera {capture_device} could not be opened")
+            raise HardwareError(f"USB camera {self._capture_device} could not be opened")
+
+        try:
+            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        except Exception:
+            pass
 
         if self._pixel_format:
             fourcc = cv2.VideoWriter_fourcc(*str(self._pixel_format)[:4])
@@ -55,18 +80,72 @@ class USBCamera:
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
         self.set_exposure(self._exposure_us, self._gain)
+        if self._focus_absolute not in (None, ""):
+            self._apply_v4l2_controls({"focus_absolute": int(float(self._focus_absolute))})
+        self._flush_buffer()
 
-        logger.info(
-            "USBCamera initialised (device=%s, %dx%d)",
-            capture_device,
-            self._width,
-            self._height,
-        )
+    def _reopen_capture(self) -> None:
+        try:
+            self._cap.release()
+        except Exception:
+            pass
+        time.sleep(0.05)
+        self._open_capture()
+
+    def _flush_buffer(self) -> None:
+        for _ in range(max(0, self._flush_frames)):
+            try:
+                self._cap.grab()
+            except Exception:
+                break
+
+    def _apply_v4l2_controls(self, controls: dict[str, int]) -> dict[str, str]:
+        """Best-effort apply UVC/V4L2 controls with v4l2-ctl."""
+        if not self._device_path or not shutil.which("v4l2-ctl"):
+            return {}
+        applied = {}
+        for key, value in controls.items():
+            cmd = ["v4l2-ctl", "-d", str(self._device_path), "-c", f"{key}={value}"]
+            try:
+                subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=2.0)
+                applied[key] = str(value)
+            except Exception as exc:
+                logger.debug("v4l2 control %s=%s failed: %s", key, value, exc)
+        return applied
+
+    def _get_v4l2_controls(self) -> dict[str, str]:
+        if not self._device_path or not shutil.which("v4l2-ctl"):
+            return {}
+        result = {}
+        for key in ("exposure_auto", "exposure_absolute", "gain", "focus_auto", "focus_absolute"):
+            cmd = ["v4l2-ctl", "-d", str(self._device_path), "--get-ctrl", key]
+            try:
+                proc = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=2.0)
+                result[key] = proc.stdout.strip()
+            except Exception:
+                continue
+        return result
+
+    def _get_v4l2_format(self) -> str | None:
+        if not self._device_path or not shutil.which("v4l2-ctl"):
+            return None
+        try:
+            proc = subprocess.run(
+                ["v4l2-ctl", "-d", str(self._device_path), "--get-fmt-video"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=2.0,
+            )
+            return proc.stdout.strip()
+        except Exception:
+            return None
 
     def capture(self) -> np.ndarray:
         """Capture one BGR frame."""
         from scanner.hardware import HardwareError
 
+        self._flush_buffer()
         ok, frame = self._cap.read()
         if not ok or frame is None:
             raise HardwareError(f"USB camera {self._device_index} capture failed")
@@ -89,21 +168,44 @@ class USBCamera:
             self._cap.set(self._cv2.CAP_PROP_GAIN, self._gain)
         except Exception as exc:
             logger.warning("USB camera exposure update failed: %s", exc)
+        exposure_abs = max(1, int(round(self._exposure_us / max(1, self._v4l2_exposure_scale_us))))
+        self._apply_v4l2_controls(
+            {
+                "exposure_auto": 1,
+                "exposure_absolute": exposure_abs,
+                "gain": max(0, int(round(self._gain))),
+            }
+        )
 
     def set_controls(self, controls: dict) -> dict:
         """Apply runtime USB camera controls and return driver-reported info."""
+        reopen = False
         if controls.get("pixel_format"):
             self._pixel_format = str(controls["pixel_format"])[:4]
+            reopen = True
+        if controls.get("width") is not None and controls.get("height") is not None:
+            new_width = int(controls["width"])
+            new_height = int(controls["height"])
+            reopen = reopen or new_width != self._width or new_height != self._height
+            self._width = new_width
+            self._height = new_height
+        if controls.get("focus_absolute") not in (None, ""):
+            self._focus_absolute = int(float(controls["focus_absolute"]))
+            self._apply_v4l2_controls({"focus_auto": 0, "focus_absolute": self._focus_absolute})
+        elif controls.get("lens_position") not in (None, ""):
+            self._focus_absolute = int(float(controls["lens_position"]))
+            self._apply_v4l2_controls({"focus_auto": 0, "focus_absolute": self._focus_absolute})
+        if reopen:
+            self._reopen_capture()
+        elif self._pixel_format:
             fourcc = self._cv2.VideoWriter_fourcc(*self._pixel_format)
             self._cap.set(self._cv2.CAP_PROP_FOURCC, fourcc)
-        if controls.get("width") is not None and controls.get("height") is not None:
-            self._width = int(controls["width"])
-            self._height = int(controls["height"])
             self._cap.set(self._cv2.CAP_PROP_FRAME_WIDTH, self._width)
             self._cap.set(self._cv2.CAP_PROP_FRAME_HEIGHT, self._height)
         exposure = controls.get("exposure_us", self._exposure_us)
         gain = controls.get("gain", self._gain)
         self.set_exposure(int(exposure), float(gain))
+        self._flush_buffer()
         return self.get_info()
 
     def get_info(self) -> dict:
@@ -118,6 +220,8 @@ class USBCamera:
                 "exposure_us": self._exposure_us,
                 "gain": self._gain,
                 "pixel_format": self._pixel_format,
+                "focus_absolute": self._focus_absolute,
+                "flush_frames": self._flush_frames,
                 "device_index": self._device_index,
                 "device_path": self._device_path,
             },
@@ -127,6 +231,8 @@ class USBCamera:
                 "exposure": self._cap.get(self._cv2.CAP_PROP_EXPOSURE),
                 "gain": self._cap.get(self._cv2.CAP_PROP_GAIN),
                 "fourcc": fourcc,
+                "v4l2_format": self._get_v4l2_format(),
+                "v4l2_controls": self._get_v4l2_controls(),
             },
         }
 

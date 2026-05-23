@@ -202,7 +202,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 "exposure_us": int(cam_cfg.get("exposure_us", settings.get("camera", {}).get("exposure_us", 1000))),
                 "gain": float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0))),
                 "lens_position": cam_cfg.get("lens_position"),
+                "focus_absolute": cam_cfg.get("focus_absolute"),
                 "pixel_format": cam_cfg.get("pixel_format", ""),
+                "device_path": cam_cfg.get("device_path"),
             }
             for cam_cfg in camera_configs(settings)
         ]
@@ -680,6 +682,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         for key in ("gain", "lens_position"):
             if data.get(key) not in (None, ""):
                 controls[key] = float(data[key])
+        if data.get("focus_absolute") not in (None, ""):
+            controls["focus_absolute"] = int(float(data["focus_absolute"]))
         if data.get("pixel_format"):
             controls["pixel_format"] = str(data["pixel_format"]).strip()
 
@@ -687,6 +691,34 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return jsonify({"status": "ok", "camera": camera_id, "info": camera_set_controls(camera_id, controls)})
         except (HardwareError, ValueError) as exc:
             return jsonify({"error": str(exc)}), 400
+
+    @app.route("/camera-config/formats")
+    def camera_config_formats() -> Response:
+        import shutil
+        import subprocess
+
+        camera_id = str(request.args.get("camera", ""))
+        cam = next((item for item in _camera_view_configs() if item["id"] == camera_id), None)
+        if not cam:
+            return jsonify({"error": f"Unknown camera: {camera_id}"}), 404
+        device_path = cam.get("device_path")
+        if not device_path:
+            return jsonify({"error": "No V4L2 device path configured for this camera"}), 400
+        if not shutil.which("v4l2-ctl"):
+            return jsonify({"error": "v4l2-ctl is not installed"}), 400
+        try:
+            proc = subprocess.run(
+                ["v4l2-ctl", "--list-formats-ext", "-d", str(device_path)],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=3.0,
+            )
+            return jsonify({"camera": camera_id, "device_path": device_path, "formats": proc.stdout})
+        except subprocess.CalledProcessError as exc:
+            return jsonify({"error": exc.stderr or str(exc)}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     @app.route("/manual/camera/frame")
     def manual_camera_frame() -> Response:

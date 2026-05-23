@@ -43,6 +43,8 @@ cameras:
     device_path: /dev/video2
     backend: CAP_V4L2
     pixel_format: MJPG
+    flush_frames: 3
+    v4l2_exposure_scale_us: 100
     resolution: [640, 480]
     mock_shape: duck
     exposure_us: 1000
