@@ -40,3 +40,19 @@ def test_identity_extrinsics_do_not_change_triangulated_point() -> None:
         camera_to_platform_translation=np.zeros(3),
     )
     np.testing.assert_allclose(result, np.array([[0.0, 0.0, 300.0]]), atol=1e-6)
+
+
+def test_measured_pose_extrinsics_point_camera_at_target() -> None:
+    from scanner.calibration.multi_camera import _load_extrinsics
+
+    position = np.array([173.5, 140.0, -300.5])
+    target = np.array([0.0, 0.0, 0.0])
+    rotation, translation = _load_extrinsics(
+        {"extrinsics": {"position_mm": position.tolist(), "target_mm": target.tolist()}}
+    )
+
+    forward = rotation[:, 2]
+    expected_forward = (target - position) / np.linalg.norm(target - position)
+    np.testing.assert_allclose(translation, position, atol=1e-6)
+    np.testing.assert_allclose(forward, expected_forward, atol=1e-6)
+    np.testing.assert_allclose(rotation.T @ rotation, np.eye(3), atol=1e-6)

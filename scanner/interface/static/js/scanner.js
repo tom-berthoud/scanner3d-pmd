@@ -44,7 +44,11 @@ function log(msg, cls) {
 // ---- Frame polling ----
 let _poll = null;
 let _artifactPoll = null;
-let _selectedArtifact = 'extract_left';
+let _selectedArtifact = (
+  window.SCANNER_ARTIFACT_KINDS && window.SCANNER_ARTIFACT_KINDS.length
+)
+  ? window.SCANNER_ARTIFACT_KINDS[0]
+  : 'extract_left';
 let _artifacts = {};
 
 function isImageArtifact(kind) {

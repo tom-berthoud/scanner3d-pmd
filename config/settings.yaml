@@ -19,6 +19,7 @@ cameras:
   # Configuration multi-camera cible: camera droite Pi + camera gauche USB.
   # Les chemins pointent vers des fichiers calibres separes par camera.
   - id: right
+    display_name: Nappe
     type: pi
     resolution: [640, 480]
     mock_shape: duck
@@ -29,14 +30,17 @@ cameras:
     intrinsics_path: config/camera_intrinsics_right.yaml
     laser_plane_path: config/laser_plane_right.yaml
     extrinsics:
-      rotation_matrix:
-        - [1.0, 0.0, 0.0]
-        - [0.0, 1.0, 0.0]
-        - [0.0, 0.0, 1.0]
-      translation_mm: [0.0, 0.0, 0.0]
+      # Rough measured pose in the shared platform frame:
+      # origin = turntable center at top surface, +X right, +Y up, +Z away from laser.
+      position_mm: [173.5, 140.0, -300.5]
+      target_mm: [0.0, 0.0, 0.0]
+      up_mm: [0.0, 1.0, 0.0]
   - id: left
+    display_name: USB Arducam
     type: usb
-    device_index: 0
+    device_index: 2
+    device_path: /dev/video2
+    backend: CAP_V4L2
     resolution: [640, 480]
     mock_shape: duck
     exposure_us: 1000
@@ -44,15 +48,17 @@ cameras:
     intrinsics_path: config/camera_intrinsics_left.yaml
     laser_plane_path: config/laser_plane_left.yaml
     extrinsics:
-      rotation_matrix:
-        - [1.0, 0.0, 0.0]
-        - [0.0, 1.0, 0.0]
-        - [0.0, 0.0, 1.0]
-      translation_mm: [0.0, 0.0, 0.0]
+      # Rough measured pose in the shared platform frame:
+      # origin = turntable center at top surface, +X right, +Y up, +Z away from laser.
+      position_mm: [-155.0, -20.0, -286.5]
+      target_mm: [0.0, 0.0, 0.0]
+      up_mm: [0.0, 1.0, 0.0]
 
 laser:
   gpio_pin: 2             # numéro de broche GPIO (BCM) pour le laser
   warmup_ms: 50             # temps de stabilisation après allumage (ms)
+  position_mm: [0.0, 50.0, -400.0]  # repere plateforme: origine centre plateau, +Y haut
+  line_orientation: vertical
 
 motor:
   # Moteur : Generic 17HS3401 (NEMA 17, 1.8°/pas, 200 pas/tour, 1.5A)

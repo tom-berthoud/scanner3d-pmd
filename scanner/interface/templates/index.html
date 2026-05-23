@@ -13,6 +13,10 @@
 {% endblock %}
 
 {% block content %}
+<script>
+window.SCANNER_ARTIFACT_KINDS = {{ artifact_tabs | map(attribute='kind') | list | tojson }};
+</script>
+
 <div class="kiosk-scan-wrap">
   <div class="kiosk-ring-wrap">
     <svg class="kiosk-ring" viewBox="0 0 180 180">
@@ -119,12 +123,15 @@
         <span id="frame-label" style="margin-left:auto;font-size:8px;color:var(--txt-dim);">EN ATTENTE</span>
       </div>
       <div class="artifact-tabs" id="artifact-tabs">
-        <button class="artifact-tab active" data-kind="extract_left" onclick="selectArtifact('extract_left')">Extraction USB</button>
-        <button class="artifact-tab" data-kind="extract_right" onclick="selectArtifact('extract_right')">Extraction Nape</button>
-        <button class="artifact-tab" data-kind="cloud_left" onclick="selectArtifact('cloud_left')">Nuage USB</button>
-        <button class="artifact-tab" data-kind="cloud_right" onclick="selectArtifact('cloud_right')">Nuage Nape</button>
-        <button class="artifact-tab" data-kind="cloud_combined" onclick="selectArtifact('cloud_combined')">Nuage combine</button>
-        <button class="artifact-tab" data-kind="mesh" onclick="selectArtifact('mesh')">STL</button>
+        {% for tab in artifact_tabs %}
+        <button
+          class="artifact-tab {% if loop.first %}active{% endif %}"
+          data-kind="{{ tab.kind }}"
+          onclick="selectArtifact('{{ tab.kind }}')"
+        >
+          {{ tab.label }}
+        </button>
+        {% endfor %}
       </div>
       <div class="cam-feed">
         <img id="live-frame" src="" alt="" />

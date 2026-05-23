@@ -175,15 +175,56 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         return base64.b64encode(buf.tobytes()).decode("ascii")
 
     def _camera_label(camera_id: str) -> str:
-        for cam_cfg in settings.get("cameras", []):
+        from scanner.calibration import camera_configs
+
+        for cam_cfg in camera_configs(settings):
             if str(cam_cfg.get("id")) != str(camera_id):
                 continue
+            display_name = cam_cfg.get("display_name")
+            if display_name:
+                return str(display_name)
             cam_type = str(cam_cfg.get("type", "")).lower()
             if cam_type == "usb":
                 return "USB"
             if cam_type in ("pi", "picamera", "csi"):
                 return "Nape"
         return str(camera_id).upper()
+
+    def _camera_view_configs() -> list[dict]:
+        from scanner.calibration import camera_configs
+
+        return [
+            {
+                "id": str(cam_cfg.get("id", "main")),
+                "label": _camera_label(str(cam_cfg.get("id", "main"))),
+                "type": str(cam_cfg.get("type", "pi")),
+            }
+            for cam_cfg in camera_configs(settings)
+        ]
+
+    def _artifact_tabs() -> list[dict]:
+        tabs: list[dict] = []
+        for cam in _camera_view_configs():
+            tabs.append(
+                {
+                    "kind": f"extract_{cam['id']}",
+                    "label": f"Extraction {cam['label']}",
+                }
+            )
+        for cam in _camera_view_configs():
+            tabs.append(
+                {
+                    "kind": f"cloud_{cam['id']}",
+                    "label": f"Nuage {cam['label']}",
+                }
+            )
+        tabs.extend(
+            [
+                {"kind": "cloud_combined", "label": "Nuage combine"},
+                {"kind": "mesh", "label": "STL"},
+            ]
+        )
+        return tabs
 
     def _artifact_public(item: dict) -> dict:
         path = item.get("path")
@@ -321,7 +362,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 key: _artifact_public(value)
                 for key, value in _scan_state.get("artifacts", {}).items()
             }
-        return render_template("index.html", scan_state=state)
+        return render_template(
+            "index.html",
+            scan_state=state,
+            artifact_tabs=_artifact_tabs(),
+        )
 
     # ------------------------------------------------------------------ #
     # Routes — Scan control
@@ -567,7 +612,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     def manual_page() -> str:
         with _scan_lock:
             state = dict(_scan_state)
-        return render_template("manual.html", scan_state=state)
+        return render_template(
+            "manual.html",
+            scan_state=state,
+            cameras=_camera_view_configs(),
+        )
 
     @app.route("/manual/status")
     def manual_status() -> Response:

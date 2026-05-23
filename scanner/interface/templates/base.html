@@ -49,9 +49,6 @@
     <a href="/" {% if request.path == '/' %}class="active"{% endif %}>
       <i class="bi bi-play-circle me-1"></i>Scan
     </a>
-    <a href="/preview" {% if request.path.startswith('/preview') %}class="active"{% endif %}>
-      <i class="bi bi-eye me-1"></i>Preview
-    </a>
     <a href="/calibration" {% if request.path.startswith('/calibration') %}class="active"{% endif %}>
       <i class="bi bi-sliders me-1"></i>Calibration
     </a>
@@ -75,7 +72,6 @@
   <button class="gear-close" onclick="toggleGearPanel()"><i class="bi bi-x-lg"></i></button>
   <h6>Navigation</h6>
   <a href="/"><i class="bi bi-play-circle"></i> Scan</a>
-  <a href="/preview"><i class="bi bi-eye"></i> Preview</a>
   <a href="/calibration"><i class="bi bi-sliders"></i> Calibration</a>
   <a href="/manual"><i class="bi bi-tools"></i> Manuel</a>
   <div class="ip-info" id="ip-info">
@@ -88,10 +84,6 @@
   <a href="/" {% if request.path == '/' %}class="active"{% endif %}>
     <i class="bi bi-play-circle"></i>
     <span>Scan</span>
-  </a>
-  <a href="/preview" {% if request.path.startswith('/preview') %}class="active"{% endif %}>
-    <i class="bi bi-eye"></i>
-    <span>Preview</span>
   </a>
   <a href="/calibration" {% if request.path.startswith('/calibration') %}class="active"{% endif %}>
     <i class="bi bi-sliders"></i>

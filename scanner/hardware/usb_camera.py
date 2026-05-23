@@ -26,6 +26,7 @@ class USBCamera:
 
         self._cv2 = cv2
         self._device_index = int(config.get("device_index", config.get("index", 0)))
+        self._device_path = config.get("device_path")
         res = config.get("resolution", [640, 480])
         self._width = int(res[0])
         self._height = int(res[1])
@@ -33,22 +34,27 @@ class USBCamera:
         self._gain = float(config.get("gain", 1.0))
 
         backend = config.get("backend")
+        capture_device = str(self._device_path) if self._device_path else self._device_index
         if backend:
             backend_value = getattr(cv2, str(backend), None)
-            self._cap = cv2.VideoCapture(self._device_index, backend_value) if backend_value else cv2.VideoCapture(self._device_index)
+            self._cap = (
+                cv2.VideoCapture(capture_device, backend_value)
+                if backend_value
+                else cv2.VideoCapture(capture_device)
+            )
         else:
-            self._cap = cv2.VideoCapture(self._device_index)
+            self._cap = cv2.VideoCapture(capture_device)
 
         if not self._cap.isOpened():
-            raise HardwareError(f"USB camera {self._device_index} could not be opened")
+            raise HardwareError(f"USB camera {capture_device} could not be opened")
 
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
         self.set_exposure(self._exposure_us, self._gain)
 
         logger.info(
-            "USBCamera initialised (index=%d, %dx%d)",
-            self._device_index,
+            "USBCamera initialised (device=%s, %dx%d)",
+            capture_device,
             self._width,
             self._height,
         )

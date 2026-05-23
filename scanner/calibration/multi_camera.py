@@ -69,6 +69,30 @@ def _project_path(path: str | None) -> str | None:
     return str(_CONFIG_DIR.parent / path)
 
 
+def _normalize(vec: np.ndarray, name: str) -> np.ndarray:
+    length = float(np.linalg.norm(vec))
+    if length < 1e-9:
+        raise ValueError(f"{name} vector is degenerate")
+    return vec / length
+
+
+def _look_at_extrinsics(extr: dict) -> tuple[np.ndarray, np.ndarray]:
+    position = np.asarray(extr.get("position_mm"), dtype=np.float64).reshape(3)
+    target = np.asarray(extr.get("target_mm", [0.0, 0.0, 0.0]), dtype=np.float64).reshape(3)
+    up = np.asarray(extr.get("up_mm", [0.0, 1.0, 0.0]), dtype=np.float64).reshape(3)
+
+    forward = _normalize(target - position, "camera forward")
+    up = _normalize(up, "camera up")
+    right = np.cross(forward, up)
+    if float(np.linalg.norm(right)) < 1e-9:
+        right = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    right = _normalize(right, "camera right")
+    down = _normalize(np.cross(forward, right), "camera down")
+
+    rotation = np.column_stack([right, down, forward])
+    return rotation, position
+
+
 def _load_extrinsics(cam_cfg: dict) -> tuple[np.ndarray, np.ndarray]:
     extr = cam_cfg.get("extrinsics") or {}
     if not isinstance(extr, dict):
@@ -80,6 +104,9 @@ def _load_extrinsics(cam_cfg: dict) -> tuple[np.ndarray, np.ndarray]:
             file_data = yaml.safe_load(fh) or {}
         if isinstance(file_data, dict):
             extr = {**extr, **file_data}
+
+    if "position_mm" in extr:
+        return _look_at_extrinsics(extr)
 
     rot_raw: Any = extr.get("rotation_matrix", np.eye(3).tolist())
     trans_raw: Any = extr.get("translation_mm", [0.0, 0.0, 0.0])
