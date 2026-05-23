@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Scanner 3D - Cam Config{% endblock %}
+
+{% block content %}
+<div class="scan-grid">
+  <div>
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Cam Config</span>
+      </div>
+      <div class="trigger-body">
+        <div class="state-msg">
+          Etat scan: {{ scan_state.state }}{% if scan_state.state not in ['IDLE', 'COMPLETE', 'ERROR'] %} (reglages verrouilles){% endif %}
+        </div>
+        <div class="err-strip" style="display:block;">
+          Reglages provisoires en memoire. Reporter les valeurs retenues dans config/settings.yaml.
+        </div>
+        <button class="btn btn-outline-secondary" onclick="refreshAllCameraInfo()">
+          <i class="bi bi-arrow-repeat me-1"></i>Actualiser les infos
+        </button>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Procedure courte</span>
+      </div>
+      <div class="trigger-body">
+        <div class="state-msg" style="font-size:0.8rem;line-height:1.6;">
+          1. Choisir une resolution commune.<br>
+          2. Regler le focus sur la ligne laser au centre plateau.<br>
+          3. Baisser exposition/gain jusqu'a eviter la saturation.<br>
+          4. Garder une ligne fine et continue avant le scan.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    {% for camera in cameras %}
+    {% set res = camera.resolution %}
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>{{ camera.label }} ({{ camera.id }})</span>
+        <span style="margin-left:auto;font-size:8px;color:var(--txt-dim);">{{ camera.type }}</span>
+      </div>
+      <div class="trigger-body">
+        <div class="row g-2">
+          <div class="col-6 col-md-3">
+            <label class="form-label mb-1" for="width-{{ camera.id }}">Largeur</label>
+            <input class="form-control cam-width" id="width-{{ camera.id }}" data-camera="{{ camera.id }}" type="number" min="160" max="8000" value="{{ res[0] }}" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label mb-1" for="height-{{ camera.id }}">Hauteur</label>
+            <input class="form-control cam-height" id="height-{{ camera.id }}" data-camera="{{ camera.id }}" type="number" min="120" max="8000" value="{{ res[1] }}" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label mb-1" for="exposure-{{ camera.id }}">Exposition us</label>
+            <input class="form-control cam-exposure" id="exposure-{{ camera.id }}" data-camera="{{ camera.id }}" type="number" min="1" max="1000000" value="{{ camera.exposure_us }}" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label mb-1" for="gain-{{ camera.id }}">Gain</label>
+            <input class="form-control cam-gain" id="gain-{{ camera.id }}" data-camera="{{ camera.id }}" type="number" min="0" max="64" step="0.1" value="{{ camera.gain }}" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label mb-1" for="lens-{{ camera.id }}">Focus</label>
+            <input class="form-control cam-lens" id="lens-{{ camera.id }}" data-camera="{{ camera.id }}" type="number" min="0" max="20" step="0.05" value="{{ camera.lens_position or '' }}" placeholder="Pi only" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label mb-1" for="format-{{ camera.id }}">Format</label>
+            <input class="form-control cam-format" id="format-{{ camera.id }}" data-camera="{{ camera.id }}" maxlength="4" value="{{ camera.pixel_format }}" placeholder="MJPG" />
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-outline-info" onclick="applyCameraConfig('{{ camera.id }}')">
+            <i class="bi bi-sliders me-1"></i>Appliquer
+          </button>
+          <button class="btn btn-outline-secondary" onclick="captureConfigFrame('{{ camera.id }}')">
+            <i class="bi bi-camera me-1"></i>Capturer
+          </button>
+          <button class="btn btn-outline-secondary" onclick="refreshCameraInfo('{{ camera.id }}')">
+            <i class="bi bi-info-circle me-1"></i>Infos
+          </button>
+        </div>
+
+        <div class="cam-feed" style="border:1px solid #30363d;">
+          <img id="cfg-img-{{ camera.id }}" src="/manual/camera/frame?camera={{ camera.id }}" alt="{{ camera.label }}" style="background:#000;min-height:220px;object-fit:contain;" />
+          <span class="cam-tag tl">{{ camera.label }}</span>
+          <span class="cam-tag br" id="cfg-shape-{{ camera.id }}">-</span>
+        </div>
+        <pre id="cfg-info-{{ camera.id }}" class="log-body" style="max-height:220px;white-space:pre-wrap;margin:0;"></pre>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function cameraPayload(camera) {
+  return {
+    camera: camera,
+    width: document.getElementById('width-' + camera).value,
+    height: document.getElementById('height-' + camera).value,
+    exposure_us: document.getElementById('exposure-' + camera).value,
+    gain: document.getElementById('gain-' + camera).value,
+    lens_position: document.getElementById('lens-' + camera).value,
+    pixel_format: document.getElementById('format-' + camera).value
+  };
+}
+
+function showCameraInfo(camera, data) {
+  var box = document.getElementById('cfg-info-' + camera);
+  if (box) box.textContent = JSON.stringify(data, null, 2);
+  var shape = document.getElementById('cfg-shape-' + camera);
+  var actual = data && data.info && data.info.actual ? data.info.actual : data.actual;
+  if (shape && actual && actual.width && actual.height) {
+    shape.textContent = actual.width + 'x' + actual.height;
+  }
+}
+
+async function refreshCameraInfo(camera) {
+  var r = await fetch('/camera-config/status?t=' + Date.now());
+  var data = await r.json();
+  showCameraInfo(camera, data[camera] || data);
+}
+
+async function refreshAllCameraInfo() {
+  var r = await fetch('/camera-config/status?t=' + Date.now());
+  var data = await r.json();
+  Object.keys(data).forEach(function(camera) {
+    showCameraInfo(camera, data[camera]);
+  });
+}
+
+async function applyCameraConfig(camera) {
+  var r = await fetch('/camera-config/apply', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(cameraPayload(camera))
+  });
+  var data = await r.json();
+  if (!r.ok) {
+    if (typeof showToast === 'function') showToast(data.error || 'Erreur camera', 'error');
+    showCameraInfo(camera, data);
+    return;
+  }
+  showCameraInfo(camera, data);
+  captureConfigFrame(camera);
+  if (typeof showToast === 'function') showToast('Reglages appliques: ' + camera, 'success');
+}
+
+function captureConfigFrame(camera) {
+  var img = document.getElementById('cfg-img-' + camera);
+  if (img) img.src = '/manual/camera/frame?camera=' + encodeURIComponent(camera) + '&t=' + Date.now();
+  setTimeout(function() { refreshCameraInfo(camera); }, 250);
+}
+
+document.addEventListener('DOMContentLoaded', refreshAllCameraInfo);
+</script>
+{% endblock %}

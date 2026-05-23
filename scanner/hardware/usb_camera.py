@@ -32,6 +32,7 @@ class USBCamera:
         self._height = int(res[1])
         self._exposure_us = int(config.get("exposure_us", 1000))
         self._gain = float(config.get("gain", 1.0))
+        self._pixel_format = config.get("pixel_format")
 
         backend = config.get("backend")
         capture_device = str(self._device_path) if self._device_path else self._device_index
@@ -48,6 +49,9 @@ class USBCamera:
         if not self._cap.isOpened():
             raise HardwareError(f"USB camera {capture_device} could not be opened")
 
+        if self._pixel_format:
+            fourcc = cv2.VideoWriter_fourcc(*str(self._pixel_format)[:4])
+            self._cap.set(cv2.CAP_PROP_FOURCC, fourcc)
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
         self.set_exposure(self._exposure_us, self._gain)
@@ -85,6 +89,46 @@ class USBCamera:
             self._cap.set(self._cv2.CAP_PROP_GAIN, self._gain)
         except Exception as exc:
             logger.warning("USB camera exposure update failed: %s", exc)
+
+    def set_controls(self, controls: dict) -> dict:
+        """Apply runtime USB camera controls and return driver-reported info."""
+        if controls.get("pixel_format"):
+            self._pixel_format = str(controls["pixel_format"])[:4]
+            fourcc = self._cv2.VideoWriter_fourcc(*self._pixel_format)
+            self._cap.set(self._cv2.CAP_PROP_FOURCC, fourcc)
+        if controls.get("width") is not None and controls.get("height") is not None:
+            self._width = int(controls["width"])
+            self._height = int(controls["height"])
+            self._cap.set(self._cv2.CAP_PROP_FRAME_WIDTH, self._width)
+            self._cap.set(self._cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+        exposure = controls.get("exposure_us", self._exposure_us)
+        gain = controls.get("gain", self._gain)
+        self.set_exposure(int(exposure), float(gain))
+        return self.get_info()
+
+    def get_info(self) -> dict:
+        """Return requested and OpenCV-reported USB camera settings."""
+        fourcc_value = int(self._cap.get(self._cv2.CAP_PROP_FOURCC))
+        fourcc = "".join(chr((fourcc_value >> 8 * i) & 0xFF) for i in range(4)).strip()
+        return {
+            "driver": "USBCamera",
+            "requested": {
+                "width": self._width,
+                "height": self._height,
+                "exposure_us": self._exposure_us,
+                "gain": self._gain,
+                "pixel_format": self._pixel_format,
+                "device_index": self._device_index,
+                "device_path": self._device_path,
+            },
+            "actual": {
+                "width": int(self._cap.get(self._cv2.CAP_PROP_FRAME_WIDTH)),
+                "height": int(self._cap.get(self._cv2.CAP_PROP_FRAME_HEIGHT)),
+                "exposure": self._cap.get(self._cv2.CAP_PROP_EXPOSURE),
+                "gain": self._cap.get(self._cv2.CAP_PROP_GAIN),
+                "fourcc": fourcc,
+            },
+        }
 
     def close(self) -> None:
         """Release the camera device."""

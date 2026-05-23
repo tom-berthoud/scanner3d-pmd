@@ -122,6 +122,26 @@ def camera_set_exposure(
     cam.set_exposure(exposure_us, gain)
 
 
+def camera_set_controls(camera_id: str, controls: dict) -> dict:
+    """Apply camera controls such as resolution, exposure, gain and focus."""
+    cam = _camera_instances.get(str(camera_id))
+    if cam is None:
+        raise HardwareError(f"Camera not initialised: {camera_id}")
+    if not hasattr(cam, "set_controls"):
+        raise HardwareError("Camera control update is not supported by this driver")
+    return cam.set_controls(controls)
+
+
+def camera_get_info(camera_id: str | None = None) -> dict:
+    """Return requested and driver-reported camera settings."""
+    cam = _camera_instance if camera_id is None else _camera_instances.get(str(camera_id))
+    if cam is None:
+        raise HardwareError("Camera not initialised")
+    if hasattr(cam, "get_info"):
+        return cam.get_info()
+    return {"camera_id": camera_id, "driver": type(cam).__name__}
+
+
 def motor_step(n: int, direction: str = "clockwise") -> None:
     """Move the stepper motor *n* steps in *direction*."""
     if _motor_instance is None:
@@ -173,6 +193,8 @@ __all__ = [
     "init_hardware",
     "camera_capture",
     "camera_capture_all",
+    "camera_get_info",
+    "camera_set_controls",
     "camera_set_exposure",
     "motor_step",
     "laser_set",

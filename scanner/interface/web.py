@@ -198,6 +198,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 "id": str(cam_cfg.get("id", "main")),
                 "label": _camera_label(str(cam_cfg.get("id", "main"))),
                 "type": str(cam_cfg.get("type", "pi")),
+                "resolution": cam_cfg.get("resolution", settings.get("camera", {}).get("resolution", [640, 480])),
+                "exposure_us": int(cam_cfg.get("exposure_us", settings.get("camera", {}).get("exposure_us", 1000))),
+                "gain": float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0))),
+                "lens_position": cam_cfg.get("lens_position"),
+                "pixel_format": cam_cfg.get("pixel_format", ""),
             }
             for cam_cfg in camera_configs(settings)
         ]
@@ -628,6 +633,60 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 "manual_allowed": _manual_allowed(),
             }
         )
+
+    @app.route("/camera-config")
+    def camera_config_page() -> str:
+        with _scan_lock:
+            state = dict(_scan_state)
+        return render_template(
+            "camera_config.html",
+            scan_state=state,
+            cameras=_camera_view_configs(),
+        )
+
+    @app.route("/camera-config/status")
+    def camera_config_status() -> Response:
+        from scanner.hardware import HardwareError, camera_get_info
+
+        result = {}
+        for cam in _camera_view_configs():
+            camera_id = cam["id"]
+            try:
+                result[camera_id] = {
+                    "label": cam["label"],
+                    "type": cam["type"],
+                    "info": camera_get_info(camera_id),
+                }
+            except HardwareError as exc:
+                result[camera_id] = {"label": cam["label"], "type": cam["type"], "error": str(exc)}
+        return jsonify(result)
+
+    @app.route("/camera-config/apply", methods=["POST"])
+    def camera_config_apply() -> Response:
+        from scanner.hardware import HardwareError, camera_set_controls
+
+        if not _manual_allowed():
+            return jsonify({"error": "Camera config disabled while scan is running"}), 409
+
+        data = request.get_json(silent=True) or {}
+        camera_id = str(data.get("camera", ""))
+        if not camera_id:
+            return jsonify({"error": "camera is required"}), 400
+
+        controls = {}
+        for key in ("width", "height", "exposure_us"):
+            if data.get(key) not in (None, ""):
+                controls[key] = int(data[key])
+        for key in ("gain", "lens_position"):
+            if data.get(key) not in (None, ""):
+                controls[key] = float(data[key])
+        if data.get("pixel_format"):
+            controls["pixel_format"] = str(data["pixel_format"]).strip()
+
+        try:
+            return jsonify({"status": "ok", "camera": camera_id, "info": camera_set_controls(camera_id, controls)})
+        except (HardwareError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @app.route("/manual/camera/frame")
     def manual_camera_frame() -> Response:

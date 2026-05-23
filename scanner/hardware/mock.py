@@ -162,6 +162,36 @@ class MockCamera:
             self._gain = float(gain)
         logger.debug("MockCamera exposure set to %d us, gain=%.2f", self._exposure_us, self._gain)
 
+    def set_controls(self, controls: dict) -> dict:
+        """Store runtime camera controls for API parity with real drivers."""
+        if controls.get("width") is not None and controls.get("height") is not None:
+            self._width = int(controls["width"])
+            self._height = int(controls["height"])
+        if controls.get("exposure_us") is not None:
+            self._exposure_us = int(controls["exposure_us"])
+        if controls.get("gain") is not None:
+            self._gain = float(controls["gain"])
+        return self.get_info()
+
+    def get_info(self) -> dict:
+        """Return requested mock camera settings."""
+        return {
+            "driver": "MockCamera",
+            "requested": {
+                "width": self._width,
+                "height": self._height,
+                "exposure_us": self._exposure_us,
+                "gain": self._gain,
+                "mock_shape": self._shape,
+            },
+            "actual": {
+                "width": self._width,
+                "height": self._height,
+                "exposure_us": self._exposure_us,
+                "gain": self._gain,
+            },
+        }
+
     def capture(self) -> np.ndarray:
         """Generate a synthetic BGR image with a geometrically correct laser line.
 

@@ -25,6 +25,7 @@ cameras:
     mock_shape: duck
     exposure_us: 1000
     gain: 1.0
+    lens_position: 2.7
     awb_mode: off
     awb_gains: [0.5, 1.0]
     intrinsics_path: config/camera_intrinsics_right.yaml
@@ -41,6 +42,7 @@ cameras:
     device_index: 2
     device_path: /dev/video2
     backend: CAP_V4L2
+    pixel_format: MJPG
     resolution: [640, 480]
     mock_shape: duck
     exposure_us: 1000

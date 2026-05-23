@@ -52,6 +52,9 @@
     <a href="/calibration" {% if request.path.startswith('/calibration') %}class="active"{% endif %}>
       <i class="bi bi-sliders me-1"></i>Calibration
     </a>
+    <a href="/camera-config" {% if request.path.startswith('/camera-config') %}class="active"{% endif %}>
+      <i class="bi bi-camera-video me-1"></i>Cam Config
+    </a>
     <a href="/manual" {% if request.path.startswith('/manual') %}class="active"{% endif %}>
       <i class="bi bi-tools me-1"></i>Manuel
     </a>
@@ -73,6 +76,7 @@
   <h6>Navigation</h6>
   <a href="/"><i class="bi bi-play-circle"></i> Scan</a>
   <a href="/calibration"><i class="bi bi-sliders"></i> Calibration</a>
+  <a href="/camera-config"><i class="bi bi-camera-video"></i> Cam Config</a>
   <a href="/manual"><i class="bi bi-tools"></i> Manuel</a>
   <div class="ip-info" id="ip-info">
     Adresse : <strong id="scanner-ip">{{ request.host }}</strong>
@@ -88,6 +92,10 @@
   <a href="/calibration" {% if request.path.startswith('/calibration') %}class="active"{% endif %}>
     <i class="bi bi-sliders"></i>
     <span>Calibration</span>
+  </a>
+  <a href="/camera-config" {% if request.path.startswith('/camera-config') %}class="active"{% endif %}>
+    <i class="bi bi-camera-video"></i>
+    <span>Cam</span>
   </a>
   <a href="/manual" {% if request.path.startswith('/manual') %}class="active"{% endif %}>
     <i class="bi bi-tools"></i>
