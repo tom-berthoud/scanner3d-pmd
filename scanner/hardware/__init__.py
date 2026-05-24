@@ -148,9 +148,14 @@ def camera_capture(camera_id: str | None = None) -> np.ndarray:
 
 def camera_capture_all() -> dict[str, np.ndarray]:
     """Capture one frame from every configured camera in acquisition order."""
-    if not _camera_instances:
+    frames: dict[str, np.ndarray] = {}
+    for camera_id in _camera_configs:
+        cam = _ensure_camera(camera_id)
+        if cam is not None:
+            frames[camera_id] = cam.capture()
+    if not frames:
         raise HardwareError("Camera not initialised")
-    return {camera_id: cam.capture() for camera_id, cam in _camera_instances.items()}
+    return frames
 
 
 def camera_set_exposure(

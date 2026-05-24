@@ -1,6 +1,7 @@
 """USB camera driver using OpenCV VideoCapture."""
 
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -39,11 +40,17 @@ class USBCamera:
         self._focus_absolute = config.get("focus_absolute")
         self._flush_frames = int(config.get("flush_frames", 3))
         self._v4l2_exposure_scale_us = int(config.get("v4l2_exposure_scale_us", 100))
+        self._open_retries = int(config.get("open_retries", 3))
+        self._open_retry_delay_s = float(config.get("open_retry_delay_s", 0.5))
+        self._reconnect_retries = int(config.get("reconnect_retries", 3))
+        self._reconnect_retry_delay_s = float(config.get("reconnect_retry_delay_s", 0.25))
+        self._device_wait_s = float(config.get("device_wait_s", 2.0))
+        self._startup_frame_check = bool(config.get("startup_frame_check", True))
         self._capture_device = str(self._device_path) if self._device_path else self._device_index
         self._v4l2_ctrl_names: set[str] = set()
 
         self._backend = config.get("backend")
-        self._open_capture()
+        self._open_capture_with_retries()
 
         logger.info(
             "USBCamera initialised (device=%s, %dx%d)",
@@ -52,11 +59,54 @@ class USBCamera:
             self._height,
         )
 
+    def _open_capture_with_retries(self) -> None:
+        """Open VideoCapture, retrying transient USB enumeration failures."""
+        from scanner.hardware import HardwareError
+
+        last_exc: Exception | None = None
+        attempts = max(1, self._open_retries + 1)
+        for attempt in range(1, attempts + 1):
+            try:
+                self._open_capture()
+                return
+            except Exception as exc:
+                last_exc = exc
+                self._release_capture()
+                if attempt >= attempts:
+                    break
+                logger.warning(
+                    "USB camera %s open failed (%d/%d): %s; retrying in %.2fs",
+                    self._capture_device,
+                    attempt,
+                    attempts,
+                    exc,
+                    self._open_retry_delay_s,
+                )
+                time.sleep(self._open_retry_delay_s)
+        raise HardwareError(f"USB camera {self._capture_device} could not be opened: {last_exc}")
+
+    def _wait_for_device_path(self) -> bool:
+        """Wait briefly for /dev/video* to reappear after USB re-enumeration."""
+        if not self._device_path:
+            return True
+        deadline = time.monotonic() + max(0.0, self._device_wait_s)
+        while True:
+            if os.path.exists(str(self._device_path)):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.1)
+
     def _open_capture(self) -> None:
         """Open VideoCapture and apply requested USB camera properties."""
         from scanner.hardware import HardwareError
 
         cv2 = self._cv2
+        if not self._wait_for_device_path():
+            raise HardwareError(
+                f"USB camera device path not found after {self._device_wait_s:.1f}s: "
+                f"{self._device_path}"
+            )
         self._set_v4l2_format()
         if self._backend:
             backend_value = getattr(cv2, str(self._backend), None)
@@ -86,14 +136,24 @@ class USBCamera:
         if self._focus_absolute not in (None, ""):
             self._apply_v4l2_controls({"focus_absolute": int(float(self._focus_absolute))})
         self._flush_buffer()
+        if self._startup_frame_check:
+            ok, frame = self._cap.read()
+            if not ok or frame is None:
+                raise HardwareError(f"USB camera {self._capture_device} opened but returned no frame")
 
     def _reopen_capture(self) -> None:
+        self._release_capture()
+        time.sleep(self._reconnect_retry_delay_s)
+        self._open_capture_with_retries()
+
+    def _release_capture(self) -> None:
+        cap = getattr(self, "_cap", None)
+        if cap is None:
+            return
         try:
-            self._cap.release()
+            cap.release()
         except Exception:
             pass
-        time.sleep(0.05)
-        self._open_capture()
 
     def _flush_buffer(self) -> None:
         for _ in range(max(0, self._flush_frames)):
@@ -196,18 +256,33 @@ class USBCamera:
         """Capture one BGR frame."""
         from scanner.hardware import HardwareError
 
-        self._flush_buffer()
-        ok, frame = self._cap.read()
-        if not ok or frame is None:
-            logger.warning("USB camera %s capture failed, reopening once", self._capture_device)
+        last_exc: Exception | None = None
+        attempts = max(1, self._reconnect_retries + 1)
+        for attempt in range(1, attempts + 1):
             try:
-                self._reopen_capture()
+                if not getattr(self, "_cap", None) or not self._cap.isOpened():
+                    raise HardwareError(f"USB camera {self._capture_device} is not open")
+                self._flush_buffer()
                 ok, frame = self._cap.read()
             except Exception as exc:
-                raise HardwareError(f"USB camera {self._capture_device} reconnect failed: {exc}") from exc
-        if not ok or frame is None:
-            raise HardwareError(f"USB camera {self._capture_device} capture failed")
-        return frame
+                ok, frame = False, None
+                last_exc = exc
+            if ok and frame is not None:
+                return frame
+            if attempt >= attempts:
+                break
+            logger.warning(
+                "USB camera %s capture failed (%d/%d), reopening",
+                self._capture_device,
+                attempt,
+                attempts,
+            )
+            try:
+                self._reopen_capture()
+            except Exception as exc:
+                last_exc = exc
+        details = f": {last_exc}" if last_exc is not None else ""
+        raise HardwareError(f"USB camera {self._capture_device} capture failed{details}")
 
     def set_exposure(self, exposure_us: int, gain: Optional[float] = None) -> None:
         """Best-effort manual exposure update.
@@ -308,7 +383,7 @@ class USBCamera:
     def close(self) -> None:
         """Release the camera device."""
         try:
-            self._cap.release()
+            self._release_capture()
         except Exception as exc:
             logger.warning("Error closing USB camera: %s", exc)
 

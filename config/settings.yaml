@@ -49,8 +49,16 @@ cameras:
     pixel_format: YUYV
     # High-resolution YUYV frames are heavy on USB; keep flush low to reduce bus load.
     flush_frames: 1
+    # USB cameras can re-enumerate slowly on Raspberry Pi. These retries avoid
+    # losing the Arducam after a short /dev/video2 disappearance.
+    open_retries: 5
+    open_retry_delay_s: 0.7
+    reconnect_retries: 5
+    reconnect_retry_delay_s: 0.4
+    device_wait_s: 3.0
+    startup_frame_check: true
     v4l2_exposure_scale_us: 100
-    resolution: [2312, 1736]
+    resolution: [1280, 720]
     mock_shape: duck
     exposure_us: 8000
     # V4L2 gain range reported by this camera: 100..1494.
