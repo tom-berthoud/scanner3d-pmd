@@ -74,7 +74,7 @@ cameras:
       - [[0, 720], [0, 211], [275, 720], [0, 720]]
       - [[340, 256], [388, 0], [0, 211], [340, 260]]
       - [[391, 0], [0, 0], [0, 720], [393, 0]]
-      - [[964, 720], [959, 0], [1280, 0], [1280, 720]]
+      - [[1280, 0], [1005, 0], [1043, 720], [1280, 720]]
     intrinsics_path: config/camera_intrinsics_left.yaml
     laser_plane_path: config/laser_plane_left.yaml
     extrinsics:
