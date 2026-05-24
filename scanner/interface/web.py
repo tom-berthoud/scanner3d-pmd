@@ -106,26 +106,73 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     _sse_queue: queue.Queue = queue.Queue(maxsize=50)
     _camera_calib_lock = threading.Lock()
     _camera_calib_session: dict = {
-        "images": [],
-        "captures": [],
-        "last_report": None,
+        "sessions": {},
     }
 
-    def _camera_calib_summary() -> dict:
+    def _project_path(path: str | None) -> str | None:
+        if not path:
+            return None
+        if os.path.isabs(path):
+            return path
+        return str(Path(__file__).resolve().parent.parent.parent / path)
+
+    def _selected_camera_id(default: str | None = None) -> str:
+        from scanner.calibration import camera_configs, default_camera_id
+
+        camera_id = str(request.values.get("camera") or request.values.get("camera_id") or default or "")
+        valid_ids = {str(cam_cfg.get("id")) for cam_cfg in camera_configs(settings)}
+        if not camera_id:
+            camera_id = default_camera_id(settings)
+        if camera_id not in valid_ids:
+            raise ValueError(f"Unknown camera id: {camera_id}")
+        return camera_id
+
+    def _calibration_camera_config(camera_id: str) -> dict:
+        from scanner.calibration import camera_config_by_id
+
+        try:
+            return camera_config_by_id(settings, camera_id)
+        except KeyError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def _camera_calib_state(camera_id: str) -> dict:
+        sessions = _camera_calib_session.setdefault("sessions", {})
+        if camera_id not in sessions:
+            sessions[camera_id] = {"images": [], "captures": [], "last_report": None}
+        return sessions[camera_id]
+
+    def _camera_calib_summary(camera_id: str | None = None) -> dict:
+        try:
+            selected_id = camera_id or _selected_camera_id()
+            cam_cfg = _calibration_camera_config(selected_id)
+        except ValueError:
+            from scanner.calibration import default_camera_id
+
+            selected_id = default_camera_id(settings)
+            cam_cfg = _calibration_camera_config(selected_id)
+
         with _camera_calib_lock:
-            captures = list(_camera_calib_session["captures"])
-            report = _camera_calib_session.get("last_report")
+            state = _camera_calib_state(selected_id)
+            captures = list(state["captures"])
+            report = state.get("last_report")
+        intrinsics_path = _project_path(cam_cfg.get("intrinsics_path"))
         return {
+            "camera_id": selected_id,
+            "camera_label": _camera_label(selected_id),
             "count": len(captures),
             "recommended_min": 12,
             "recommended_max": 20,
             "captures": captures,
             "last_report": report,
+            "intrinsics_path": intrinsics_path,
+            "intrinsics_exists": bool(intrinsics_path and os.path.exists(intrinsics_path)),
         }
 
-    def _parse_camera_board_payload() -> tuple[tuple[int, int], float, bool]:
+    def _parse_camera_board_payload() -> tuple[str, tuple[int, int], float, bool]:
         payload = request.get_json(silent=True) or {}
         source = payload if payload else request.values
+        camera_id = str(source.get("camera") or source.get("camera_id") or _selected_camera_id())
+        _calibration_camera_config(camera_id)
         board_size = (
             int(source.get("board_cols", 9)),
             int(source.get("board_rows", 6)),
@@ -137,7 +184,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             "yes",
             "on",
         )
-        return board_size, square_mm, auto_bracket
+        return camera_id, board_size, square_mm, auto_bracket
 
     def _encode_jpeg_base64(frame, quality: int = 85) -> str:
         import cv2
@@ -313,37 +360,39 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         return {key: _artifact_public(value) for key, value in artifacts.items()}
 
     def _capture_checkerboard_candidate(
+        camera_id: str,
         board_size: tuple[int, int],
         auto_bracket: bool,
     ) -> tuple:
         from scanner.calibration import checkerboard_capture_quality, draw_checkerboard_overlay
         from scanner.hardware import HardwareError, camera_capture, camera_set_exposure, laser_set
 
-        cam_cfg = settings.get("camera", {})
-        scan_exposure = int(cam_cfg.get("exposure_us", 1000))
+        cam_cfg = _calibration_camera_config(camera_id)
+        scan_exposure = int(cam_cfg.get("exposure_us", settings.get("camera", {}).get("exposure_us", 1000)))
         base_exposure = int(cam_cfg.get("calibration_exposure_us", max(5000, scan_exposure * 6)))
-        gain = float(cam_cfg.get("gain", 1.0))
+        gain = float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0)))
         exposures = [base_exposure]
         exposure_note = None
         if auto_bracket:
             exposures = [max(100, int(base_exposure * factor)) for factor in (0.5, 1.0, 2.0, 4.0)]
 
         with _camera_calib_lock:
-            previous_poses = [c["pose"] for c in _camera_calib_session["captures"] if c.get("pose")]
+            state = _camera_calib_state(camera_id)
+            previous_poses = [c["pose"] for c in state["captures"] if c.get("pose")]
 
         best = None
         try:
             laser_set(False)
             for exposure in exposures:
                 try:
-                    camera_set_exposure(exposure, gain)
+                    camera_set_exposure(exposure, gain, camera_id=camera_id)
                     time.sleep(0.08)
                 except HardwareError as exc:
                     exposure_note = f"reglage exposition indisponible: {exc}"
                     if auto_bracket:
                         logger.warning("Calibration exposure bracketing unavailable: %s", exc)
                     exposures = [base_exposure]
-                frame = camera_capture()
+                frame = camera_capture(camera_id)
                 quality = checkerboard_capture_quality(frame, board_size, previous_poses=previous_poses)
                 candidate = (quality.get("score", 0.0), exposure, frame, quality)
                 if best is None or candidate[0] > best[0]:
@@ -356,7 +405,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             except Exception:
                 pass
             try:
-                camera_set_exposure(scan_exposure, gain)
+                camera_set_exposure(scan_exposure, gain, camera_id=camera_id)
             except Exception:
                 pass
 
@@ -979,25 +1028,38 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     @app.route("/calibration")
     def calibration_page() -> str:
         use_checkerboard = bool(settings.get("calibration", {}).get("use_checkerboard", True))
+        camera_views = _camera_view_configs()
+        selected_camera = str(request.args.get("camera") or camera_views[0]["id"])
         return render_template(
             "calibration.html",
             use_checkerboard=use_checkerboard,
-            camera_calib=_camera_calib_summary(),
+            cameras=camera_views,
+            selected_camera=selected_camera,
+            camera_calib=_camera_calib_summary(selected_camera),
         )
 
     @app.route("/calibration/camera/session")
     def calibration_camera_session() -> Response:
         """Return current in-memory checkerboard capture session."""
-        return jsonify(_camera_calib_summary())
+        try:
+            camera_id = _selected_camera_id()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(_camera_calib_summary(camera_id))
 
     @app.route("/calibration/camera/reset", methods=["POST"])
     def calibration_camera_reset() -> Response:
         """Clear captured checkerboard images."""
+        try:
+            camera_id = _selected_camera_id()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         with _camera_calib_lock:
-            _camera_calib_session["images"] = []
-            _camera_calib_session["captures"] = []
-            _camera_calib_session["last_report"] = None
-        return jsonify(_camera_calib_summary())
+            state = _camera_calib_state(camera_id)
+            state["images"] = []
+            state["captures"] = []
+            state["last_report"] = None
+        return jsonify(_camera_calib_summary(camera_id))
 
     @app.route("/calibration/camera/frame")
     def calibration_camera_frame() -> Response:
@@ -1009,13 +1071,16 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not _manual_allowed():
             return Response(status=409)
         try:
-            board_size, _square_mm, _auto_bracket = _parse_camera_board_payload()
+            camera_id, board_size, _square_mm, _auto_bracket = _parse_camera_board_payload()
         except (TypeError, ValueError):
+            from scanner.calibration import default_camera_id
+
+            camera_id = default_camera_id(settings)
             board_size = (9, 6)
 
         try:
             laser_set(False)
-            frame = camera_capture()
+            frame = camera_capture(camera_id)
         except HardwareError:
             return Response(status=503)
         finally:
@@ -1025,7 +1090,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 pass
 
         with _camera_calib_lock:
-            previous_poses = [c["pose"] for c in _camera_calib_session["captures"] if c.get("pose")]
+            state = _camera_calib_state(camera_id)
+            previous_poses = [c["pose"] for c in state["captures"] if c.get("pose")]
         quality = checkerboard_capture_quality(frame, board_size, previous_poses=previous_poses)
         overlay = draw_checkerboard_overlay(frame, board_size, quality)
         ok, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -1055,8 +1121,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not _manual_allowed():
             return jsonify({"error": "Calibration disabled while scan is running"}), 409
         try:
-            board_size, _square_mm, auto_bracket = _parse_camera_board_payload()
-            frame, overlay, quality = _capture_checkerboard_candidate(board_size, auto_bracket)
+            camera_id, board_size, _square_mm, auto_bracket = _parse_camera_board_payload()
+            frame, overlay, quality = _capture_checkerboard_candidate(
+                camera_id, board_size, auto_bracket
+            )
         except (TypeError, ValueError) as exc:
             return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
         except HardwareError as exc:
@@ -1070,9 +1138,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if accepted:
             metrics = quality.get("metrics", {})
             with _camera_calib_lock:
-                idx = len(_camera_calib_session["images"]) + 1
-                _camera_calib_session["images"].append(frame)
-                _camera_calib_session["captures"].append(
+                state = _camera_calib_state(camera_id)
+                idx = len(state["images"]) + 1
+                state["images"].append(frame)
+                state["captures"].append(
                     {
                         "index": idx,
                         "pose": quality.get("pose"),
@@ -1082,7 +1151,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                     }
                 )
 
-        result = _camera_calib_summary()
+        result = _camera_calib_summary(camera_id)
         result.update(
             {
                 "accepted": accepted,
@@ -1097,31 +1166,30 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         """Run calibration from the in-memory guided capture session."""
         from scanner.calibration import CalibrationError, calibrate_camera_with_report
 
-        if not bool(settings.get("calibration", {}).get("use_checkerboard", True)):
-            return jsonify(
-                {
-                    "error": (
-                        "Checkerboard calibration is disabled in settings "
-                        "(calibration.use_checkerboard=false)."
-                    )
-                }
-            ), 409
         try:
-            board_size, square_mm, _auto_bracket = _parse_camera_board_payload()
+            camera_id, board_size, square_mm, _auto_bracket = _parse_camera_board_payload()
         except (TypeError, ValueError) as exc:
             return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
 
         with _camera_calib_lock:
-            images = list(_camera_calib_session["images"])
+            state = _camera_calib_state(camera_id)
+            images = list(state["images"])
         if len(images) < 4:
             return jsonify({"error": f"At least 4 accepted images are required, got {len(images)}"}), 422
 
         try:
+            cam_cfg = _calibration_camera_config(camera_id)
+            output_path = _project_path(cam_cfg.get("intrinsics_path"))
             camera_matrix, dist_coeffs, report = calibrate_camera_with_report(
-                images, board_size=board_size, square_size_mm=square_mm
+                images,
+                board_size=board_size,
+                square_size_mm=square_mm,
+                output_path=output_path,
             )
             result = {
                 "status": "ok",
+                "camera": camera_id,
+                "output_path": output_path,
                 "fx": float(camera_matrix[0, 0]),
                 "fy": float(camera_matrix[1, 1]),
                 "cx": float(camera_matrix[0, 2]),
@@ -1130,7 +1198,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 "report": report,
             }
             with _camera_calib_lock:
-                _camera_calib_session["last_report"] = report
+                state = _camera_calib_state(camera_id)
+                state["last_report"] = report
             return jsonify(result)
         except CalibrationError as exc:
             return jsonify({"error": str(exc)}), 422
@@ -1144,16 +1213,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         import cv2  # type: ignore[import]
         import numpy as np
         from scanner.calibration import CalibrationError, calibrate_camera_with_report
-
-        if not bool(settings.get("calibration", {}).get("use_checkerboard", True)):
-            return jsonify(
-                {
-                    "error": (
-                        "Checkerboard calibration is disabled in settings "
-                        "(calibration.use_checkerboard=false)."
-                    )
-                }
-            ), 409
 
         files = request.files.getlist("images")
         if not files:
@@ -1169,19 +1228,25 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not images:
             return jsonify({"error": "Could not decode any uploaded images"}), 400
 
-        board_size = (
-            int(request.form.get("board_cols", 9)),
-            int(request.form.get("board_rows", 6)),
-        )
-        square_mm = float(request.form.get("square_size_mm", 25.0))
+        try:
+            camera_id, board_size, square_mm, _auto_bracket = _parse_camera_board_payload()
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
 
         try:
+            cam_cfg = _calibration_camera_config(camera_id)
+            output_path = _project_path(cam_cfg.get("intrinsics_path"))
             camera_matrix, dist_coeffs, report = calibrate_camera_with_report(
-                images, board_size=board_size, square_size_mm=square_mm
+                images,
+                board_size=board_size,
+                square_size_mm=square_mm,
+                output_path=output_path,
             )
             return jsonify(
                 {
                     "status": "ok",
+                    "camera": camera_id,
+                    "output_path": output_path,
                     "fx": float(camera_matrix[0, 0]),
                     "fy": float(camera_matrix[1, 1]),
                     "cx": float(camera_matrix[0, 2]),
@@ -1207,6 +1272,12 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             calibrate_laser_plane,
             load_camera_calibration,
         )
+
+        try:
+            camera_id = _selected_camera_id()
+            cam_cfg = _calibration_camera_config(camera_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         files = request.files.getlist("images")
         distances_raw = request.form.get("distances_mm", "")
@@ -1237,18 +1308,17 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             ), 400
 
         calib_cfg = settings.get("calibration", {})
-        use_checkerboard = bool(calib_cfg.get("use_checkerboard", True))
-        focal_scale = float(calib_cfg.get("approx_focal_scale", 1.25))
-        cam_cfg = settings.get("camera", {})
-        resolution = cam_cfg.get("resolution", [640, 480])
+        focal_scale = float(cam_cfg.get("approx_focal_scale", calib_cfg.get("approx_focal_scale", 1.25)))
+        resolution = cam_cfg.get("resolution", settings.get("camera", {}).get("resolution", [640, 480]))
         try:
             cam_res = (int(resolution[0]), int(resolution[1]))
         except Exception:
             cam_res = (640, 480)
 
+        intrinsics_path = _project_path(cam_cfg.get("intrinsics_path"))
         try:
-            if use_checkerboard:
-                camera_matrix, dist_coeffs = load_camera_calibration()
+            if intrinsics_path and os.path.exists(intrinsics_path):
+                camera_matrix, dist_coeffs = load_camera_calibration(intrinsics_path)
             else:
                 camera_matrix, dist_coeffs = approximate_camera_intrinsics(
                     cam_res, focal_scale=focal_scale
@@ -1257,13 +1327,24 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return jsonify({"error": f"Camera intrinsics unavailable: {exc}"}), 409
 
         try:
+            output_path = _project_path(cam_cfg.get("laser_plane_path"))
             plane = calibrate_laser_plane(
                 images,
                 distances,
                 camera_matrix,
                 dist_coeffs,
+                output_path=output_path,
             )
-            return jsonify({"status": "ok", "plane": plane.tolist()})
+            return jsonify(
+                {
+                    "status": "ok",
+                    "camera": camera_id,
+                    "output_path": output_path,
+                    "intrinsics_path": intrinsics_path,
+                    "used_approx_intrinsics": not bool(intrinsics_path and os.path.exists(intrinsics_path)),
+                    "plane": plane.tolist(),
+                }
+            )
         except CalibrationError as exc:
             return jsonify({"error": str(exc)}), 422
         except Exception as exc:

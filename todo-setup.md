@@ -15,8 +15,8 @@ un vrai test double camera, puis quoi verifier pendant les premiers scans.
 - [x] Trouver l'index OpenCV de la camera USB (`device_index`).
 - [x] Noter le modele exact de la camera USB si possible.
 - [x] Trouver ou mesurer sa resolution stable.
-- [ ] Verifier si l'exposition manuelle USB fonctionne.
-- [ ] Verifier si le gain manuel USB fonctionne.
+- [x] Verifier si l'exposition manuelle USB fonctionne.
+- [x] Verifier si le gain manuel USB fonctionne.
 - [x] Verifier que les deux cameras peuvent capturer dans la meme session.
 
 ### Configuration logicielle
@@ -40,11 +40,11 @@ un vrai test double camera, puis quoi verifier pendant les premiers scans.
 
 ### Securite laser
 
-- [ ] Verifier que le laser est OFF au demarrage.
-- [ ] Verifier que le laser s'eteint apres une capture.
-- [ ] Verifier que le laser s'eteint en cas d'erreur.
-- [ ] Ne pas tester laser actif couvercle ouvert si le rayon peut sortir.
-- [ ] Verifier que les nouvelles routines de calibration ne laissent pas le laser ON.
+- [x] Verifier que le laser est OFF au demarrage.
+- [x] Verifier que le laser s'eteint apres une capture.
+- [x] Verifier que le laser s'eteint en cas d'erreur.
+- [x] Ne pas tester laser actif couvercle ouvert si le rayon peut sortir.
+- [x] Verifier que les nouvelles routines de calibration ne laissent pas le laser ON.
 
 ### Position 3D des cameras
 
@@ -116,7 +116,7 @@ Chaque camera aura des zones differentes a ignorer.
 ### Test court d'abord
 
 - [ ] Reduire temporairement `scan.n_steps` a 40 ou 80.
-- [ ] Lancer un scan court.
+- [x] Lancer un scan court.
 - [ ] Verifier que le scan ne depasse pas les temps attendus.
 - [ ] Verifier que le laser s'eteint bien en fin de scan.
 - [ ] Verifier que le moteur ne bloque pas et ne perd pas de pas.

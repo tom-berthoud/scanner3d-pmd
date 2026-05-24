@@ -73,17 +73,32 @@
       </div>
       <div class="card-body d-flex flex-column gap-3">
 
+        <div>
+          <label class="form-label">Camera a calibrer</label>
+          <select class="form-select" id="calib-camera" onchange="onCalibrationCameraChange()">
+            {% for cam in cameras %}
+            <option value="{{ cam.id }}" {% if cam.id == selected_camera %}selected{% endif %}>
+              {{ cam.label }} - {{ cam.id }} - {{ cam.resolution[0] }}x{{ cam.resolution[1] }}
+            </option>
+            {% endfor %}
+          </select>
+          <div class="form-text" style="color:#6e7681;">
+            Les captures damier sont separees par camera. Changez de camera, puis refaites une session.
+          </div>
+        </div>
+
         <div class="d-flex gap-3 align-items-start">
           <span class="step-badge mt-1">1</span>
           <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
             Imprimez un damier, photographiez-le depuis au moins <strong style="color:#c9d1d9;">10 angles differents</strong>.
-            Le resultat est sauvegarde dans <code>config/camera_intrinsics.yaml</code>.
+            Le resultat est sauvegarde dans le fichier d'intrinseques de la camera choisie.
           </p>
         </div>
         {% if not use_checkerboard %}
-        <div class="alert alert-warning py-2 mb-0">
-          Le mode damier est desactive dans <code>config/settings.yaml</code>
-          (<code>calibration.use_checkerboard: false</code>). Cette calibration est ignoree.
+        <div class="alert alert-warning py-2 mb-0" id="checkerboard-disabled-warning">
+          Le scan utilise encore les intrinseques approx
+          (<code>calibration.use_checkerboard: false</code>). Tu peux quand meme creer les fichiers
+          de calibration ici; il faudra ensuite activer ce parametre pour les utiliser pendant le scan.
         </div>
         {% endif %}
 
@@ -136,7 +151,7 @@
             <button type="button" class="btn btn-outline-secondary calib-btn" id="btn-checker-reset" onclick="resetCheckerboardSession()">
               <i class="bi bi-arrow-counterclockwise me-2"></i>Reinitialiser
             </button>
-            <button type="button" class="btn btn-primary calib-btn" id="btn-checker-run" onclick="runGuidedCameraCalibration()" {% if not use_checkerboard %}disabled{% endif %}>
+            <button type="button" class="btn btn-primary calib-btn" id="btn-checker-run" onclick="runGuidedCameraCalibration()">
               <i class="bi bi-cpu me-2"></i>Lancer avec les captures
             </button>
           </div>
@@ -172,7 +187,8 @@
               <input type="hidden" name="board_cols" id="upload-board-cols" value="9" />
               <input type="hidden" name="board_rows" id="upload-board-rows" value="6" />
               <input type="hidden" name="square_size_mm" id="upload-square-mm" value="25" />
-              <button type="submit" class="btn btn-outline-primary calib-btn" {% if not use_checkerboard %}disabled{% endif %}>
+              <input type="hidden" name="camera" id="upload-camera" value="{{ selected_camera }}" />
+              <button type="submit" class="btn btn-outline-primary calib-btn">
                 <i class="bi bi-upload me-2"></i>Lancer avec images importees
               </button>
             </form>
@@ -193,6 +209,20 @@
       </div>
       <div class="card-body d-flex flex-column gap-3">
 
+        <div>
+          <label class="form-label">Camera du plan laser</label>
+          <select class="form-select" id="laser-camera" onchange="syncLaserCameraFromSelect()">
+            {% for cam in cameras %}
+            <option value="{{ cam.id }}" {% if cam.id == selected_camera %}selected{% endif %}>
+              {{ cam.label }} - {{ cam.id }}
+            </option>
+            {% endfor %}
+          </select>
+          <div class="form-text" style="color:#6e7681;">
+            Calibrez le laser separement pour la nappe et pour l'Arducam.
+          </div>
+        </div>
+
         <div class="d-flex gap-3 align-items-start">
           <span class="step-badge mt-1">1</span>
           <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
@@ -204,13 +234,14 @@
           <span class="step-badge mt-1">2</span>
           <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
             Entrez les distances dans le meme ordre que les images (ex. <code>200,250,300</code>).
-            Le resultat est sauvegarde dans <code>config/laser_plane.yaml</code>.
+            Le resultat est sauvegarde dans le fichier laser de la camera choisie.
           </p>
         </div>
 
         <hr style="border-color:#30363d; margin:0;" />
 
         <form id="form-laser" enctype="multipart/form-data" class="d-flex flex-column gap-3">
+          <input type="hidden" name="camera" id="laser-form-camera" value="{{ selected_camera }}" />
 
           <div>
             <label class="form-label">Images de reference <span style="color:#6e7681; font-weight:400;">(une par distance)</span></label>
@@ -271,8 +302,41 @@
 let _checkerLiveTimer = null;
 let _checkerCaptureTimer = null;
 
+function selectedCalibrationCamera() {
+  var select = document.getElementById('calib-camera');
+  return select ? select.value : '{{ selected_camera }}';
+}
+
+function syncLaserCameraFromSelect() {
+  var cam = selectedCalibrationCamera();
+  var laserSelect = document.getElementById('laser-camera');
+  var laserHidden = document.getElementById('laser-form-camera');
+  if (laserSelect) {
+    if (!laserSelect.value) laserSelect.value = cam;
+    if (laserHidden) laserHidden.value = laserSelect.value;
+  } else if (laserHidden) {
+    laserHidden.value = cam;
+  }
+}
+
+async function onCalibrationCameraChange() {
+  var cam = selectedCalibrationCamera();
+  var uploadCam = document.getElementById('upload-camera');
+  if (uploadCam) uploadCam.value = cam;
+  var laserSelect = document.getElementById('laser-camera');
+  if (laserSelect) laserSelect.value = cam;
+  syncLaserCameraFromSelect();
+  if (_checkerLiveTimer) toggleCheckerLive();
+  if (_checkerCaptureTimer) toggleCheckerAutoCapture();
+  document.getElementById('checker-live-img').removeAttribute('src');
+  document.getElementById('camera-result').innerHTML = '';
+  await refreshCheckerSession();
+  refreshCheckerLiveFrame();
+}
+
 function checkerPayload() {
   return {
+    camera: selectedCalibrationCamera(),
     board_cols: parseInt(document.getElementById('cam-board-cols').value || '9', 10),
     board_rows: parseInt(document.getElementById('cam-board-rows').value || '6', 10),
     square_size_mm: parseFloat(document.getElementById('cam-square-mm').value || '25'),
@@ -285,9 +349,11 @@ function syncUploadFields() {
   var cols = document.getElementById('upload-board-cols');
   var rows = document.getElementById('upload-board-rows');
   var sq = document.getElementById('upload-square-mm');
+  var cam = document.getElementById('upload-camera');
   if (cols) cols.value = p.board_cols;
   if (rows) rows.value = p.board_rows;
   if (sq) sq.value = p.square_size_mm;
+  if (cam) cam.value = p.camera;
 }
 
 function setCheckerStatsFromHeaders(resp) {
@@ -305,7 +371,9 @@ async function refreshCheckerLiveFrame() {
   var p = checkerPayload();
   try {
     var url = '/calibration/camera/frame?board_cols=' + p.board_cols +
-      '&board_rows=' + p.board_rows + '&t=' + Date.now();
+      '&board_rows=' + p.board_rows +
+      '&camera=' + encodeURIComponent(p.camera) +
+      '&t=' + Date.now();
     var resp = await fetch(url);
     if (!resp.ok) {
       document.getElementById('checker-status').textContent = 'Erreur ' + resp.status;
@@ -334,6 +402,10 @@ function toggleCheckerLive() {
 
 function renderCheckerSession(data) {
   document.getElementById('checker-count').textContent = data.count || 0;
+  if (data.camera_id) {
+    var select = document.getElementById('calib-camera');
+    if (select && select.value !== data.camera_id) select.value = data.camera_id;
+  }
   var box = document.getElementById('checker-thumbs');
   if (!box) return;
   box.innerHTML = '';
@@ -344,6 +416,16 @@ function renderCheckerSession(data) {
     img.alt = 'Capture ' + c.index;
     box.appendChild(img);
   });
+}
+
+async function refreshCheckerSession() {
+  try {
+    var resp = await fetch('/calibration/camera/session?camera=' + encodeURIComponent(selectedCalibrationCamera()));
+    var data = await resp.json();
+    if (resp.ok) renderCheckerSession(data);
+  } catch (e) {
+    renderCameraResultError('Erreur session : ' + e);
+  }
 }
 
 function renderCameraResultOk(title, data) {
@@ -407,7 +489,10 @@ function toggleCheckerAutoCapture() {
 
 async function resetCheckerboardSession() {
   try {
-    var resp = await fetch('/calibration/camera/reset', { method: 'POST' });
+    var resp = await fetch(
+      '/calibration/camera/reset?camera=' + encodeURIComponent(selectedCalibrationCamera()),
+      { method: 'POST' }
+    );
     var data = await resp.json();
     renderCheckerSession(data);
     document.getElementById('checker-status').textContent = 'Session vide';
@@ -494,6 +579,7 @@ if (camForm) {
 
 document.getElementById('form-laser').addEventListener('submit', function(e) {
   e.preventDefault();
+  syncLaserCameraFromSelect();
   submitCalibForm('form-laser', '/calibration/laser', 'laser-result');
 });
 
@@ -501,6 +587,7 @@ async function testLaserExtraction() {
   var result = document.getElementById('laser-test-result');
   var btn = document.getElementById('btn-laser-test');
   var payload = {
+    camera: (document.getElementById('laser-camera') || {}).value || selectedCalibrationCamera(),
     threshold: parseInt(document.getElementById('laser-test-threshold').value || '70', 10),
     min_pixels: parseInt(document.getElementById('laser-test-min-pixels').value || '15', 10)
   };
@@ -541,6 +628,8 @@ async function testLaserExtraction() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  syncUploadFields();
+  syncLaserCameraFromSelect();
   refreshCheckerLiveFrame();
 });
 </script>
