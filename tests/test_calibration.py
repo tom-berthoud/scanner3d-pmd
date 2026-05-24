@@ -12,6 +12,7 @@ from scanner.calibration.camera import _save_camera_calibration
 from scanner.calibration.camera import approximate_camera_intrinsics
 from scanner.calibration.camera import checkerboard_capture_quality
 from scanner.calibration.laser_plane import _save_laser_plane
+from scanner.calibration.laser_plane import calibrate_laser_plane_platform_z
 
 
 # --------------------------------------------------------------------------- #
@@ -174,6 +175,38 @@ class TestLoadLaserPlane:
             _save_laser_plane(plane_orig, 29.5, path)
             plane = load_laser_plane(path)
         np.testing.assert_allclose(plane, plane_orig, atol=1e-6)
+
+
+class TestLaserPlanePlatformZCalibration:
+    """Tests for vertical-board laser calibration in the platform frame."""
+
+    def test_fits_plane_from_platform_z_boards(self) -> None:
+        images = []
+        for col in (40, 55, 70):
+            img = np.zeros((80, 120, 3), dtype=np.uint8)
+            img[:, col, 1] = 255
+            images.append(img)
+
+        camera_matrix = np.array(
+            [[100.0, 0.0, 60.0], [0.0, 100.0, 40.0], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plane = calibrate_laser_plane_platform_z(
+                images,
+                [100.0, 120.0, 140.0],
+                camera_matrix,
+                np.zeros(5),
+                np.eye(3),
+                np.zeros(3),
+                output_path=os.path.join(tmpdir, "laser.yaml"),
+                threshold=100,
+                min_pixels=5,
+                mask_rects=[],
+            )
+
+        assert plane.shape == (4,)
+        assert np.isfinite(plane).all()
 
 
 class TestApproximateCameraIntrinsics:

@@ -243,14 +243,15 @@
         <div class="d-flex gap-3 align-items-start">
           <span class="step-badge mt-1">1</span>
           <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
-            Placez une planche blanche plane a des <strong style="color:#c9d1d9;">distances connues</strong> de la camera.
-            Prenez une image par distance avec le laser allume.
+            Mode conseille: gardez une planche blanche verticale, face au laser, a des
+            <strong style="color:#c9d1d9;">positions Z connues</strong> dans le repere plateau.
+            Prenez une image par position avec le laser allume.
           </p>
         </div>
         <div class="d-flex gap-3 align-items-start">
           <span class="step-badge mt-1">2</span>
           <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
-            Entrez les distances dans le meme ordre que les images (ex. <code>200,250,300</code>).
+            Entrez les positions dans le meme ordre que les images (ex. <code>-80,-40,0,40</code>).
             Le resultat est sauvegarde dans le fichier laser de la camera choisie.
           </p>
         </div>
@@ -259,6 +260,17 @@
 
         <form id="form-laser" enctype="multipart/form-data" class="d-flex flex-column gap-3">
           <input type="hidden" name="camera" id="laser-form-camera" value="{{ selected_camera }}" />
+
+          <div>
+            <label class="form-label">Mode de reference</label>
+            <select class="form-select" name="plane_mode" id="laser-plane-mode">
+              <option value="platform_z" selected>Carton vertical - position Z plateau</option>
+              <option value="camera_depth">Carton face camera - distance camera</option>
+            </select>
+            <div class="form-text" style="color:#6e7681;">
+              Le mode vertical utilise un carton droit, parallele a l'axe Y, face au laser.
+            </div>
+          </div>
 
           <div>
             <label class="form-label">Images de reference <span style="color:#6e7681; font-weight:400;">(une par distance)</span></label>
@@ -271,18 +283,21 @@
               multiple
               required
             />
-            <div class="form-text" style="color:#6e7681;">Laser allume, planche perpendiculaire a l'axe optique</div>
+            <div class="form-text" style="color:#6e7681;">Laser allume, carton blanc mat, ligne laser visible et non saturee</div>
           </div>
 
           <div>
-            <label class="form-label">Distances en mm <span style="color:#6e7681; font-weight:400;">(separees par des virgules)</span></label>
+            <label class="form-label">Positions/distances en mm <span style="color:#6e7681; font-weight:400;">(separees par des virgules)</span></label>
             <input
               class="form-control"
               type="text"
               name="distances_mm"
-              placeholder="200,250,300"
+              placeholder="-80,-40,0,40"
               required
             />
+            <div class="form-text" style="color:#6e7681;">
+              En mode vertical: valeur Z du carton dans le repere plateau. Le centre plateau vaut 0.
+            </div>
           </div>
 
           <div class="row g-3">

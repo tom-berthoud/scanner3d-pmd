@@ -26,12 +26,41 @@ _DEFAULT_PLANE_PATH = str(
 )
 
 
+def _undistort_to_normalized(
+    line_px: np.ndarray,
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+) -> np.ndarray:
+    dist = np.asarray(dist_coeffs, dtype=np.float64).flatten()
+    if dist.size == 0 or np.allclose(dist, 0.0):
+        fx = float(camera_matrix[0, 0])
+        fy = float(camera_matrix[1, 1])
+        cx = float(camera_matrix[0, 2])
+        cy = float(camera_matrix[1, 2])
+        return np.column_stack(
+            [
+                (line_px[:, 0].astype(np.float64) - cx) / fx,
+                (line_px[:, 1].astype(np.float64) - cy) / fy,
+            ]
+        )
+
+    import cv2  # type: ignore[import]
+
+    pts = line_px.reshape(-1, 1, 2).astype(np.float64)
+    return cv2.undistortPoints(pts, camera_matrix, dist_coeffs).reshape(-1, 2)
+
+
 def calibrate_laser_plane(
     reference_images: list[np.ndarray],
     reference_distances_mm: list[float],
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     output_path: Optional[str] = None,
+    threshold: int = 20,
+    min_pixels: int = 5,
+    mode: str = "row_mean",
+    mask_rects: list | None = None,
+    camera_id: str | None = None,
 ) -> np.ndarray:
     """Fit the laser sheet plane from flat-surface reference images.
 
@@ -58,7 +87,6 @@ def calibrate_laser_plane(
     """
     from scanner.calibration import CalibrationError
     from scanner.processing.laser_line import extract_laser_line
-    import cv2  # type: ignore[import]
 
     if len(reference_images) != len(reference_distances_mm):
         raise CalibrationError(
@@ -69,16 +97,22 @@ def calibrate_laser_plane(
     all_points: list[np.ndarray] = []
 
     for img_idx, (img, z_ref) in enumerate(zip(reference_images, reference_distances_mm)):
-        line_px = extract_laser_line(img, threshold=20, min_pixels=5, subpixel=True)
+        line_px = extract_laser_line(
+            img,
+            threshold=threshold,
+            min_pixels=min_pixels,
+            subpixel=True,
+            mode=mode,
+            camera_id=camera_id,
+            mask_rects=mask_rects,
+        )
         if line_px.shape[0] < 5:
             logger.warning(
                 "Image %d: only %d laser pixels found — skipping", img_idx, line_px.shape[0]
             )
             continue
 
-        # Undistort pixels
-        pts = line_px.reshape(-1, 1, 2).astype(np.float64)
-        undist = cv2.undistortPoints(pts, camera_matrix, dist_coeffs).reshape(-1, 2)
+        undist = _undistort_to_normalized(line_px, camera_matrix, dist_coeffs)
 
         # Back-project to 3D using known z
         # normalised coords (x_n, y_n) → 3D: X = x_n * z, Y = y_n * z, Z = z
@@ -133,6 +167,98 @@ def calibrate_laser_plane(
     out_path = output_path or _DEFAULT_PLANE_PATH
     _save_laser_plane(plane, angle_deg, out_path)
 
+    return plane
+
+
+def calibrate_laser_plane_platform_z(
+    reference_images: list[np.ndarray],
+    platform_z_mm: list[float],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    camera_to_platform_rotation: np.ndarray,
+    camera_to_platform_translation: np.ndarray,
+    output_path: Optional[str] = None,
+    threshold: int = 20,
+    min_pixels: int = 5,
+    mode: str = "row_mean",
+    mask_rects: list | None = None,
+    camera_id: str | None = None,
+) -> np.ndarray:
+    """Fit the laser plane using vertical reference boards at known platform Z.
+
+    The reference board is assumed to be a vertical X/Y plane in the shared
+    platform frame, with equation ``Z = platform_z_mm``. This lets the user keep
+    the board vertical and facing the laser instead of orienting it toward each
+    camera. The fitted laser plane is still saved in the selected camera frame.
+    """
+    from scanner.calibration import CalibrationError
+    from scanner.processing.laser_line import extract_laser_line
+
+    if len(reference_images) != len(platform_z_mm):
+        raise CalibrationError(
+            f"Mismatch: {len(reference_images)} images but {len(platform_z_mm)} Z positions"
+        )
+
+    rot = np.asarray(camera_to_platform_rotation, dtype=np.float64)
+    trans = np.asarray(camera_to_platform_translation, dtype=np.float64).reshape(3)
+    if rot.shape != (3, 3):
+        raise CalibrationError(f"camera_to_platform_rotation must be 3x3, got {rot.shape}")
+
+    all_points: list[np.ndarray] = []
+    for img_idx, (img, z_ref) in enumerate(zip(reference_images, platform_z_mm)):
+        line_px = extract_laser_line(
+            img,
+            threshold=threshold,
+            min_pixels=min_pixels,
+            subpixel=True,
+            mode=mode,
+            camera_id=camera_id,
+            mask_rects=mask_rects,
+        )
+        if line_px.shape[0] < min_pixels:
+            logger.warning(
+                "Image %d: only %d laser pixels found - skipping", img_idx, line_px.shape[0]
+            )
+            continue
+
+        undist = _undistort_to_normalized(line_px, camera_matrix, dist_coeffs)
+        rays_cam = np.hstack([undist, np.ones((len(undist), 1), dtype=np.float64)])
+        rays_platform = (rot @ rays_cam.T).T
+        denom = rays_platform[:, 2]
+        valid = np.abs(denom) > 1e-9
+        scale = np.full(len(rays_cam), np.nan, dtype=np.float64)
+        scale[valid] = (float(z_ref) - trans[2]) / denom[valid]
+        valid &= scale > 0.0
+        if int(valid.sum()) < min_pixels:
+            logger.warning("Image %d: too few forward intersections - skipping", img_idx)
+            continue
+
+        all_points.append(rays_cam[valid] * scale[valid, np.newaxis])
+        logger.debug("Image %d: %d points at platform Z=%.1f mm", img_idx, int(valid.sum()), z_ref)
+
+    if len(all_points) < 1:
+        raise CalibrationError("No valid laser line detections found in reference images")
+
+    points = np.vstack(all_points)
+    if len(points) < 3:
+        raise CalibrationError(f"Need at least 3 points for plane fitting, got {len(points)}")
+
+    centroid = points.mean(axis=0)
+    centred = points - centroid
+    _, _, vt = np.linalg.svd(centred)
+    normal = vt[-1]
+    d = -float(normal @ centroid)
+    norm_len = float(np.linalg.norm(normal))
+    if norm_len < 1e-12:
+        raise CalibrationError("Degenerate plane fit - all points may be collinear")
+    normal = normal / norm_len
+    d = d / norm_len
+
+    plane = np.array([normal[0], normal[1], normal[2], d], dtype=np.float64)
+    angle_deg = float(np.degrees(np.arccos(np.clip(abs(normal[2]), 0.0, 1.0))))
+    out_path = output_path or _DEFAULT_PLANE_PATH
+    _save_laser_plane(plane, angle_deg, out_path)
+    logger.info("Laser plane fitted from platform-Z boards: [%.6f, %.6f, %.6f, %.6f]", *plane)
     return plane
 
 

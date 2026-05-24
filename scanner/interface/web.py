@@ -1391,8 +1391,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             CalibrationError,
             approximate_camera_intrinsics,
             calibrate_laser_plane,
+            calibrate_laser_plane_platform_z,
             load_camera_calibration,
         )
+        from scanner.calibration.multi_camera import _load_extrinsics
 
         try:
             camera_id = _selected_camera_id()
@@ -1402,6 +1404,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
         files = request.files.getlist("images")
         distances_raw = request.form.get("distances_mm", "")
+        plane_mode = str(request.form.get("plane_mode", "platform_z")).strip()
 
         if not files or not distances_raw:
             return jsonify({"error": "images and distances_mm are required"}), 400
@@ -1449,17 +1452,46 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
         try:
             output_path = _project_path(cam_cfg.get("laser_plane_path"))
-            plane = calibrate_laser_plane(
-                images,
-                distances,
-                camera_matrix,
-                dist_coeffs,
-                output_path=output_path,
-            )
+            default_threshold, mask_rects = _camera_processing_config(camera_id)
+            proc_cfg = settings.get("processing", {})
+            min_px = int(proc_cfg.get("min_line_pixels", 5))
+            extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
+            if plane_mode == "camera_depth":
+                plane = calibrate_laser_plane(
+                    images,
+                    distances,
+                    camera_matrix,
+                    dist_coeffs,
+                    output_path=output_path,
+                    threshold=default_threshold,
+                    min_pixels=max(1, min_px),
+                    mode=extraction_mode,
+                    mask_rects=mask_rects,
+                    camera_id=camera_id,
+                )
+            elif plane_mode == "platform_z":
+                cam_rot, cam_trans = _load_extrinsics(cam_cfg)
+                plane = calibrate_laser_plane_platform_z(
+                    images,
+                    distances,
+                    camera_matrix,
+                    dist_coeffs,
+                    cam_rot,
+                    cam_trans,
+                    output_path=output_path,
+                    threshold=default_threshold,
+                    min_pixels=max(1, min_px),
+                    mode=extraction_mode,
+                    mask_rects=mask_rects,
+                    camera_id=camera_id,
+                )
+            else:
+                return jsonify({"error": f"Unknown laser calibration plane_mode: {plane_mode}"}), 400
             return jsonify(
                 {
                     "status": "ok",
                     "camera": camera_id,
+                    "plane_mode": plane_mode,
                     "output_path": output_path,
                     "intrinsics_path": intrinsics_path,
                     "used_approx_intrinsics": not bool(intrinsics_path and os.path.exists(intrinsics_path)),

@@ -16,7 +16,11 @@ from scanner.calibration.camera import (
     draw_checkerboard_overlay,
     load_camera_calibration,
 )
-from scanner.calibration.laser_plane import calibrate_laser_plane, load_laser_plane
+from scanner.calibration.laser_plane import (
+    calibrate_laser_plane,
+    calibrate_laser_plane_platform_z,
+    load_laser_plane,
+)
 from scanner.calibration.multi_camera import (
     camera_config_by_id,
     camera_configs,
@@ -39,6 +43,7 @@ __all__ = [
     "approximate_camera_intrinsics",
     "load_camera_calibration",
     "calibrate_laser_plane",
+    "calibrate_laser_plane_platform_z",
     "load_laser_plane",
     "camera_configs",
     "camera_config_by_id",
