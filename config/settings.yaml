@@ -62,7 +62,7 @@ cameras:
     device_wait_s: 3.0
     startup_frame_check: true
     v4l2_exposure_scale_us: 100
-    resolution: [1280, 720]
+    resolution: [1920, 1080]
     mock_shape: duck
     exposure_us: 8000
     # V4L2 gain range reported by this camera: 100..1494.
@@ -70,11 +70,11 @@ cameras:
     focus_absolute: 500
     laser_threshold: 70
     laser_mask:
-      - [[267, 720], [302, 252], [0, 213], [270, 720]]
-      - [[0, 720], [0, 211], [275, 720], [0, 720]]
-      - [[340, 256], [388, 0], [0, 211], [340, 260]]
-      - [[391, 0], [0, 0], [0, 720], [393, 0]]
-      - [[1280, 0], [1005, 0], [1043, 720], [1280, 720]]
+      - [[401, 1080], [453, 378], [0, 320], [405, 1080]]
+      - [[0, 1080], [0, 317], [413, 1080], [0, 1080]]
+      - [[510, 384], [582, 0], [0, 317], [510, 390]]
+      - [[587, 0], [0, 0], [0, 1080], [590, 0]]
+      - [[1920, 0], [1508, 0], [1564, 1080], [1920, 1080]]
     intrinsics_path: config/camera_intrinsics_left.yaml
     laser_plane_path: config/laser_plane_left.yaml
     extrinsics:
