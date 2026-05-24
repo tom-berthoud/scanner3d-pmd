@@ -16,6 +16,12 @@ __pycache__/
 /tmp/scans/
 /tmp/scan_frames/
 
+# Real hardware calibration files are local to one physical scanner.
+config/camera_intrinsics*.yaml
+!config/camera_intrinsics.example.yaml
+config/laser_plane_right.yaml
+config/laser_plane_left.yaml
+
 # LaTeX temporary files
 docs/rapport/*.aux
 docs/rapport/*.bcf
