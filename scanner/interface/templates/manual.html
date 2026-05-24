@@ -531,6 +531,19 @@ function updateMaskList(camera) {
   }
 }
 
+function snapStoredMasks(camera) {
+  var img = document.getElementById('proc-img-' + camera);
+  if (!img || !img.naturalWidth || !img.naturalHeight) return;
+  var state = ensureMaskState(camera);
+  var snapped = state.masks.map(function(shape) {
+    return normalizeMaskShape(snapShapeToImage(camera, shape));
+  }).filter(Boolean);
+  if (JSON.stringify(snapped) !== JSON.stringify(state.masks)) {
+    state.masks = snapped;
+    updateMaskList(camera);
+  }
+}
+
 function removeMask(camera, index) {
   var state = ensureMaskState(camera);
   state.masks.splice(index, 1);
@@ -556,6 +569,7 @@ function drawMaskOverlay(camera) {
   var canvas = document.getElementById('proc-mask-canvas-' + camera);
   var img = document.getElementById('proc-img-' + camera);
   if (!canvas || !img) return;
+  snapStoredMasks(camera);
   var feed = canvas.parentElement;
   var feedRect = feed.getBoundingClientRect();
   var dpr = window.devicePixelRatio || 1;
@@ -730,7 +744,10 @@ async function refreshProcessingFrame(camera) {
     var grMax = r.headers.get('X-GR-Max') || '?';
     var grMean = r.headers.get('X-GR-Mean') || '?';
     var masks = r.headers.get('X-Mask-Rects') || '0';
-    img.onload = function() { drawMaskOverlay(camera); };
+    img.onload = function() {
+      snapStoredMasks(camera);
+      drawMaskOverlay(camera);
+    };
     var blob = await r.blob();
     img.src = URL.createObjectURL(blob);
     if (shape) shape.textContent = detected + ' pts';
@@ -787,6 +804,7 @@ document.addEventListener('DOMContentLoaded', function() {
     canvas.addEventListener('pointercancel', endMaskDrag);
     var camera = canvas.getAttribute('data-camera');
     ensureMaskState(camera);
+    snapStoredMasks(camera);
     updateMaskList(camera);
     drawMaskOverlay(camera);
   });
