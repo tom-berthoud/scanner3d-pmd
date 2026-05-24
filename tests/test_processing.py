@@ -126,6 +126,27 @@ class TestExtractLaserLine:
 
         assert result.shape == (0, 2)
 
+    def test_masks_do_not_snap_far_from_image_edges(self) -> None:
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        frame[455, 200, 1] = 220
+        result = extract_laser_line(
+            frame,
+            threshold=100,
+            min_pixels=1,
+            mask_rects=[[0, 451, 414, 480]],
+        )
+        assert result.shape == (0, 2)
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        frame[445, 200, 1] = 220
+        result = extract_laser_line(
+            frame,
+            threshold=100,
+            min_pixels=1,
+            mask_rects=[[0, 451, 414, 480]],
+        )
+        assert result.shape == (1, 2)
+
 
 def _make_camera_matrix(
     fx: float = 800.0, fy: float = 800.0, cx: float = 320.0, cy: float = 240.0

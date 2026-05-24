@@ -381,7 +381,7 @@ function cloneMaskShape(shape) {
 }
 
 function edgeTolerance(size) {
-  return Math.max(3, Math.min(30, Math.round(size * 0.06)));
+  return Math.max(3, Math.min(8, Math.round(size * 0.01)));
 }
 
 function snapAxis(value, maxValue) {

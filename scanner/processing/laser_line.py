@@ -36,7 +36,7 @@ def _is_number(value: Any) -> bool:
 
 def _edge_tolerance(size: int) -> int:
     """Return the near-edge snap tolerance in pixels for a camera axis."""
-    return max(3, min(30, int(round(size * 0.06))))
+    return max(3, min(8, int(round(size * 0.01))))
 
 
 def _snap_axis(value: float, low: int, high: int, tolerance: int) -> int:
