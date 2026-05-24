@@ -1,0 +1,62 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.276 841.890] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 1191 >>
+stream
+0 0 0 rg
+127.559 505.984 42.520 42.520 re f
+212.598 505.984 42.520 42.520 re f
+297.638 505.984 42.520 42.520 re f
+382.677 505.984 42.520 42.520 re f
+170.079 463.465 42.520 42.520 re f
+255.118 463.465 42.520 42.520 re f
+340.157 463.465 42.520 42.520 re f
+425.197 463.465 42.520 42.520 re f
+127.559 420.945 42.520 42.520 re f
+212.598 420.945 42.520 42.520 re f
+297.638 420.945 42.520 42.520 re f
+382.677 420.945 42.520 42.520 re f
+170.079 378.425 42.520 42.520 re f
+255.118 378.425 42.520 42.520 re f
+340.157 378.425 42.520 42.520 re f
+425.197 378.425 42.520 42.520 re f
+127.559 335.906 42.520 42.520 re f
+212.598 335.906 42.520 42.520 re f
+297.638 335.906 42.520 42.520 re f
+382.677 335.906 42.520 42.520 re f
+170.079 293.386 42.520 42.520 re f
+255.118 293.386 42.520 42.520 re f
+340.157 293.386 42.520 42.520 re f
+425.197 293.386 42.520 42.520 re f
+0 0 0 RG
+0.8 w
+127.559 293.386 340.157 255.118 re S
+BT /F1 11 Tf 72 785 Td (Damier calibration scanner - 8 x 6 cases - 15 mm) Tj ET
+BT /F1 9 Tf 72 765 Td (Interface: colonnes internes = 7, lignes internes = 5, taille case = 15 mm) Tj ET
+BT /F1 9 Tf 72 748 Td (Imprimer a 100%, sans ajuster a la page. Verifier qu'une case mesure 15 mm.) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000249 00000 n 
+0000001492 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1562
+%%EOF
