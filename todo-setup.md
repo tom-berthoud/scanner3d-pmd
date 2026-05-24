@@ -10,22 +10,22 @@ un vrai test double camera, puis quoi verifier pendant les premiers scans.
 - [x] Confirmer quelle camera correspond a chaque id logiciel:
   - `right` = camera nappe / Pi Camera 3 / CSI.
   - `left` = camera USB Arducam IMX5863 / Arducam B0475.
-- [ ] Verifier que la camera nappe fonctionne seule.
+- [x] Verifier que la camera nappe fonctionne seule.
 - [x] Verifier que la camera USB est detectee par le Raspberry Pi.
 - [x] Trouver l'index OpenCV de la camera USB (`device_index`).
 - [x] Noter le modele exact de la camera USB si possible.
-- [ ] Trouver ou mesurer sa resolution stable.
+- [x] Trouver ou mesurer sa resolution stable.
 - [ ] Verifier si l'exposition manuelle USB fonctionne.
 - [ ] Verifier si le gain manuel USB fonctionne.
-- [ ] Verifier que les deux cameras peuvent capturer dans la meme session.
+- [x] Verifier que les deux cameras peuvent capturer dans la meme session.
 
 ### Configuration logicielle
 
 - [x] Mettre a jour `config/settings.yaml`.
 - [x] Verifier `cameras[0].id`, `type`, `resolution`, `exposure_us`, `gain`.
 - [x] Verifier `cameras[1].id`, `type`, `device_index`, `resolution`, `exposure_us`, `gain`.
-- [ ] Lancer le serveur web.
-- [ ] Tester:
+- [x] Lancer le serveur web.
+- [x] Tester:
   - `/manual/camera/frame?camera=right`
   - `/manual/camera/frame?camera=left`
   - `/manual/camera/tuning?camera=right`
@@ -87,20 +87,20 @@ repere commun lie au plateau.
 
 Chaque camera aura des zones differentes a ignorer.
 
-- [ ] Identifier les zones parasites dans l'image camera nappe:
+- [x] Identifier les zones parasites dans l'image camera nappe:
   - bord de boite;
   - support mecanique;
   - laser direct;
   - reflets fixes;
   - plateau ou fond non utile.
-- [ ] Identifier les zones parasites dans l'image camera USB.
+- [x] Identifier les zones parasites dans l'image camera USB.
 - [ ] Me fournir pour chaque camera:
   - image brute laser ON sans objet;
   - image brute laser ON avec objet simple;
   - image avec les zones a exclure dessinees si possible.
 - [ ] Definir une ROI initiale par camera.
-- [ ] Definir les rectangles d'exclusion par camera.
-- [ ] Ajouter ensuite dans le code/config un masque par camera.
+- [x] Definir les rectangles d'exclusion par camera.
+- [x] Ajouter ensuite dans le code/config un masque par camera.
 
 ### Objet de test
 
@@ -171,7 +171,7 @@ Apres chaque scan utile, garder:
 - [ ] Ajuster seuil laser.
 - [ ] Ajuster exposition camera.
 - [ ] Ajuster gain camera.
-- [ ] Ajouter ou modifier le masque de la camera concernee.
+- [x] Ajouter ou modifier le masque de la camera concernee.
 - [ ] Verifier si le laser est trop sature dans l'image.
 - [ ] Verifier si la camera voit une reflexion directe.
 
@@ -203,14 +203,14 @@ Apres chaque scan utile, garder:
 
 ### Masques par camera
 
-- [ ] Ajouter officiellement une config `mask` par camera.
+- [x] Ajouter officiellement une config `mask` par camera.
 - [ ] Supporter:
   - ROI rectangulaire;
   - crop gauche/droite;
   - crop haut/bas;
   - rectangles exclus;
   - sauvegarde par camera.
-- [ ] Ajouter une page UI pour regler les masques visuellement.
+- [x] Ajouter une page UI pour regler les masques visuellement.
 
 ### Calibration extrinseque
 
@@ -234,21 +234,21 @@ Apres chaque scan utile, garder:
 
 ### Interface
 
-- [ ] Afficher le nombre de points par nuage.
-- [ ] Afficher l'etat disponible/indisponible de chaque artefact.
+- [x] Afficher le nombre de points par nuage.
+- [x] Afficher l'etat disponible/indisponible de chaque artefact.
 - [ ] Ajouter telechargement separe:
   - PLY USB;
   - PLY Nape;
   - PLY combine;
   - STL.
-- [ ] Ajouter capture d'image de debug depuis l'UI.
+- [x] Ajouter capture d'image de debug depuis l'UI.
 
 ## 5. Ce qu'il faut me fournir si tu veux que je continue
 
 - [ ] Photos du montage final ou provisoire.
-- [ ] Modele exact ou informations disponibles sur la camera USB.
-- [ ] `device_index` USB trouve.
-- [ ] Resolution stable des deux cameras.
+- [x] Modele exact ou informations disponibles sur la camera USB.
+- [x] `device_index` USB trouve.
+- [x] Resolution stable des deux cameras.
 - [ ] Images brutes de chaque camera:
   - laser OFF;
   - laser ON sans objet;
