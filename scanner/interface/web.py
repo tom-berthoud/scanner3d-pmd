@@ -1318,8 +1318,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except CalibrationError as exc:
             return jsonify({"error": str(exc)}), 422
         except Exception as exc:
-            logger.error("Guided camera calibration error: %s", exc)
-            return jsonify({"error": "Internal error during calibration"}), 500
+            logger.exception("Guided camera calibration error")
+            return jsonify({"error": f"Internal error during calibration: {exc}"}), 500
 
     @app.route("/calibration/camera", methods=["POST"])
     def calibration_camera() -> Response:
@@ -1379,8 +1379,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except CalibrationError as exc:
             return jsonify({"error": str(exc)}), 422
         except Exception as exc:
-            logger.error("Camera calibration error: %s", exc)
-            return jsonify({"error": "Internal error during calibration"}), 500
+            logger.exception("Camera calibration error")
+            return jsonify({"error": f"Internal error during calibration: {exc}"}), 500
 
     @app.route("/calibration/laser", methods=["POST"])
     def calibration_laser() -> Response:
