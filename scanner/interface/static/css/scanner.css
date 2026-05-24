@@ -498,6 +498,15 @@ body {
   min-height: 80px;
   object-fit: cover;
 }
+.mask-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  cursor: crosshair;
+  touch-action: none;
+}
 .cam-feed::after {
   content: '';
   position: absolute;
@@ -508,9 +517,11 @@ body {
     rgba(0,0,0,.07) 3px, rgba(0,0,0,.07) 4px
   );
   pointer-events: none;
+  z-index: 3;
 }
 .cam-tag {
   position: absolute;
+  z-index: 4;
   font-family: var(--mono);
   font-size: 8px;
   letter-spacing: .1em;
@@ -519,6 +530,10 @@ body {
 }
 .cam-tag.tl { top: 8px; left: 10px; color: var(--amber); text-shadow: 0 0 8px var(--amber); }
 .cam-tag.br { bottom: 8px; right: 10px; color: var(--txt-dim); }
+.mask-fields input {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
 
 /* 3D viewer */
 .viewer-pnl { flex: 1; min-height: 0; }

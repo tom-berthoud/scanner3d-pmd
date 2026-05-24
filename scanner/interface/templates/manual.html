@@ -115,6 +115,12 @@
               <div class="trigger-body">
                 <div class="cam-feed" style="border:1px solid #30363d;">
                   <img id="proc-img-{{ camera.id }}" src="" alt="Processing {{ camera.label }}" style="background:#000;min-height:220px;object-fit:contain;" />
+                  <canvas
+                    class="mask-canvas"
+                    id="proc-mask-canvas-{{ camera.id }}"
+                    data-camera="{{ camera.id }}"
+                    aria-label="Masque {{ camera.label }}"
+                  ></canvas>
                   <span class="cam-tag tl">{{ camera.label }}</span>
                   <span class="cam-tag br" id="proc-shape-{{ camera.id }}">-</span>
                 </div>
@@ -145,23 +151,30 @@
                   oninput="document.getElementById('proc-minpx-val-{{ camera.id }}').textContent=this.value;"
                 />
 
-                <label class="form-label mb-1">Masque</label>
-                <div class="form-check">
-                  <input id="proc-mask-enabled-{{ camera.id }}" class="form-check-input" type="checkbox" {% if camera.laser_mask %}checked{% endif %} />
-                  <label class="form-check-label" for="proc-mask-enabled-{{ camera.id }}">Actif</label>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <div class="form-check m-0">
+                    <input id="proc-mask-enabled-{{ camera.id }}" class="form-check-input" type="checkbox" {% if camera.laser_mask %}checked{% endif %} onchange="drawMaskOverlay('{{ camera.id }}'); refreshProcessingFrame('{{ camera.id }}');" />
+                    <label class="form-check-label" for="proc-mask-enabled-{{ camera.id }}">Masque actif</label>
+                  </div>
+                  <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearProcessingMask('{{ camera.id }}')">
+                    <i class="bi bi-eraser me-1"></i>Effacer
+                  </button>
                 </div>
-                <div class="row g-2">
+                <div class="state-msg" style="font-size:0.82em;">
+                  Tracer le rectangle directement sur l'image. La zone bleue est ignoree par l'extraction.
+                </div>
+                <div class="row g-2 mask-fields">
                   <div class="col-3">
-                    <input id="proc-mask-x0-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[0] }}" placeholder="x0" />
+                    <input id="proc-mask-x0-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[0] }}" placeholder="x0" onchange="normalizeMaskFields('{{ camera.id }}'); drawMaskOverlay('{{ camera.id }}');" />
                   </div>
                   <div class="col-3">
-                    <input id="proc-mask-y0-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[1] }}" placeholder="y0" />
+                    <input id="proc-mask-y0-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[1] }}" placeholder="y0" onchange="normalizeMaskFields('{{ camera.id }}'); drawMaskOverlay('{{ camera.id }}');" />
                   </div>
                   <div class="col-3">
-                    <input id="proc-mask-x1-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[2] }}" placeholder="x1" />
+                    <input id="proc-mask-x1-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[2] }}" placeholder="x1" onchange="normalizeMaskFields('{{ camera.id }}'); drawMaskOverlay('{{ camera.id }}');" />
                   </div>
                   <div class="col-3">
-                    <input id="proc-mask-y1-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[3] }}" placeholder="y1" />
+                    <input id="proc-mask-y1-{{ camera.id }}" class="form-control" type="number" min="0" value="{{ mask[3] }}" placeholder="y1" onchange="normalizeMaskFields('{{ camera.id }}'); drawMaskOverlay('{{ camera.id }}');" />
                   </div>
                 </div>
 
@@ -368,6 +381,141 @@ function toggleTuningAuto() {
 }
 
 let _processingTimers = {};
+let _maskDrag = {};
+
+function maskField(camera, key) {
+  return document.getElementById('proc-mask-' + key + '-' + camera);
+}
+
+function imageContentRect(img) {
+  var rect = img.getBoundingClientRect();
+  var nw = img.naturalWidth || rect.width || 1;
+  var nh = img.naturalHeight || rect.height || 1;
+  var imageRatio = nw / nh;
+  var boxRatio = rect.width / Math.max(rect.height, 1);
+  var width = rect.width;
+  var height = rect.height;
+  var left = rect.left;
+  var top = rect.top;
+  if (boxRatio > imageRatio) {
+    width = rect.height * imageRatio;
+    left = rect.left + (rect.width - width) / 2;
+  } else if (boxRatio < imageRatio) {
+    height = rect.width / imageRatio;
+    top = rect.top + (rect.height - height) / 2;
+  }
+  return { left: left, top: top, width: width, height: height, naturalWidth: nw, naturalHeight: nh };
+}
+
+function pointerToImagePoint(ev, camera) {
+  var img = document.getElementById('proc-img-' + camera);
+  if (!img) return null;
+  var r = imageContentRect(img);
+  var cx = Math.max(r.left, Math.min(r.left + r.width, ev.clientX));
+  var cy = Math.max(r.top, Math.min(r.top + r.height, ev.clientY));
+  return {
+    x: Math.round((cx - r.left) * r.naturalWidth / Math.max(r.width, 1)),
+    y: Math.round((cy - r.top) * r.naturalHeight / Math.max(r.height, 1))
+  };
+}
+
+function setMaskFields(camera, rect, enabled) {
+  ['x0', 'y0', 'x1', 'y1'].forEach(function(key) {
+    var field = maskField(camera, key);
+    if (field) field.value = Math.max(0, Math.round(rect[key] || 0));
+  });
+  var active = document.getElementById('proc-mask-enabled-' + camera);
+  if (active && enabled !== undefined) active.checked = !!enabled;
+}
+
+function normalizeMaskFields(camera) {
+  var x0 = parseInt((maskField(camera, 'x0') || {}).value || '0', 10);
+  var y0 = parseInt((maskField(camera, 'y0') || {}).value || '0', 10);
+  var x1 = parseInt((maskField(camera, 'x1') || {}).value || '0', 10);
+  var y1 = parseInt((maskField(camera, 'y1') || {}).value || '0', 10);
+  setMaskFields(camera, {
+    x0: Math.min(x0, x1),
+    y0: Math.min(y0, y1),
+    x1: Math.max(x0, x1),
+    y1: Math.max(y0, y1)
+  });
+}
+
+function drawMaskOverlay(camera) {
+  var canvas = document.getElementById('proc-mask-canvas-' + camera);
+  var img = document.getElementById('proc-img-' + camera);
+  if (!canvas || !img) return;
+  var feed = canvas.parentElement;
+  var feedRect = feed.getBoundingClientRect();
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(feedRect.width * dpr));
+  canvas.height = Math.max(1, Math.round(feedRect.height * dpr));
+  canvas.style.width = feedRect.width + 'px';
+  canvas.style.height = feedRect.height + 'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, feedRect.width, feedRect.height);
+
+  var active = document.getElementById('proc-mask-enabled-' + camera);
+  var mask = processingMask(camera);
+  if (!active || !active.checked || !mask.length || !img.naturalWidth) return;
+
+  var r = imageContentRect(img);
+  var rect = mask[0];
+  var x = r.left - feedRect.left + rect[0] * r.width / r.naturalWidth;
+  var y = r.top - feedRect.top + rect[1] * r.height / r.naturalHeight;
+  var w = (rect[2] - rect[0]) * r.width / r.naturalWidth;
+  var h = (rect[3] - rect[1]) * r.height / r.naturalHeight;
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.28)';
+  ctx.strokeStyle = '#60a5fa';
+  ctx.lineWidth = 2;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeRect(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, h - 2));
+}
+
+function clearProcessingMask(camera) {
+  setMaskFields(camera, { x0: 0, y0: 0, x1: 0, y1: 0 }, false);
+  drawMaskOverlay(camera);
+  refreshProcessingFrame(camera);
+}
+
+function beginMaskDrag(ev) {
+  var canvas = ev.currentTarget;
+  var camera = canvas.getAttribute('data-camera');
+  var pt = pointerToImagePoint(ev, camera);
+  if (!pt) return;
+  _maskDrag[camera] = { start: pt, pointerId: ev.pointerId };
+  canvas.setPointerCapture(ev.pointerId);
+  setMaskFields(camera, { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y }, true);
+  drawMaskOverlay(camera);
+}
+
+function updateMaskDrag(ev) {
+  var canvas = ev.currentTarget;
+  var camera = canvas.getAttribute('data-camera');
+  var drag = _maskDrag[camera];
+  if (!drag || drag.pointerId !== ev.pointerId) return;
+  var pt = pointerToImagePoint(ev, camera);
+  if (!pt) return;
+  setMaskFields(camera, {
+    x0: Math.min(drag.start.x, pt.x),
+    y0: Math.min(drag.start.y, pt.y),
+    x1: Math.max(drag.start.x, pt.x),
+    y1: Math.max(drag.start.y, pt.y)
+  }, true);
+  drawMaskOverlay(camera);
+}
+
+function endMaskDrag(ev) {
+  var canvas = ev.currentTarget;
+  var camera = canvas.getAttribute('data-camera');
+  var drag = _maskDrag[camera];
+  if (!drag || drag.pointerId !== ev.pointerId) return;
+  delete _maskDrag[camera];
+  normalizeMaskFields(camera);
+  drawMaskOverlay(camera);
+  refreshProcessingFrame(camera);
+}
 
 function processingMask(camera) {
   var enabled = document.getElementById('proc-mask-enabled-' + camera);
@@ -404,6 +552,7 @@ async function refreshProcessingFrame(camera) {
     var grMax = r.headers.get('X-GR-Max') || '?';
     var grMean = r.headers.get('X-GR-Mean') || '?';
     var masks = r.headers.get('X-Mask-Rects') || '0';
+    img.onload = function() { drawMaskOverlay(camera); };
     var blob = await r.blob();
     img.src = URL.createObjectURL(blob);
     if (shape) shape.textContent = detected + ' pts';
@@ -452,6 +601,18 @@ document.addEventListener('DOMContentLoaded', function() {
   refreshCameraFrame();
   document.querySelectorAll('[id^="proc-img-"]').forEach(function(img) {
     refreshProcessingFrame(img.id.replace('proc-img-', ''));
+  });
+  document.querySelectorAll('.mask-canvas').forEach(function(canvas) {
+    canvas.addEventListener('pointerdown', beginMaskDrag);
+    canvas.addEventListener('pointermove', updateMaskDrag);
+    canvas.addEventListener('pointerup', endMaskDrag);
+    canvas.addEventListener('pointercancel', endMaskDrag);
+    drawMaskOverlay(canvas.getAttribute('data-camera'));
+  });
+  window.addEventListener('resize', function() {
+    document.querySelectorAll('.mask-canvas').forEach(function(canvas) {
+      drawMaskOverlay(canvas.getAttribute('data-camera'));
+    });
   });
   mlog('Mode manuel pret.');
 });
