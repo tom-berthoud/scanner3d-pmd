@@ -226,83 +226,36 @@
       </div>
       <div class="card-body d-flex flex-column gap-3">
 
-        <div>
-          <label class="form-label">Camera du plan laser</label>
-          <select class="form-select" id="laser-camera" onchange="syncLaserCameraFromSelect()">
-            {% for cam in cameras %}
-            <option value="{{ cam.id }}" {% if cam.id == selected_camera %}selected{% endif %}>
-              {{ cam.label }} - {{ cam.id }}
-            </option>
-            {% endfor %}
-          </select>
-          <div class="form-text" style="color:#6e7681;">
-            Calibrez le laser separement pour la nappe et pour l'Arducam.
-          </div>
-        </div>
-
         <div class="d-flex gap-3 align-items-start">
           <span class="step-badge mt-1">1</span>
           <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
-            Mode conseille: gardez une planche blanche verticale, face au laser, a des
-            <strong style="color:#c9d1d9;">positions Z connues</strong> dans le repere plateau.
-            Prenez une image par position avec le laser allume.
+            Gardez une planche blanche verticale, face au laser, a une
+            <strong style="color:#c9d1d9;">position Z connue</strong> dans le repere plateau.
+            Entrez Z, puis prenez une photo: les deux cameras sont capturees ensemble.
           </p>
         </div>
         <div class="d-flex gap-3 align-items-start">
           <span class="step-badge mt-1">2</span>
           <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
-            Entrez les positions dans le meme ordre que les images (ex. <code>-80,-40,0,40</code>).
-            Le resultat est sauvegarde dans le fichier laser de la camera choisie.
+            Repetez avec plusieurs positions, par exemple <code>-100, -60, -20, 20, 60</code>,
+            puis lancez la calibration laser. Les deux fichiers laser sont generes.
           </p>
         </div>
 
         <hr style="border-color:#30363d; margin:0;" />
 
-        <form id="form-laser" enctype="multipart/form-data" class="d-flex flex-column gap-3">
-          <input type="hidden" name="camera" id="laser-form-camera" value="{{ selected_camera }}" />
-
+        <div class="d-flex flex-column gap-3">
           <div>
-            <label class="form-label">Mode de reference</label>
-            <select class="form-select" name="plane_mode" id="laser-plane-mode">
-              <option value="platform_z" selected>Carton vertical - position Z plateau</option>
-              <option value="camera_depth">Carton face camera - distance camera</option>
-            </select>
+            <label class="form-label">Position Z du carton (mm)</label>
+            <input class="form-control" type="number" id="laser-z-mm" value="0" step="1" />
             <div class="form-text" style="color:#6e7681;">
-              Le mode vertical utilise un carton droit, parallele a l'axe Y, face au laser.
-            </div>
-          </div>
-
-          <div>
-            <label class="form-label">Images de reference <span style="color:#6e7681; font-weight:400;">(une par distance)</span></label>
-            <input
-              class="form-control"
-              type="file"
-              id="laser-images"
-              name="images"
-              accept="image/*"
-              multiple
-              required
-            />
-            <div class="form-text" style="color:#6e7681;">Laser allume, carton blanc mat, ligne laser visible et non saturee</div>
-          </div>
-
-          <div>
-            <label class="form-label">Positions/distances en mm <span style="color:#6e7681; font-weight:400;">(separees par des virgules)</span></label>
-            <input
-              class="form-control"
-              type="text"
-              name="distances_mm"
-              placeholder="-80,-40,0,40"
-              required
-            />
-            <div class="form-text" style="color:#6e7681;">
-              En mode vertical: valeur Z du carton dans le repere plateau. Le centre plateau vaut 0.
+              Centre plateau = 0. Cote laser/cameras = valeurs negatives.
             </div>
           </div>
 
           <div class="row g-3">
             <div class="col">
-              <label class="form-label form-label-sm">Seuil test laser</label>
+              <label class="form-label form-label-sm">Seuil laser</label>
               <input class="form-control form-control-sm" type="number" id="laser-test-threshold" value="70" min="0" max="255" />
             </div>
             <div class="col">
@@ -311,15 +264,21 @@
             </div>
           </div>
 
-          <button type="button" class="btn btn-outline-warning calib-btn" id="btn-laser-test" onclick="testLaserExtraction()">
-            <i class="bi bi-eye me-2"></i>Tester extraction laser
-          </button>
-          <div id="laser-test-result"></div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-warning text-dark calib-btn" id="btn-laser-capture" onclick="captureLaserCalibrationPair()">
+              <i class="bi bi-camera me-2"></i>Prendre photo des 2 cameras
+            </button>
+            <button type="button" class="btn btn-outline-secondary calib-btn" id="btn-laser-reset" onclick="resetLaserCalibrationSession()">
+              <i class="bi bi-arrow-counterclockwise me-2"></i>Reinitialiser
+            </button>
+            <button type="button" class="btn btn-primary calib-btn" id="btn-laser-run" onclick="runLaserCalibrationSession()">
+              <i class="bi bi-bounding-box me-2"></i>Calibrer les 2 plans laser
+            </button>
+          </div>
 
-          <button type="submit" class="btn btn-warning text-dark calib-btn">
-            <i class="bi bi-bounding-box me-2"></i>Lancer la calibration laser
-          </button>
-        </form>
+          <div id="laser-captures" class="calib-thumbs"></div>
+          <div id="laser-test-result"></div>
+        </div>
 
         <div id="laser-result"></div>
       </div>
@@ -340,26 +299,11 @@ function selectedCalibrationCamera() {
   return select ? select.value : '{{ selected_camera }}';
 }
 
-function syncLaserCameraFromSelect() {
-  var cam = selectedCalibrationCamera();
-  var laserSelect = document.getElementById('laser-camera');
-  var laserHidden = document.getElementById('laser-form-camera');
-  if (laserSelect) {
-    if (!laserSelect.value) laserSelect.value = cam;
-    if (laserHidden) laserHidden.value = laserSelect.value;
-  } else if (laserHidden) {
-    laserHidden.value = cam;
-  }
-}
-
 async function onCalibrationCameraChange() {
   var cam = selectedCalibrationCamera();
   applyCameraCalibrationDefaults(cam);
   var uploadCam = document.getElementById('upload-camera');
   if (uploadCam) uploadCam.value = cam;
-  var laserSelect = document.getElementById('laser-camera');
-  if (laserSelect) laserSelect.value = cam;
-  syncLaserCameraFromSelect();
   if (_checkerLiveTimer) toggleCheckerLive();
   if (_checkerCaptureTimer) toggleCheckerAutoCapture();
   document.getElementById('checker-live-img').removeAttribute('src');
@@ -629,27 +573,67 @@ if (camForm) {
   });
 }
 
-document.getElementById('form-laser').addEventListener('submit', function(e) {
-  e.preventDefault();
-  syncLaserCameraFromSelect();
-  submitCalibForm('form-laser', '/calibration/laser', 'laser-result');
-});
-
-async function testLaserExtraction() {
-  var result = document.getElementById('laser-test-result');
-  var btn = document.getElementById('btn-laser-test');
-  var payload = {
-    camera: (document.getElementById('laser-camera') || {}).value || selectedCalibrationCamera(),
+function laserPayload() {
+  return {
+    z_mm: parseFloat(document.getElementById('laser-z-mm').value || '0'),
     threshold: parseInt(document.getElementById('laser-test-threshold').value || '70', 10),
     min_pixels: parseInt(document.getElementById('laser-test-min-pixels').value || '15', 10)
+  };
+}
+
+function renderLaserSession(data) {
+  var box = document.getElementById('laser-captures');
+  if (!box) return;
+  box.innerHTML = '';
+  (data.captures || []).forEach(function(c) {
+    var wrap = document.createElement('div');
+    wrap.style.border = '1px solid #30363d';
+    wrap.style.borderRadius = '6px';
+    wrap.style.padding = '6px';
+    wrap.style.background = 'rgba(255,255,255,0.03)';
+    var title = document.createElement('div');
+    title.textContent = c.index + '. Z=' + c.z_mm + ' mm';
+    title.style.color = '#c9d1d9';
+    title.style.fontSize = '0.8rem';
+    title.style.marginBottom = '6px';
+    wrap.appendChild(title);
+    Object.keys(c.previews || {}).forEach(function(camera) {
+      var img = document.createElement('img');
+      img.src = 'data:image/jpeg;base64,' + c.previews[camera];
+      img.alt = camera + ' Z=' + c.z_mm;
+      img.title = camera + ' - ' + ((c.metrics || {})[camera] || {}).detected_points + ' points';
+      wrap.appendChild(img);
+    });
+    box.appendChild(wrap);
+  });
+}
+
+async function refreshLaserSession() {
+  try {
+    var resp = await fetch('/calibration/laser/session');
+    var data = await resp.json();
+    if (resp.ok) renderLaserSession(data);
+  } catch (e) {
+    document.getElementById('laser-result').innerHTML =
+      '<div class="alert alert-danger py-2 mb-0 mt-2">Erreur session laser : ' + e + '</div>';
+  }
+}
+
+async function captureLaserCalibrationPair() {
+  var result = document.getElementById('laser-test-result');
+  var btn = document.getElementById('btn-laser-capture');
+  var payload = {
+    z_mm: laserPayload().z_mm,
+    threshold: laserPayload().threshold,
+    min_pixels: laserPayload().min_pixels
   };
   btn.disabled = true;
   result.innerHTML =
     '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
     '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
-    'Test extraction en cours\u2026</div>';
+    'Capture des deux cameras en cours\u2026</div>';
   try {
-    var resp = await fetch('/calibration/laser/test', {
+    var resp = await fetch('/calibration/laser/capture', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -658,17 +642,54 @@ async function testLaserExtraction() {
     if (!resp.ok) {
       throw new Error(data.error || 'Erreur inconnue');
     }
-    var saturation = Number(data.saturated_pct || 0);
-    var satLabel = saturation > 5 ? 'attention saturation' : 'exposition OK';
+    renderLaserSession(data);
     result.innerHTML =
       '<div class="alert alert-info py-2 mb-0 mt-2">' +
-      '<strong>' + data.detected_points + ' points detectes</strong>' +
-      '<div class="mt-1" style="font-size:0.8rem; color:#8b949e;">G max=' + data.green_max +
-      ', G mean=' + Number(data.green_mean).toFixed(1) +
-      ', saturation=' + saturation.toFixed(1) + '% (' + satLabel + ')</div>' +
-      '<img src="data:image/jpeg;base64,' + data.preview_jpeg_base64 + '" ' +
-      'style="width:100%; border-radius:8px; margin-top:12px; border:1px solid #30363d;" />' +
+      '<strong>' + (data.count || 0) + ' position(s) capturee(s)</strong></div>';
+    if (typeof showToast === 'function') showToast('Capture laser ajoutee', 'success');
+  } catch (e) {
+    result.innerHTML =
+      '<div class="alert alert-danger py-2 mb-0 mt-2">' +
+      '<i class="bi bi-exclamation-triangle-fill me-2"></i>' + e +
       '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function resetLaserCalibrationSession() {
+  var result = document.getElementById('laser-result');
+  try {
+    var resp = await fetch('/calibration/laser/reset', { method: 'POST' });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Erreur reset');
+    renderLaserSession(data);
+    document.getElementById('laser-test-result').innerHTML = '';
+    result.innerHTML = '';
+  } catch (e) {
+    result.innerHTML =
+      '<div class="alert alert-danger py-2 mb-0 mt-2">' + e + '</div>';
+  }
+}
+
+async function runLaserCalibrationSession() {
+  var result = document.getElementById('laser-result');
+  var btn = document.getElementById('btn-laser-run');
+  btn.disabled = true;
+  result.innerHTML =
+    '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
+    '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
+    'Calibration laser des deux cameras en cours\u2026</div>';
+  try {
+    var resp = await fetch('/calibration/laser/run', { method: 'POST' });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Erreur calibration laser');
+    result.innerHTML =
+      '<div class="alert alert-success py-2 mb-0 mt-2">' +
+      '<strong>Calibration laser reussie</strong>' +
+      '<pre class="mb-0 mt-2" style="font-size:0.75rem; color:#adbac7;">' +
+      JSON.stringify(data, null, 2) + '</pre></div>';
+    if (typeof showToast === 'function') showToast('Calibration laser reussie', 'success');
   } catch (e) {
     result.innerHTML =
       '<div class="alert alert-danger py-2 mb-0 mt-2">' +
@@ -682,7 +703,7 @@ async function testLaserExtraction() {
 document.addEventListener('DOMContentLoaded', function() {
   applyCameraCalibrationDefaults(selectedCalibrationCamera());
   syncUploadFields();
-  syncLaserCameraFromSelect();
+  refreshLaserSession();
   refreshCheckerLiveFrame();
 });
 </script>

@@ -108,6 +108,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     _camera_calib_session: dict = {
         "sessions": {},
     }
+    _laser_calib_lock = threading.Lock()
+    _laser_calib_session: dict = {
+        "captures": [],
+        "last_result": None,
+    }
 
     def _project_path(path: str | None) -> str | None:
         if not path:
@@ -166,6 +171,25 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             "last_report": report,
             "intrinsics_path": intrinsics_path,
             "intrinsics_exists": bool(intrinsics_path and os.path.exists(intrinsics_path)),
+        }
+
+    def _laser_calib_summary() -> dict:
+        with _laser_calib_lock:
+            captures = [
+                {
+                    "index": idx + 1,
+                    "z_mm": item["z_mm"],
+                    "previews": item.get("previews", {}),
+                    "metrics": item.get("metrics", {}),
+                }
+                for idx, item in enumerate(_laser_calib_session["captures"])
+            ]
+            last_result = _laser_calib_session.get("last_result")
+        return {
+            "count": len(captures),
+            "recommended_min": 4,
+            "captures": captures,
+            "last_result": last_result,
         }
 
     def _parse_camera_board_payload() -> tuple[str, tuple[int, int], float, bool, int | None, float | None]:
@@ -1503,6 +1527,169 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except Exception as exc:
             logger.error("Laser calibration error: %s", exc)
             return jsonify({"error": "Internal error during laser calibration"}), 500
+
+    @app.route("/calibration/laser/session")
+    def calibration_laser_session() -> Response:
+        """Return guided vertical-board laser calibration session."""
+        return jsonify(_laser_calib_summary())
+
+    @app.route("/calibration/laser/reset", methods=["POST"])
+    def calibration_laser_reset() -> Response:
+        """Clear guided laser calibration captures."""
+        with _laser_calib_lock:
+            _laser_calib_session["captures"] = []
+            _laser_calib_session["last_result"] = None
+        return jsonify(_laser_calib_summary())
+
+    @app.route("/calibration/laser/capture", methods=["POST"])
+    def calibration_laser_capture() -> Response:
+        """Capture both cameras for one vertical-board platform Z position."""
+        import cv2
+        from scanner.hardware import HardwareError, camera_capture_all, laser_set
+        from scanner.processing import extract_laser_line
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+
+        payload = request.get_json(silent=True) or {}
+        try:
+            z_mm = float(payload.get("z_mm"))
+            threshold_override = payload.get("threshold")
+            min_px = int(payload.get("min_pixels", settings.get("processing", {}).get("min_line_pixels", 5)))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid laser capture payload: {exc}"}), 400
+        min_px = max(1, min(4096, min_px))
+        extraction_mode = str(settings.get("processing", {}).get("extraction_mode", "row_mean"))
+
+        try:
+            laser_set(True)
+            time.sleep(float(settings.get("laser", {}).get("warmup_ms", 50)) / 1000.0)
+            frames = camera_capture_all()
+        except HardwareError as exc:
+            return jsonify({"error": str(exc)}), 503
+        finally:
+            try:
+                laser_set(False)
+            except Exception:
+                pass
+
+        previews: dict = {}
+        metrics: dict = {}
+        stored_frames: dict = {}
+        for camera_id, frame in frames.items():
+            default_threshold, mask_rects = _camera_processing_config(camera_id)
+            threshold = int(threshold_override if threshold_override is not None else default_threshold)
+            threshold = max(0, min(255, threshold))
+            line = extract_laser_line(
+                frame,
+                threshold=threshold,
+                min_pixels=min_px,
+                subpixel=True,
+                mode=extraction_mode,
+                camera_id=camera_id,
+                mask_rects=mask_rects,
+            )
+            overlay = frame.copy()
+            for i in range(line.shape[0]):
+                col, row = int(round(line[i, 0])), int(round(line[i, 1]))
+                cv2.circle(overlay, (col, row), 2, (0, 0, 255), -1)
+            green = frame[:, :, 1]
+            previews[camera_id] = _encode_jpeg_base64(overlay, quality=70)
+            metrics[camera_id] = {
+                "detected_points": int(line.shape[0]),
+                "green_max": int(green.max()),
+                "green_mean": float(green.mean()),
+                "saturated_pct": float((green >= 250).mean() * 100.0),
+                "threshold": threshold,
+                "min_pixels": min_px,
+            }
+            stored_frames[camera_id] = frame
+
+        with _laser_calib_lock:
+            _laser_calib_session["captures"].append(
+                {
+                    "z_mm": z_mm,
+                    "frames": stored_frames,
+                    "previews": previews,
+                    "metrics": metrics,
+                }
+            )
+        return jsonify(_laser_calib_summary())
+
+    @app.route("/calibration/laser/run", methods=["POST"])
+    def calibration_laser_run() -> Response:
+        """Calibrate laser planes for every camera from guided captures."""
+        from scanner.calibration import (
+            CalibrationError,
+            approximate_camera_intrinsics,
+            calibrate_laser_plane_platform_z,
+            camera_ids,
+            load_camera_calibration,
+        )
+        from scanner.calibration.multi_camera import _load_extrinsics
+
+        with _laser_calib_lock:
+            captures = list(_laser_calib_session["captures"])
+        if len(captures) < 3:
+            return jsonify({"error": f"At least 3 Z captures are required, got {len(captures)}"}), 422
+
+        proc_cfg = settings.get("processing", {})
+        min_px = max(1, int(proc_cfg.get("min_line_pixels", 5)))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
+        results = {}
+        for camera_id in camera_ids(settings):
+            cam_cfg = _calibration_camera_config(camera_id)
+            images = [item["frames"][camera_id] for item in captures if camera_id in item["frames"]]
+            z_values = [float(item["z_mm"]) for item in captures if camera_id in item["frames"]]
+            if len(images) < 3:
+                return jsonify({"error": f"Camera {camera_id}: at least 3 captures are required"}), 422
+
+            calib_cfg = settings.get("calibration", {})
+            focal_scale = float(cam_cfg.get("approx_focal_scale", calib_cfg.get("approx_focal_scale", 1.25)))
+            resolution = cam_cfg.get("resolution", settings.get("camera", {}).get("resolution", [640, 480]))
+            cam_res = (int(resolution[0]), int(resolution[1]))
+            intrinsics_path = _project_path(cam_cfg.get("intrinsics_path"))
+            try:
+                if intrinsics_path and os.path.exists(intrinsics_path):
+                    camera_matrix, dist_coeffs = load_camera_calibration(intrinsics_path)
+                else:
+                    camera_matrix, dist_coeffs = approximate_camera_intrinsics(
+                        cam_res, focal_scale=focal_scale
+                    )
+                cam_rot, cam_trans = _load_extrinsics(cam_cfg)
+                output_path = _project_path(cam_cfg.get("laser_plane_path"))
+                default_threshold, mask_rects = _camera_processing_config(camera_id)
+                plane = calibrate_laser_plane_platform_z(
+                    images,
+                    z_values,
+                    camera_matrix,
+                    dist_coeffs,
+                    cam_rot,
+                    cam_trans,
+                    output_path=output_path,
+                    threshold=default_threshold,
+                    min_pixels=min_px,
+                    mode=extraction_mode,
+                    mask_rects=mask_rects,
+                    camera_id=camera_id,
+                )
+            except CalibrationError as exc:
+                return jsonify({"error": f"Camera {camera_id}: {exc}"}), 422
+            except Exception as exc:
+                logger.exception("Guided laser calibration error for %s", camera_id)
+                return jsonify({"error": f"Camera {camera_id}: {exc}"}), 500
+
+            results[camera_id] = {
+                "output_path": output_path,
+                "intrinsics_path": intrinsics_path,
+                "plane": plane.tolist(),
+                "z_values": z_values,
+            }
+
+        result = {"status": "ok", "plane_mode": "platform_z", "results": results}
+        with _laser_calib_lock:
+            _laser_calib_session["last_result"] = result
+        return jsonify(result)
 
     @app.route("/calibration/laser/test", methods=["POST"])
     def calibration_laser_test() -> Response:
