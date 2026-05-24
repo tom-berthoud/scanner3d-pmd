@@ -32,7 +32,6 @@ def calibrate_laser_plane(
     camera_matrix: np.ndarray,
     dist_coeffs: np.ndarray,
     output_path: Optional[str] = None,
-    crop_left_of_col: Optional[float] = None,
 ) -> np.ndarray:
     """Fit the laser sheet plane from flat-surface reference images.
 
@@ -49,9 +48,6 @@ def calibrate_laser_plane(
         dist_coeffs: Distortion coefficients [k1, k2, p1, p2, k3].
         output_path: Destination YAML file path.  Defaults to
             config/laser_plane.yaml in the project root.
-        crop_left_of_col: Optional image-column cutoff. Points left of this
-            value are ignored before fitting the plane.
-
     Returns:
         1-D float64 array [a, b, c, d] of the fitted plane equation
         ax + by + cz + d = 0 in the camera coordinate frame.
@@ -61,7 +57,7 @@ def calibrate_laser_plane(
             or the plane fit fails.
     """
     from scanner.calibration import CalibrationError
-    from scanner.processing.laser_line import crop_laser_line, extract_laser_line
+    from scanner.processing.laser_line import extract_laser_line
     import cv2  # type: ignore[import]
 
     if len(reference_images) != len(reference_distances_mm):
@@ -70,16 +66,10 @@ def calibrate_laser_plane(
             f"{len(reference_distances_mm)} distances"
         )
 
-    fx = float(camera_matrix[0, 0])
-    fy = float(camera_matrix[1, 1])
-    cx = float(camera_matrix[0, 2])
-    cy = float(camera_matrix[1, 2])
-
     all_points: list[np.ndarray] = []
 
     for img_idx, (img, z_ref) in enumerate(zip(reference_images, reference_distances_mm)):
         line_px = extract_laser_line(img, threshold=20, min_pixels=5, subpixel=True)
-        line_px = crop_laser_line(line_px, crop_left_of_col=crop_left_of_col, min_points=5)
         if line_px.shape[0] < 5:
             logger.warning(
                 "Image %d: only %d laser pixels found — skipping", img_idx, line_px.shape[0]

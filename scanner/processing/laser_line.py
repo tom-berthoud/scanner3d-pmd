@@ -28,27 +28,6 @@ def _empty_line() -> np.ndarray:
     return np.empty((0, 2), dtype=np.float32)
 
 
-def crop_laser_line(
-    line: np.ndarray,
-    crop_left_of_col: float | None = None,
-    min_points: int = 1,
-) -> np.ndarray:
-    """Remove detected points left of a calibrated image-column cutoff."""
-    if line.ndim != 2 or line.shape[1] != 2:
-        raise ValueError(f"line must be (N, 2), got {line.shape}")
-
-    if line.shape[0] == 0 or crop_left_of_col is None:
-        return line.astype(np.float32, copy=False)
-
-    filtered = np.asarray(line, dtype=np.float32)
-    filtered = filtered[filtered[:, 0] >= float(crop_left_of_col)]
-    if filtered.shape[0] < max(int(min_points), 1):
-        return _empty_line()
-
-    order = np.lexsort((filtered[:, 0], filtered[:, 1]))
-    return filtered[order].astype(np.float32, copy=False)
-
-
 def _mask_rectangles(
     active: np.ndarray,
     rectangles: Sequence[Sequence[int]] | None,

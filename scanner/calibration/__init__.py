@@ -3,20 +3,11 @@
 Exports:
     CalibrationError: raised when calibration data is missing or invalid.
     calibrate_camera: perform intrinsic camera calibration from checkerboard images.
-    disable_background_filter: disable the saved left-image crop.
-    load_background_filter: load the saved left-image crop.
     load_camera_calibration: load camera matrix and dist_coeffs from YAML.
     calibrate_laser_plane: fit the laser plane from reference measurements.
     load_laser_plane: load the laser plane equation from YAML.
-    save_background_filter: persist the saved left-image crop.
 """
 
-from scanner.calibration.background_filter import (
-    background_crop_left_col,
-    disable_background_filter,
-    load_background_filter,
-    save_background_filter,
-)
 from scanner.calibration.camera import (
     approximate_camera_intrinsics,
     calibrate_camera,
@@ -46,10 +37,6 @@ __all__ = [
     "checkerboard_capture_quality",
     "draw_checkerboard_overlay",
     "approximate_camera_intrinsics",
-    "background_crop_left_col",
-    "save_background_filter",
-    "load_background_filter",
-    "disable_background_filter",
     "load_camera_calibration",
     "calibrate_laser_plane",
     "load_laser_plane",

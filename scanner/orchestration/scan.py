@@ -56,12 +56,10 @@ def run_scan(
     from scanner.calibration import (
         CalibrationError,
         camera_ids,
-        background_crop_left_col,
-        load_background_filter,
         load_camera_model,
     )
     from scanner.acquisition import run_capture_sequence_multi
-    from scanner.processing import crop_laser_line, extract_laser_line, triangulate
+    from scanner.processing import extract_laser_line, triangulate
     from scanner.reconstruction import merge_profiles, filter_outliers
     from scanner.export import export_stl, export_obj, export_point_cloud_ply
 
@@ -91,7 +89,6 @@ def run_scan(
     min_pixels: int = int(proc_cfg.get("min_line_pixels", 10))
     subpixel: bool = bool(proc_cfg.get("subpixel", True))
     extraction_mode: str = str(proc_cfg.get("extraction_mode", "row_mean"))
-    background_filter = load_background_filter()
 
     recon_cfg = config.get("reconstruction", {})
     nb_neighbors: int = int(recon_cfg.get("outlier_nb_neighbors", 20))
@@ -232,11 +229,6 @@ def run_scan(
                     mode=extraction_mode,
                     camera_id=camera_id,
                     mask_rects=mask_rects,
-                )
-                line_px = crop_laser_line(
-                    line_px,
-                    crop_left_of_col=background_crop_left_col(background_filter, camera_id),
-                    min_points=min_pixels,
                 )
                 if line_px.shape[0] > 0:
                     pts_3d = triangulate(
