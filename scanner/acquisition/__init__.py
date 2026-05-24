@@ -5,7 +5,6 @@ to acquire one frame per step over a full 360° rotation.
 """
 
 import logging
-import math
 import os
 from typing import Callable, Optional
 
@@ -49,7 +48,7 @@ def _save_frame(
     """Save *frame* to disk with laser-line overlay."""
     try:
         import cv2
-        from scanner.calibration import load_background_filter
+        from scanner.calibration import background_crop_left_col, load_background_filter
         from scanner.processing import crop_laser_line, extract_laser_line
 
         os.makedirs(_FRAME_DIR, exist_ok=True)
@@ -60,11 +59,7 @@ def _save_frame(
         subpixel = bool(proc_cfg.get("subpixel", True))
         extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
         background_filter = load_background_filter()
-        crop_left_of_col = (
-            float(background_filter["crop_left_of_col"])
-            if background_filter.get("enabled") and background_filter.get("crop_left_of_col") is not None
-            else None
-        )
+        crop_left_of_col = background_crop_left_col(background_filter, camera_id)
 
         overlay = frame.copy()
         try:

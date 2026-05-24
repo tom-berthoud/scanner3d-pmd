@@ -20,7 +20,6 @@ Run with:
 """
 
 import base64
-import io
 import json
 import logging
 import math
@@ -131,12 +130,15 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 "captured_at": None,
             }
 
-    def _background_crop_left_col() -> float | None:
+    def _background_crop_left_col(camera_id: str | None = None) -> float | None:
         data = _load_background_filter_config()
-        if not data.get("enabled"):
+        try:
+            from scanner.calibration import background_crop_left_col
+
+            return background_crop_left_col(data, camera_id)
+        except Exception as exc:
+            logger.warning("Background filter crop unreadable: %s", exc)
             return None
-        value = data.get("crop_left_of_col")
-        return None if value is None else float(value)
 
     def _camera_calib_summary() -> dict:
         with _camera_calib_lock:
@@ -596,7 +598,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     def preview_frame() -> Response:
         """Return a mock camera frame as JPEG for the given rotation angle."""
         import cv2
-        import numpy as np
         from scanner.hardware.mock import MockCamera
 
         angle_rad = float(request.args.get("angle", 0.0))
@@ -612,7 +613,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     def preview_extraction() -> Response:
         """Return a frame with laser line detection overlay as JPEG."""
         import cv2
-        import numpy as np
         from scanner.hardware.mock import MockCamera
         from scanner.processing import crop_laser_line, extract_laser_line
 
@@ -792,7 +792,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels: minimum columns to validate a line (default from settings)
         """
         import cv2
-        import numpy as np
         from scanner.hardware import HardwareError, camera_capture
         from scanner.processing import crop_laser_line, extract_laser_line
 
@@ -826,7 +825,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except HardwareError:
             return Response(status=503)
 
-        line = extract_laser_line(
+        raw_line = extract_laser_line(
             frame,
             threshold=threshold,
             min_pixels=min_px,
@@ -835,9 +834,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             camera_id=camera_id,
             mask_rects=mask_rects,
         )
+        crop_left = _background_crop_left_col(camera_id)
         line = crop_laser_line(
-            line,
-            crop_left_of_col=_background_crop_left_col(),
+            raw_line,
+            crop_left_of_col=crop_left,
             min_points=min_px,
         )
 
@@ -861,13 +861,16 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
         resp = Response(buf.tobytes(), mimetype="image/jpeg")
         resp.headers["X-Detected-Columns"] = str(line.shape[0])
+        resp.headers["X-Raw-Detected-Columns"] = str(raw_line.shape[0])
         resp.headers["X-GR-Max"] = str(gr_max)
         resp.headers["X-GR-Mean"] = f"{gr_mean:.2f}"
         resp.headers["X-Threshold"] = str(threshold)
         resp.headers["X-Min-Pixels"] = str(min_px)
         resp.headers["X-Mask-Rects"] = str(len(mask_rects))
+        resp.headers["X-Crop-Left-Col"] = "" if crop_left is None else f"{crop_left:.1f}"
         resp.headers["Access-Control-Expose-Headers"] = (
-            "X-Detected-Columns,X-GR-Max,X-GR-Mean,X-Threshold,X-Min-Pixels,X-Mask-Rects"
+            "X-Detected-Columns,X-Raw-Detected-Columns,X-GR-Max,X-GR-Mean,"
+            "X-Threshold,X-Min-Pixels,X-Mask-Rects,X-Crop-Left-Col"
         )
         return resp
 
@@ -1305,8 +1308,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
         proc_cfg = settings.get("processing", {})
         payload = request.get_json(silent=True) or {}
+        camera_id = payload.get("camera")
         try:
-            default_threshold, mask_rects = _camera_processing_config()
+            default_threshold, mask_rects = _camera_processing_config(camera_id)
             threshold = int(payload.get("threshold", default_threshold))
             min_px = int(payload.get("min_pixels", proc_cfg.get("min_line_pixels", 15)))
         except (TypeError, ValueError) as exc:
@@ -1318,7 +1322,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         try:
             laser_set(True)
             time.sleep(float(settings.get("laser", {}).get("warmup_ms", 50)) / 1000.0)
-            frame = camera_capture()
+            frame = camera_capture(camera_id)
         except HardwareError as exc:
             return jsonify({"error": str(exc)}), 503
         finally:
@@ -1327,17 +1331,19 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             except Exception:
                 pass
 
-        line = extract_laser_line(
+        raw_line = extract_laser_line(
             frame,
             threshold=threshold,
             min_pixels=min_px,
             subpixel=True,
             mode=extraction_mode,
+            camera_id=camera_id,
             mask_rects=mask_rects,
         )
+        crop_left = _background_crop_left_col(camera_id)
         line = crop_laser_line(
-            line,
-            crop_left_of_col=_background_crop_left_col(),
+            raw_line,
+            crop_left_of_col=crop_left,
             min_points=min_px,
         )
         overlay = frame.copy()
@@ -1351,6 +1357,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             {
                 "status": "ok",
                 "detected_points": int(line.shape[0]),
+                "raw_detected_points": int(raw_line.shape[0]),
+                "crop_left_of_col": crop_left,
                 "green_max": int(green.max()),
                 "green_mean": float(green.mean()),
                 "saturated_pct": saturated_pct,
@@ -1373,11 +1381,20 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return jsonify({"error": "Calibration disabled while scan is running"}), 409
 
         proc_cfg = settings.get("processing", {})
-        default_threshold, mask_rects = _camera_processing_config()
         default_min_px = int(proc_cfg.get("min_line_pixels", 15))
         extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
 
         payload = request.get_json(silent=True) or {}
+        camera_id = payload.get("camera")
+        if camera_id in (None, ""):
+            try:
+                from scanner.calibration import camera_ids
+
+                ids = camera_ids(settings)
+                camera_id = "left" if "left" in ids else (ids[0] if ids else None)
+            except Exception:
+                camera_id = None
+        default_threshold, mask_rects = _camera_processing_config(camera_id)
         try:
             threshold = int(payload.get("threshold", default_threshold))
             min_px = int(payload.get("min_pixels", default_min_px))
@@ -1392,7 +1409,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         frame = None
         try:
             laser_set(True)
-            frame = camera_capture()
+            frame = camera_capture(camera_id)
         except HardwareError as exc:
             return jsonify({"error": str(exc)}), 500
         finally:
@@ -1431,6 +1448,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             threshold=threshold,
             min_pixels=min_px,
             extraction_mode=extraction_mode,
+            camera_id=camera_id,
         )
 
         overlay = frame.copy()

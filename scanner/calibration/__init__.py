@@ -12,6 +12,7 @@ Exports:
 """
 
 from scanner.calibration.background_filter import (
+    background_crop_left_col,
     disable_background_filter,
     load_background_filter,
     save_background_filter,
@@ -45,6 +46,7 @@ __all__ = [
     "checkerboard_capture_quality",
     "draw_checkerboard_overlay",
     "approximate_camera_intrinsics",
+    "background_crop_left_col",
     "save_background_filter",
     "load_background_filter",
     "disable_background_filter",

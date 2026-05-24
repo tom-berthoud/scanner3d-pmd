@@ -6,9 +6,7 @@ pipeline, managing the state machine and LEDs throughout.
 
 import logging
 import math
-import os
 import time
-from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
@@ -58,6 +56,7 @@ def run_scan(
     from scanner.calibration import (
         CalibrationError,
         camera_ids,
+        background_crop_left_col,
         load_background_filter,
         load_camera_model,
     )
@@ -86,7 +85,6 @@ def run_scan(
 
     scan_cfg = config.get("scan", {})
     n_steps: int = int(scan_cfg.get("n_steps", 200))
-    direction: str = scan_cfg.get("direction", "clockwise")
 
     proc_cfg = config.get("processing", {})
     default_threshold: int = int(proc_cfg.get("laser_threshold", 180))
@@ -94,11 +92,6 @@ def run_scan(
     subpixel: bool = bool(proc_cfg.get("subpixel", True))
     extraction_mode: str = str(proc_cfg.get("extraction_mode", "row_mean"))
     background_filter = load_background_filter()
-    crop_left_of_col = (
-        float(background_filter["crop_left_of_col"])
-        if background_filter.get("enabled") and background_filter.get("crop_left_of_col") is not None
-        else None
-    )
 
     recon_cfg = config.get("reconstruction", {})
     nb_neighbors: int = int(recon_cfg.get("outlier_nb_neighbors", 20))
@@ -242,7 +235,7 @@ def run_scan(
                 )
                 line_px = crop_laser_line(
                     line_px,
-                    crop_left_of_col=crop_left_of_col,
+                    crop_left_of_col=background_crop_left_col(background_filter, camera_id),
                     min_points=min_pixels,
                 )
                 if line_px.shape[0] > 0:

@@ -401,14 +401,16 @@ async function refreshProcessingFrame(camera) {
       return;
     }
     var detected = r.headers.get('X-Detected-Columns') || '?';
+    var rawDetected = r.headers.get('X-Raw-Detected-Columns') || detected;
     var grMax = r.headers.get('X-GR-Max') || '?';
     var grMean = r.headers.get('X-GR-Mean') || '?';
     var masks = r.headers.get('X-Mask-Rects') || '0';
+    var crop = r.headers.get('X-Crop-Left-Col') || '-';
     var blob = await r.blob();
     img.src = URL.createObjectURL(blob);
     if (shape) shape.textContent = detected + ' pts';
     if (stats) {
-      stats.textContent = 'Points: ' + detected + ' | G max=' + grMax + ' mean=' + grMean + ' | threshold=' + th + ' min_px=' + mp + ' | masks=' + masks;
+      stats.textContent = 'Points: ' + detected + ' (brut ' + rawDetected + ') | G max=' + grMax + ' mean=' + grMean + ' | threshold=' + th + ' min_px=' + mp + ' | masks=' + masks + ' | crop=' + crop;
     }
   } catch (e) {
     if (stats) stats.textContent = 'Erreur: ' + e;
