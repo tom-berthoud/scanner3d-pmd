@@ -6,8 +6,8 @@ mean column of those active pixels.
 """
 
 import logging
-from typing import Any
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 
@@ -32,6 +32,20 @@ def _empty_line() -> np.ndarray:
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _edge_tolerance(size: int) -> int:
+    """Return the near-edge snap tolerance in pixels for a camera axis."""
+    return max(3, min(30, int(round(size * 0.06))))
+
+
+def _snap_axis(value: float, low: int, high: int, tolerance: int) -> int:
+    """Snap values close to an image border onto that border."""
+    if value <= low + tolerance:
+        return low
+    if value >= high - tolerance:
+        return high
+    return int(round(value))
 
 
 def _polygon_mask(shape: tuple[int, int], points: list[tuple[int, int]]) -> np.ndarray:
@@ -80,7 +94,12 @@ def _mask_shapes(
             continue
 
         if len(shape) == 4 and all(_is_number(value) for value in shape):
-            x0, y0, x1, y1 = [int(value) for value in shape]
+            x_tol = _edge_tolerance(width)
+            y_tol = _edge_tolerance(height)
+            x0 = _snap_axis(float(shape[0]), 0, width, x_tol)
+            y0 = _snap_axis(float(shape[1]), 0, height, y_tol)
+            x1 = _snap_axis(float(shape[2]), 0, width, x_tol)
+            y1 = _snap_axis(float(shape[3]), 0, height, y_tol)
             x0 = max(0, min(width, x0))
             x1 = max(0, min(width, x1))
             y0 = max(0, min(height, y0))
@@ -98,10 +117,12 @@ def _mask_shapes(
             if not _is_number(x) or not _is_number(y):
                 points = []
                 break
+            x_tol = _edge_tolerance(width)
+            y_tol = _edge_tolerance(height)
             points.append(
                 (
-                    max(0, min(width - 1, int(round(float(x))))),
-                    max(0, min(height - 1, int(round(float(y))))),
+                    max(0, min(width, _snap_axis(float(x), 0, width, x_tol))),
+                    max(0, min(height, _snap_axis(float(y), 0, height, y_tol))),
                 )
             )
         if len(points) < 3:

@@ -380,6 +380,41 @@ function cloneMaskShape(shape) {
   return JSON.parse(JSON.stringify(shape));
 }
 
+function edgeTolerance(size) {
+  return Math.max(3, Math.min(30, Math.round(size * 0.06)));
+}
+
+function snapAxis(value, maxValue) {
+  var tol = edgeTolerance(maxValue);
+  if (value <= tol) return 0;
+  if (value >= maxValue - tol) return maxValue;
+  return Math.round(value);
+}
+
+function snapPointToImage(point, img) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) {
+    return [Math.round(point[0]), Math.round(point[1])];
+  }
+  return [
+    snapAxis(point[0], img.naturalWidth),
+    snapAxis(point[1], img.naturalHeight)
+  ];
+}
+
+function snapShapeToImage(camera, shape) {
+  var img = document.getElementById('proc-img-' + camera);
+  if (!img || !img.naturalWidth || !img.naturalHeight) return cloneMaskShape(shape);
+  if (isRectMask(shape)) {
+    return [
+      snapAxis(shape[0], img.naturalWidth),
+      snapAxis(shape[1], img.naturalHeight),
+      snapAxis(shape[2], img.naturalWidth),
+      snapAxis(shape[3], img.naturalHeight)
+    ];
+  }
+  return shape.map(function(pt) { return snapPointToImage(pt, img); });
+}
+
 function isRectMask(shape) {
   return Array.isArray(shape) && shape.length === 4 && shape.every(function(v) { return typeof v === 'number'; });
 }
@@ -506,7 +541,7 @@ function removeMask(camera, index) {
 }
 
 function addMask(camera, shape) {
-  var normalized = normalizeMaskShape(shape);
+  var normalized = normalizeMaskShape(snapShapeToImage(camera, shape));
   if (!normalized) return;
   var state = ensureMaskState(camera);
   state.masks.push(normalized);
@@ -569,6 +604,7 @@ function drawMaskOverlay(camera) {
   var state = ensureMaskState(camera);
   if (active && active.checked) {
     state.masks.forEach(function(shape) {
+      shape = snapShapeToImage(camera, shape);
       if (isRectMask(shape)) {
         drawPolygon([[shape[0], shape[1]], [shape[2], shape[1]], [shape[2], shape[3]], [shape[0], shape[3]]], false);
       } else {
@@ -665,7 +701,9 @@ function endMaskDrag(ev) {
 function processingMask(camera) {
   var enabled = document.getElementById('proc-mask-enabled-' + camera);
   if (!enabled || !enabled.checked) return [];
-  return ensureMaskState(camera).masks.map(cloneMaskShape);
+  return ensureMaskState(camera).masks.map(function(shape) {
+    return normalizeMaskShape(snapShapeToImage(camera, shape));
+  }).filter(Boolean);
 }
 
 async function refreshProcessingFrame(camera) {

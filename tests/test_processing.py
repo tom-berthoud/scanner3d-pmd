@@ -112,6 +112,20 @@ class TestExtractLaserLine:
         assert 2 in rows
         assert 27 in rows
 
+    def test_masks_snap_near_image_edges(self) -> None:
+        frame = np.zeros((20, 30, 3), dtype=np.uint8)
+        frame[:, 0, 1] = 220
+        frame[:, 29, 1] = 220
+
+        result = extract_laser_line(
+            frame,
+            threshold=100,
+            min_pixels=1,
+            mask_rects=[[1, 2, 29, 18]],
+        )
+
+        assert result.shape == (0, 2)
+
 
 def _make_camera_matrix(
     fx: float = 800.0, fy: float = 800.0, cx: float = 320.0, cy: float = 240.0
