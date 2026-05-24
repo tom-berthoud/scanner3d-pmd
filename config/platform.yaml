@@ -1,13 +1,13 @@
-# platform.example.yaml — Template de calibration plateforme
-# Copier en platform.yaml et remplir avec les vraies valeurs
+# platform.yaml - Calibration plateforme
 
-steps_per_revolution: 200   # pas moteur pour 360° (sans microstepping)
-microstepping: 16            # facteur de microstepping utilisé
-degrees_per_step: 0.1125       # = 360 / (steps_per_revolution * microstepping)
+steps_per_revolution: 200   # pas moteur pour 360 degres, sans microstepping
+microstepping: 16            # facteur de microstepping utilise
+degrees_per_step: 0.1125    # = 360 / (steps_per_revolution * microstepping)
 
-# Axe de rotation dans le repère caméra (vecteur unitaire)
-rotation_axis: [0.0, 1.0, 0.0]   # par défaut : axe Y (vertical)
-
-# Point appartenant à l'axe de rotation, dans le repère caméra (mm)
-# Hypothèse courante : centre du plateau sur l'axe optique à 400 mm.
+# Repere plateforme:
+# - origine: centre du plateau a ras de la surface
+# - +Z: axe du laser, du laser vers le centre du plateau
+# - +X: droite quand on regarde le plateau depuis le laser
+# - +Y: hauteur, axe de rotation du plateau
+rotation_axis: [0.0, 1.0, 0.0]
 rotation_axis_point_mm: [0.0, 0.0, 0.0]

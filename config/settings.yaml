@@ -40,7 +40,10 @@ cameras:
     laser_plane_path: config/laser_plane_right.yaml
     extrinsics:
       # Rough measured pose in the shared platform frame:
-      # origin = turntable center at top surface, +X right, +Y up, +Z away from laser.
+      # origin = turntable center at top surface.
+      # +Z follows the laser axis from the laser toward the turntable center.
+      # +X points right when looking from the laser toward the turntable.
+      # +Y is vertical up and is the turntable rotation axis.
       position_mm: [173.5, 140.0, -300.5]
       target_mm: [0.0, 0.0, 0.0]
       up_mm: [0.0, 1.0, 0.0]
@@ -81,7 +84,10 @@ cameras:
     laser_plane_path: config/laser_plane_left.yaml
     extrinsics:
       # Rough measured pose in the shared platform frame:
-      # origin = turntable center at top surface, +X right, +Y up, +Z away from laser.
+      # origin = turntable center at top surface.
+      # +Z follows the laser axis from the laser toward the turntable center.
+      # +X points right when looking from the laser toward the turntable.
+      # +Y is vertical up and is the turntable rotation axis.
       position_mm: [-155.0, -20.0, -286.5]
       target_mm: [0.0, 0.0, 0.0]
       up_mm: [0.0, 1.0, 0.0]
@@ -89,7 +95,8 @@ cameras:
 laser:
   gpio_pin: 2             # numéro de broche GPIO (BCM) pour le laser
   warmup_ms: 50             # temps de stabilisation après allumage (ms)
-  position_mm: [0.0, 50.0, -400.0]  # repere plateforme: origine centre plateau, +Y haut
+  # Repere plateforme: origine centre plateau, +Z laser -> centre, +X droite vue laser, +Y haut.
+  position_mm: [0.0, 50.0, -400.0]
   line_orientation: vertical
 
 motor:
