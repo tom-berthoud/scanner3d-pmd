@@ -189,7 +189,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             for cam_cfg in camera_configs(settings)
         ]
 
-    def _parse_mask_rects(raw) -> list[list[int]]:
+    def _parse_mask_rects(raw) -> list:
         if raw in (None, "", []):
             return []
         if isinstance(raw, str):
@@ -199,19 +199,33 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not isinstance(raw, list):
             return []
 
-        rects = []
+        masks = []
         for item in raw:
             if isinstance(item, dict):
-                item = [
-                    item.get("x0", 0),
-                    item.get("y0", 0),
-                    item.get("x1", 0),
-                    item.get("y1", 0),
-                ]
-            if not isinstance(item, list | tuple) or len(item) != 4:
+                if item.get("points"):
+                    item = item.get("points")
+                else:
+                    item = [
+                        item.get("x0", 0),
+                        item.get("y0", 0),
+                        item.get("x1", 0),
+                        item.get("y1", 0),
+                    ]
+            if not isinstance(item, list | tuple):
                 continue
-            rects.append([int(float(value)) for value in item])
-        return rects
+            if len(item) == 4 and all(isinstance(value, int | float | str) for value in item):
+                masks.append([int(float(value)) for value in item])
+                continue
+
+            points = []
+            for point in item:
+                if not isinstance(point, list | tuple) or len(point) != 2:
+                    points = []
+                    break
+                points.append([int(float(point[0])), int(float(point[1]))])
+            if len(points) >= 3:
+                masks.append(points)
+        return masks
 
     def _camera_processing_config(camera_id: str | None = None) -> tuple[int, list]:
         proc_cfg = settings.get("processing", {})
@@ -757,6 +771,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels: minimum columns to validate a line (default from settings)
         """
         import cv2
+        import numpy as np
         from scanner.hardware import HardwareError, camera_capture
         from scanner.processing import extract_laser_line
 
@@ -805,11 +820,16 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         gr_mean = float(signal.mean())
 
         overlay = frame.copy()
-        for rect in mask_rects:
-            if len(rect) != 4:
+        for mask in mask_rects:
+            if len(mask) == 4 and all(isinstance(value, int | float) for value in mask):
+                x0, y0, x1, y1 = [int(v) for v in mask]
+                cv2.rectangle(overlay, (x0, y0), (x1, y1), (255, 255, 0), 2)
                 continue
-            x0, y0, x1, y1 = [int(v) for v in rect]
-            cv2.rectangle(overlay, (x0, y0), (x1, y1), (255, 255, 0), 2)
+            try:
+                pts = np.asarray(mask, dtype=np.int32).reshape(-1, 1, 2)
+                cv2.polylines(overlay, [pts], isClosed=True, color=(255, 255, 0), thickness=2)
+            except Exception:
+                continue
         for i in range(line.shape[0]):
             col, row = int(round(line[i, 0])), int(round(line[i, 1]))
             cv2.circle(overlay, (col, row), 2, (0, 0, 255), -1)

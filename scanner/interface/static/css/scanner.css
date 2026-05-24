@@ -530,9 +530,28 @@ body {
 }
 .cam-tag.tl { top: 8px; left: 10px; color: var(--amber); text-shadow: 0 0 8px var(--amber); }
 .cam-tag.br { bottom: 8px; right: 10px; color: var(--txt-dim); }
-.mask-fields input {
-  font-family: var(--mono);
+.mask-mode { width: auto; min-width: 130px; }
+.mask-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mask-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid #30363d;
+  background: rgba(255,255,255,.03);
   font-size: 0.82rem;
+}
+.mask-item span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 3D viewer */

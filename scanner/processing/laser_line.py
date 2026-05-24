@@ -6,17 +6,19 @@ mean column of those active pixels.
 """
 
 import logging
+from typing import Any
 from collections.abc import Sequence
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-MaskRect = tuple[int, int, int, int]
+MaskShape = Sequence[Any]
 
-# Masks are deliberately empty for now.  Each rectangle is (x0, y0, x1, y1)
-# with x1/y1 excluded, in image pixel coordinates.
-CAMERA_MASKS: dict[str, list[MaskRect]] = {
+# Masks are deliberately empty for now. Each item can be either:
+# - rectangle: [x0, y0, x1, y1] with x1/y1 excluded
+# - polygon/trapezoid: [[x0, y0], [x1, y1], [x2, y2], ...]
+CAMERA_MASKS: dict[str, list[MaskShape]] = {
     "right": [],  # Nappe / Raspberry Pi Camera 3
     "left": [],  # USB Arducam
     "nappe": [],
@@ -28,27 +30,85 @@ def _empty_line() -> np.ndarray:
     return np.empty((0, 2), dtype=np.float32)
 
 
-def _mask_rectangles(
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _polygon_mask(shape: tuple[int, int], points: list[tuple[int, int]]) -> np.ndarray:
+    """Return a boolean mask for the polygon defined by *points*."""
+    height, width = shape
+    xs = np.asarray([point[0] for point in points], dtype=np.float64)
+    ys = np.asarray([point[1] for point in points], dtype=np.float64)
+    x0 = max(0, int(np.floor(xs.min())))
+    x1 = min(width - 1, int(np.ceil(xs.max())))
+    y0 = max(0, int(np.floor(ys.min())))
+    y1 = min(height - 1, int(np.ceil(ys.max())))
+    result = np.zeros(shape, dtype=bool)
+    if x1 < x0 or y1 < y0:
+        return result
+
+    grid_x, grid_y = np.meshgrid(
+        np.arange(x0, x1 + 1, dtype=np.float64) + 0.5,
+        np.arange(y0, y1 + 1, dtype=np.float64) + 0.5,
+    )
+    inside = np.zeros(grid_x.shape, dtype=bool)
+    j = len(points) - 1
+    for i in range(len(points)):
+        xi, yi = xs[i], ys[i]
+        xj, yj = xs[j], ys[j]
+        crosses = (yi > grid_y) != (yj > grid_y)
+        x_intersection = (xj - xi) * (grid_y - yi) / ((yj - yi) or 1e-12) + xi
+        inside ^= crosses & (grid_x < x_intersection)
+        j = i
+
+    result[y0 : y1 + 1, x0 : x1 + 1] = inside
+    return result
+
+
+def _mask_shapes(
     active: np.ndarray,
-    rectangles: Sequence[Sequence[int]] | None,
+    shapes: Sequence[MaskShape] | None,
 ) -> np.ndarray:
-    """Apply rectangular exclusion masks to an active-pixel image."""
-    if not rectangles:
+    """Apply rectangular or polygonal exclusion masks to an active-pixel image."""
+    if not shapes:
         return active
 
     masked = active.copy()
     height, width = masked.shape
-    for rect in rectangles:
-        if len(rect) != 4:
-            logger.warning("Ignoring invalid laser mask rectangle: %s", rect)
+    for shape in shapes:
+        if not isinstance(shape, Sequence):
             continue
-        x0, y0, x1, y1 = [int(value) for value in rect]
-        x0 = max(0, min(width, x0))
-        x1 = max(0, min(width, x1))
-        y0 = max(0, min(height, y0))
-        y1 = max(0, min(height, y1))
-        if x1 > x0 and y1 > y0:
-            masked[y0:y1, x0:x1] = False
+
+        if len(shape) == 4 and all(_is_number(value) for value in shape):
+            x0, y0, x1, y1 = [int(value) for value in shape]
+            x0 = max(0, min(width, x0))
+            x1 = max(0, min(width, x1))
+            y0 = max(0, min(height, y0))
+            y1 = max(0, min(height, y1))
+            if x1 > x0 and y1 > y0:
+                masked[y0:y1, x0:x1] = False
+            continue
+
+        points: list[tuple[int, int]] = []
+        for point in shape:
+            if not isinstance(point, Sequence) or len(point) != 2:
+                points = []
+                break
+            x, y = point
+            if not _is_number(x) or not _is_number(y):
+                points = []
+                break
+            points.append(
+                (
+                    max(0, min(width - 1, int(round(float(x))))),
+                    max(0, min(height - 1, int(round(float(y))))),
+                )
+            )
+        if len(points) < 3:
+            logger.warning("Ignoring invalid laser mask shape: %s", shape)
+            continue
+
+        masked[_polygon_mask(masked.shape, points)] = False
     return masked
 
 
@@ -70,7 +130,8 @@ def extract_laser_line(
         subpixel: Kept for API compatibility. The row mean is always float.
         mode: Kept for API compatibility. All modes use this simple extractor.
         camera_id: Optional camera id used to select a predefined mask.
-        mask_rects: Optional rectangular masks, each as ``[x0, y0, x1, y1]``.
+        mask_rects: Optional exclusion masks. Each item can be a rectangle
+            ``[x0, y0, x1, y1]`` or a polygon ``[[x0, y0], ...]``.
 
     Returns:
         Float array of shape (N, 2), one ``[col, row]`` point per detected row.
@@ -84,12 +145,12 @@ def extract_laser_line(
     green = frame[:, :, 1]
     active = green >= int(threshold)
 
-    rectangles: list[Sequence[int]] = []
+    rectangles: list[MaskShape] = []
     if camera_id:
         rectangles.extend(CAMERA_MASKS.get(str(camera_id), []))
     if mask_rects:
         rectangles.extend(mask_rects)
-    active = _mask_rectangles(active, rectangles)
+    active = _mask_shapes(active, rectangles)
 
     points: list[tuple[float, float]] = []
     for row_idx in range(active.shape[0]):

@@ -97,6 +97,21 @@ class TestExtractLaserLine:
         assert result.shape[0] == 10
         assert set(result[:, 1].astype(int).tolist()) == set(range(5)) | set(range(15, 20))
 
+    def test_polygon_mask_removes_trapezoid_area(self) -> None:
+        frame = np.zeros((30, 40, 3), dtype=np.uint8)
+        frame[:, 20, 1] = 220
+        result = extract_laser_line(
+            frame,
+            threshold=100,
+            min_pixels=1,
+            mask_rects=[[[15, 5], [25, 8], [23, 22], [17, 24]]],
+        )
+        rows = set(result[:, 1].astype(int).tolist())
+        assert 12 not in rows
+        assert 16 not in rows
+        assert 2 in rows
+        assert 27 in rows
+
 
 def _make_camera_matrix(
     fx: float = 800.0, fy: float = 800.0, cx: float = 320.0, cy: float = 240.0
