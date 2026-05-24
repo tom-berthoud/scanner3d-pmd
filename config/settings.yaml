@@ -25,6 +25,8 @@ cameras:
     mock_shape: duck
     exposure_us: 3000
     gain: 10
+    calibration_exposure_us: 20000
+    calibration_gain: 4
     lens_position: 2.7
     laser_threshold: 70
     laser_mask:
@@ -67,6 +69,8 @@ cameras:
     exposure_us: 8000
     # V4L2 gain range reported by this camera: 100..1494.
     gain: 100
+    calibration_exposure_us: 30000
+    calibration_gain: 100
     focus_absolute: 500
     laser_threshold: 70
     laser_mask:

@@ -168,7 +168,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             "intrinsics_exists": bool(intrinsics_path and os.path.exists(intrinsics_path)),
         }
 
-    def _parse_camera_board_payload() -> tuple[str, tuple[int, int], float, bool]:
+    def _parse_camera_board_payload() -> tuple[str, tuple[int, int], float, bool, int | None, float | None]:
         payload = request.get_json(silent=True) or {}
         source = payload if payload else request.values
         camera_id = str(source.get("camera") or source.get("camera_id") or _selected_camera_id())
@@ -184,7 +184,18 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             "yes",
             "on",
         )
-        return camera_id, board_size, square_mm, auto_bracket
+        exposure_raw = source.get("calibration_exposure_us", "")
+        gain_raw = source.get("calibration_gain", "")
+        calibration_exposure_us = int(exposure_raw) if str(exposure_raw).strip() else None
+        calibration_gain = float(gain_raw) if str(gain_raw).strip() else None
+        return (
+            camera_id,
+            board_size,
+            square_mm,
+            auto_bracket,
+            calibration_exposure_us,
+            calibration_gain,
+        )
 
     def _encode_jpeg_base64(frame, quality: int = 85) -> str:
         import cv2
@@ -221,6 +232,27 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 "resolution": cam_cfg.get("resolution", settings.get("camera", {}).get("resolution", [640, 480])),
                 "exposure_us": int(cam_cfg.get("exposure_us", settings.get("camera", {}).get("exposure_us", 1000))),
                 "gain": float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0))),
+                "calibration_exposure_us": int(
+                    cam_cfg.get(
+                        "calibration_exposure_us",
+                        max(
+                            5000,
+                            int(
+                                cam_cfg.get(
+                                    "exposure_us",
+                                    settings.get("camera", {}).get("exposure_us", 1000),
+                                )
+                            )
+                            * 6,
+                        ),
+                    )
+                ),
+                "calibration_gain": float(
+                    cam_cfg.get(
+                        "calibration_gain",
+                        cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0)),
+                    )
+                ),
                 "lens_position": cam_cfg.get("lens_position"),
                 "focus_absolute": cam_cfg.get("focus_absolute"),
                 "pixel_format": cam_cfg.get("pixel_format", ""),
@@ -363,14 +395,25 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         camera_id: str,
         board_size: tuple[int, int],
         auto_bracket: bool,
+        calibration_exposure_us: int | None,
+        calibration_gain: float | None,
     ) -> tuple:
         from scanner.calibration import checkerboard_capture_quality, draw_checkerboard_overlay
         from scanner.hardware import HardwareError, camera_capture, camera_set_exposure, laser_set
 
         cam_cfg = _calibration_camera_config(camera_id)
         scan_exposure = int(cam_cfg.get("exposure_us", settings.get("camera", {}).get("exposure_us", 1000)))
-        base_exposure = int(cam_cfg.get("calibration_exposure_us", max(5000, scan_exposure * 6)))
-        gain = float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0)))
+        scan_gain = float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0)))
+        base_exposure = int(
+            calibration_exposure_us
+            if calibration_exposure_us is not None
+            else cam_cfg.get("calibration_exposure_us", max(5000, scan_exposure * 6))
+        )
+        gain = float(
+            calibration_gain
+            if calibration_gain is not None
+            else cam_cfg.get("calibration_gain", scan_gain)
+        )
         exposures = [base_exposure]
         exposure_note = None
         if auto_bracket:
@@ -405,7 +448,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             except Exception:
                 pass
             try:
-                camera_set_exposure(scan_exposure, gain, camera_id=camera_id)
+                camera_set_exposure(scan_exposure, scan_gain, camera_id=camera_id)
             except Exception:
                 pass
 
@@ -1071,21 +1114,74 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not _manual_allowed():
             return Response(status=409)
         try:
-            camera_id, board_size, _square_mm, _auto_bracket = _parse_camera_board_payload()
+            (
+                camera_id,
+                board_size,
+                _square_mm,
+                _auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
+            ) = _parse_camera_board_payload()
         except (TypeError, ValueError):
             from scanner.calibration import default_camera_id
 
             camera_id = default_camera_id(settings)
             board_size = (9, 6)
+            calibration_exposure_us = None
+            calibration_gain = None
 
         try:
             laser_set(False)
+            try:
+                from scanner.hardware import camera_set_exposure
+
+                cam_cfg = _calibration_camera_config(camera_id)
+                scan_exposure = int(
+                    cam_cfg.get("exposure_us", settings.get("camera", {}).get("exposure_us", 1000))
+                )
+                scan_gain = float(
+                    cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0))
+                )
+                exposure = int(
+                    calibration_exposure_us
+                    if calibration_exposure_us is not None
+                    else cam_cfg.get("calibration_exposure_us", max(5000, scan_exposure * 6))
+                )
+                gain = float(
+                    calibration_gain
+                    if calibration_gain is not None
+                    else cam_cfg.get("calibration_gain", scan_gain)
+                )
+                camera_set_exposure(
+                    exposure,
+                    gain,
+                    camera_id=camera_id,
+                )
+                time.sleep(0.08)
+            except Exception:
+                pass
             frame = camera_capture(camera_id)
         except HardwareError:
             return Response(status=503)
         finally:
             try:
                 laser_set(False)
+            except Exception:
+                pass
+            try:
+                from scanner.hardware import camera_set_exposure
+
+                cam_cfg = _calibration_camera_config(camera_id)
+                camera_set_exposure(
+                    int(
+                        cam_cfg.get(
+                            "exposure_us",
+                            settings.get("camera", {}).get("exposure_us", 1000),
+                        )
+                    ),
+                    float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0))),
+                    camera_id=camera_id,
+                )
             except Exception:
                 pass
 
@@ -1121,9 +1217,20 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not _manual_allowed():
             return jsonify({"error": "Calibration disabled while scan is running"}), 409
         try:
-            camera_id, board_size, _square_mm, auto_bracket = _parse_camera_board_payload()
+            (
+                camera_id,
+                board_size,
+                _square_mm,
+                auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
+            ) = _parse_camera_board_payload()
             frame, overlay, quality = _capture_checkerboard_candidate(
-                camera_id, board_size, auto_bracket
+                camera_id,
+                board_size,
+                auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
             )
         except (TypeError, ValueError) as exc:
             return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
@@ -1167,7 +1274,14 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         from scanner.calibration import CalibrationError, calibrate_camera_with_report
 
         try:
-            camera_id, board_size, square_mm, _auto_bracket = _parse_camera_board_payload()
+            (
+                camera_id,
+                board_size,
+                square_mm,
+                _auto_bracket,
+                _calibration_exposure_us,
+                _calibration_gain,
+            ) = _parse_camera_board_payload()
         except (TypeError, ValueError) as exc:
             return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
 
@@ -1229,7 +1343,14 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return jsonify({"error": "Could not decode any uploaded images"}), 400
 
         try:
-            camera_id, board_size, square_mm, _auto_bracket = _parse_camera_board_payload()
+            (
+                camera_id,
+                board_size,
+                square_mm,
+                _auto_bracket,
+                _calibration_exposure_us,
+                _calibration_gain,
+            ) = _parse_camera_board_payload()
         except (TypeError, ValueError) as exc:
             return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
 

@@ -127,6 +127,21 @@
             </div>
           </div>
 
+          <div class="row g-3">
+            <div class="col">
+              <label class="form-label form-label-sm">Exposition calibration (us)</label>
+              <input class="form-control form-control-sm" type="number"
+                     id="cam-calib-exposure-us" value="20000" min="100" max="1000000" step="100" />
+              <div class="form-text" style="color:#6e7681;">utilisee seulement pour le damier</div>
+            </div>
+            <div class="col">
+              <label class="form-label form-label-sm">Gain calibration</label>
+              <input class="form-control form-control-sm" type="number"
+                     id="cam-calib-gain" value="1" min="0" step="0.1" />
+              <div class="form-text" style="color:#6e7681;">focus et resolution inchanges</div>
+            </div>
+          </div>
+
           <img id="checker-live-img" class="calib-live" alt="Retour damier" />
 
           <div class="calib-stat-grid">
@@ -187,6 +202,8 @@
               <input type="hidden" name="board_cols" id="upload-board-cols" value="9" />
               <input type="hidden" name="board_rows" id="upload-board-rows" value="6" />
               <input type="hidden" name="square_size_mm" id="upload-square-mm" value="25" />
+              <input type="hidden" name="calibration_exposure_us" id="upload-calib-exposure-us" value="20000" />
+              <input type="hidden" name="calibration_gain" id="upload-calib-gain" value="1" />
               <input type="hidden" name="camera" id="upload-camera" value="{{ selected_camera }}" />
               <button type="submit" class="btn btn-outline-primary calib-btn">
                 <i class="bi bi-upload me-2"></i>Lancer avec images importees
@@ -301,6 +318,7 @@
 <script>
 let _checkerLiveTimer = null;
 let _checkerCaptureTimer = null;
+const _cameraCalibrationDefaults = {{ cameras | tojson }};
 
 function selectedCalibrationCamera() {
   var select = document.getElementById('calib-camera');
@@ -321,6 +339,7 @@ function syncLaserCameraFromSelect() {
 
 async function onCalibrationCameraChange() {
   var cam = selectedCalibrationCamera();
+  applyCameraCalibrationDefaults(cam);
   var uploadCam = document.getElementById('upload-camera');
   if (uploadCam) uploadCam.value = cam;
   var laserSelect = document.getElementById('laser-camera');
@@ -340,8 +359,20 @@ function checkerPayload() {
     board_cols: parseInt(document.getElementById('cam-board-cols').value || '9', 10),
     board_rows: parseInt(document.getElementById('cam-board-rows').value || '6', 10),
     square_size_mm: parseFloat(document.getElementById('cam-square-mm').value || '25'),
+    calibration_exposure_us: parseInt(document.getElementById('cam-calib-exposure-us').value || '0', 10),
+    calibration_gain: parseFloat(document.getElementById('cam-calib-gain').value || '0'),
     auto_bracket: !!document.getElementById('checker-auto-bracket').checked
   };
+}
+
+function applyCameraCalibrationDefaults(cameraId) {
+  var cfg = (_cameraCalibrationDefaults || []).find(function(item) { return item.id === cameraId; });
+  if (!cfg) return;
+  var exposure = document.getElementById('cam-calib-exposure-us');
+  var gain = document.getElementById('cam-calib-gain');
+  if (exposure) exposure.value = cfg.calibration_exposure_us || cfg.exposure_us || 20000;
+  if (gain) gain.value = cfg.calibration_gain ?? cfg.gain ?? 1;
+  syncUploadFields();
 }
 
 function syncUploadFields() {
@@ -350,10 +381,14 @@ function syncUploadFields() {
   var rows = document.getElementById('upload-board-rows');
   var sq = document.getElementById('upload-square-mm');
   var cam = document.getElementById('upload-camera');
+  var calibExposure = document.getElementById('upload-calib-exposure-us');
+  var calibGain = document.getElementById('upload-calib-gain');
   if (cols) cols.value = p.board_cols;
   if (rows) rows.value = p.board_rows;
   if (sq) sq.value = p.square_size_mm;
   if (cam) cam.value = p.camera;
+  if (calibExposure) calibExposure.value = p.calibration_exposure_us;
+  if (calibGain) calibGain.value = p.calibration_gain;
 }
 
 function setCheckerStatsFromHeaders(resp) {
@@ -372,6 +407,8 @@ async function refreshCheckerLiveFrame() {
   try {
     var url = '/calibration/camera/frame?board_cols=' + p.board_cols +
       '&board_rows=' + p.board_rows +
+      '&calibration_exposure_us=' + encodeURIComponent(p.calibration_exposure_us) +
+      '&calibration_gain=' + encodeURIComponent(p.calibration_gain) +
       '&camera=' + encodeURIComponent(p.camera) +
       '&t=' + Date.now();
     var resp = await fetch(url);
@@ -628,6 +665,7 @@ async function testLaserExtraction() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  applyCameraCalibrationDefaults(selectedCalibrationCamera());
   syncUploadFields();
   syncLaserCameraFromSelect();
   refreshCheckerLiveFrame();
