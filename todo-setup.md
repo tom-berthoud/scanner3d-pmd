@@ -71,14 +71,14 @@ repere commun lie au plateau.
 
 ### Calibration par camera
 
-- [ ] Calibrer ou preparer la calibration intrinseque camera nappe.
-- [ ] Calibrer ou preparer la calibration intrinseque camera USB.
-- [ ] Produire ou verifier:
+- [x] Calibrer ou preparer la calibration intrinseque camera nappe.
+- [x] Calibrer ou preparer la calibration intrinseque camera USB.
+- [x] Produire ou verifier:
   - `config/camera_intrinsics_right.yaml`
   - `config/camera_intrinsics_left.yaml`
-- [ ] Calibrer le plan laser vu par la camera nappe.
-- [ ] Calibrer le plan laser vu par la camera USB.
-- [ ] Produire ou verifier:
+- [x] Calibrer le plan laser vu par la camera nappe.
+- [x] Calibrer le plan laser vu par la camera USB.
+- [x] Produire ou verifier:
   - `config/laser_plane_right.yaml`
   - `config/laser_plane_left.yaml`
 - [x] Confirmer si `calibration.use_checkerboard` doit rester `false` pour un test brut ou passer a `true`.
@@ -168,20 +168,20 @@ Apres chaque scan utile, garder:
 
 ### Si une extraction est mauvaise
 
-- [ ] Ajuster seuil laser.
-- [ ] Ajuster exposition camera.
-- [ ] Ajuster gain camera.
+- [x] Ajuster seuil laser.
+- [x] Ajuster exposition camera.
+- [x] Ajuster gain camera.
 - [x] Ajouter ou modifier le masque de la camera concernee.
-- [ ] Verifier si le laser est trop sature dans l'image.
-- [ ] Verifier si la camera voit une reflexion directe.
+- [x] Verifier si le laser est trop sature dans l'image.
+- [x] Verifier si la camera voit une reflexion directe.
 
 ### Si un nuage camera seul est mauvais
 
-- [ ] Verifier les intrinseques de cette camera.
-- [ ] Verifier le plan laser de cette camera.
-- [ ] Verifier le point d'axe de rotation.
-- [ ] Verifier l'unite des valeurs en millimetres.
-- [ ] Verifier que la bonne calibration est associee a la bonne camera.
+- [x] Verifier les intrinseques de cette camera.
+- [x] Verifier le plan laser de cette camera.
+- [x] Verifier le point d'axe de rotation.
+- [x] Verifier l'unite des valeurs en millimetres.
+- [x] Verifier que la bonne calibration est associee a la bonne camera.
 
 ### Si les deux nuages seuls sont bons mais le combine est mauvais
 
