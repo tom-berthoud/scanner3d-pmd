@@ -16,9 +16,7 @@ __pycache__/
 /tmp/scans/
 /tmp/scan_frames/
 
-# Real hardware calibration files are local to one physical scanner.
-config/camera_intrinsics*.yaml
-!config/camera_intrinsics.example.yaml
+# Real laser plane calibration files are local until explicitly validated.
 config/laser_plane_right.yaml
 config/laser_plane_left.yaml
 
