@@ -1415,7 +1415,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             CalibrationError,
             approximate_camera_intrinsics,
             calibrate_laser_plane,
-            calibrate_laser_plane_platform_z,
+            collect_laser_points_platform_z,
+            fit_laser_plane_points,
             load_camera_calibration,
         )
         from scanner.calibration.multi_camera import _load_extrinsics
@@ -1475,12 +1476,17 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return jsonify({"error": f"Camera intrinsics unavailable: {exc}"}), 409
 
         try:
-            output_path = _project_path(cam_cfg.get("laser_plane_path"))
+            global_output_path = _project_path(
+                settings.get("calibration", {}).get("global_laser_plane_path")
+                or settings.get("laser", {}).get("plane_path")
+                or "config/laser_plane.yaml"
+            )
             default_threshold, mask_rects = _camera_processing_config(camera_id)
             proc_cfg = settings.get("processing", {})
             min_px = int(proc_cfg.get("min_line_pixels", 5))
             extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
             if plane_mode == "camera_depth":
+                output_path = _project_path(cam_cfg.get("laser_plane_path"))
                 plane = calibrate_laser_plane(
                     images,
                     distances,
@@ -1495,20 +1501,21 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 )
             elif plane_mode == "platform_z":
                 cam_rot, cam_trans = _load_extrinsics(cam_cfg)
-                plane = calibrate_laser_plane_platform_z(
+                points = collect_laser_points_platform_z(
                     images,
                     distances,
                     camera_matrix,
                     dist_coeffs,
                     cam_rot,
                     cam_trans,
-                    output_path=output_path,
                     threshold=default_threshold,
                     min_pixels=max(1, min_px),
                     mode=extraction_mode,
                     mask_rects=mask_rects,
                     camera_id=camera_id,
                 )
+                output_path = global_output_path
+                plane = fit_laser_plane_points(points, output_path=output_path)
             else:
                 return jsonify({"error": f"Unknown laser calibration plane_mode: {plane_mode}"}), 400
             return jsonify(
@@ -1618,12 +1625,15 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
     @app.route("/calibration/laser/run", methods=["POST"])
     def calibration_laser_run() -> Response:
-        """Calibrate laser planes for every camera from guided captures."""
+        """Calibrate one shared platform-frame laser plane from guided captures."""
+        import numpy as np
+
         from scanner.calibration import (
             CalibrationError,
             approximate_camera_intrinsics,
-            calibrate_laser_plane_platform_z,
             camera_ids,
+            collect_laser_points_platform_z,
+            fit_laser_plane_points,
             load_camera_calibration,
         )
         from scanner.calibration.multi_camera import _load_extrinsics
@@ -1637,6 +1647,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         min_px = max(1, int(proc_cfg.get("min_line_pixels", 5)))
         extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
         results = {}
+        all_points = []
         for camera_id in camera_ids(settings):
             cam_cfg = _calibration_camera_config(camera_id)
             images = [item["frames"][camera_id] for item in captures if camera_id in item["frames"]]
@@ -1657,16 +1668,14 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                         cam_res, focal_scale=focal_scale
                     )
                 cam_rot, cam_trans = _load_extrinsics(cam_cfg)
-                output_path = _project_path(cam_cfg.get("laser_plane_path"))
                 default_threshold, mask_rects = _camera_processing_config(camera_id)
-                plane = calibrate_laser_plane_platform_z(
+                points = collect_laser_points_platform_z(
                     images,
                     z_values,
                     camera_matrix,
                     dist_coeffs,
                     cam_rot,
                     cam_trans,
-                    output_path=output_path,
                     threshold=default_threshold,
                     min_pixels=min_px,
                     mode=extraction_mode,
@@ -1680,13 +1689,33 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 return jsonify({"error": f"Camera {camera_id}: {exc}"}), 500
 
             results[camera_id] = {
-                "output_path": output_path,
                 "intrinsics_path": intrinsics_path,
-                "plane": plane.tolist(),
                 "z_values": z_values,
+                "points": int(points.shape[0]),
             }
+            all_points.append(points)
 
-        result = {"status": "ok", "plane_mode": "platform_z", "results": results}
+        try:
+            calib_cfg = settings.get("calibration", {})
+            output_path = _project_path(
+                calib_cfg.get("global_laser_plane_path")
+                or settings.get("laser", {}).get("plane_path")
+                or "config/laser_plane.yaml"
+            )
+            plane = fit_laser_plane_points(np.vstack(all_points), output_path=output_path)
+        except CalibrationError as exc:
+            return jsonify({"error": str(exc)}), 422
+        except Exception as exc:
+            logger.exception("Global guided laser calibration error")
+            return jsonify({"error": str(exc)}), 500
+
+        result = {
+            "status": "ok",
+            "plane_mode": "platform_z_global",
+            "output_path": output_path,
+            "plane": plane.tolist(),
+            "results": results,
+        }
         with _laser_calib_lock:
             _laser_calib_session["last_result"] = result
         return jsonify(result)

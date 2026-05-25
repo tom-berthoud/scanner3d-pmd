@@ -144,7 +144,11 @@ def load_camera_model(
     else:
         camera_matrix, dist_coeffs = approximate_camera_intrinsics(cam_res, focal_scale=focal_scale)
 
-    laser_plane_path = _project_path(cam_cfg.get("laser_plane_path"))
+    laser_plane_path = _project_path(
+        calib_cfg.get("global_laser_plane_path")
+        or config.get("laser", {}).get("plane_path")
+        or cam_cfg.get("laser_plane_path")
+    )
     if laser_plane_path and not os.path.exists(laser_plane_path):
         logger.warning("Laser plane file for %s not found, falling back", camera_id)
         laser_plane_path = None

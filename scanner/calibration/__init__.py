@@ -18,7 +18,10 @@ from scanner.calibration.camera import (
 )
 from scanner.calibration.laser_plane import (
     calibrate_laser_plane,
+    calibrate_laser_plane_global_platform_z,
     calibrate_laser_plane_platform_z,
+    collect_laser_points_platform_z,
+    fit_laser_plane_points,
     load_laser_plane,
 )
 from scanner.calibration.multi_camera import (
@@ -44,6 +47,9 @@ __all__ = [
     "load_camera_calibration",
     "calibrate_laser_plane",
     "calibrate_laser_plane_platform_z",
+    "calibrate_laser_plane_global_platform_z",
+    "collect_laser_points_platform_z",
+    "fit_laser_plane_points",
     "load_laser_plane",
     "camera_configs",
     "camera_config_by_id",

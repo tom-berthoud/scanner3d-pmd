@@ -238,7 +238,7 @@
           <span class="step-badge mt-1">2</span>
           <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
             Repetez avec plusieurs positions, par exemple <code>-100, -60, -20, 20, 60</code>,
-            puis lancez la calibration laser. Les deux fichiers laser sont generes.
+            puis lancez la calibration laser. Un seul plan laser global est genere.
           </p>
         </div>
 
@@ -272,7 +272,7 @@
               <i class="bi bi-arrow-counterclockwise me-2"></i>Reinitialiser
             </button>
             <button type="button" class="btn btn-primary calib-btn" id="btn-laser-run" onclick="runLaserCalibrationSession()">
-              <i class="bi bi-bounding-box me-2"></i>Calibrer les 2 plans laser
+              <i class="bi bi-bounding-box me-2"></i>Calibrer le plan global
             </button>
           </div>
 
@@ -679,7 +679,7 @@ async function runLaserCalibrationSession() {
   result.innerHTML =
     '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
     '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
-    'Calibration laser des deux cameras en cours\u2026</div>';
+    'Calibration du plan laser global en cours\u2026</div>';
   try {
     var resp = await fetch('/calibration/laser/run', { method: 'POST' });
     var data = await resp.json();

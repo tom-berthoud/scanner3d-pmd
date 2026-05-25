@@ -37,7 +37,6 @@ cameras:
     awb_mode: off
     awb_gains: [0.5, 1.0]
     intrinsics_path: config/camera_intrinsics_right.yaml
-    laser_plane_path: config/laser_plane_right.yaml
     extrinsics:
       # Rough measured pose in the shared platform frame:
       # origin = turntable center at top surface.
@@ -45,7 +44,9 @@ cameras:
       # +X points right when looking from the laser toward the turntable.
       # +Y is vertical up and is the turntable rotation axis.
       position_mm: [173.5, 140.0, -300.5]
-      target_mm: [0.0, 0.0, 0.0]
+      # Approximate optical-axis target from measured camera position and
+      # mechanical angles: yaw -30 deg, elevation -20 deg.
+      target_mm: [0.0, 13.7, 0.0]
       up_mm: [0.0, 1.0, 0.0]
   - id: left
     display_name: USB Arducam
@@ -81,7 +82,6 @@ cameras:
       - [[662, 433], [780, 0], [0, 0], [0, 433]]
       - [[1488, 1080], [1377, 0], [1920, 0], [1920, 1080]]
     intrinsics_path: config/camera_intrinsics_left.yaml
-    laser_plane_path: config/laser_plane_left.yaml
     extrinsics:
       # Rough measured pose in the shared platform frame:
       # origin = turntable center at top surface.
@@ -89,7 +89,9 @@ cameras:
       # +X points right when looking from the laser toward the turntable.
       # +Y is vertical up and is the turntable rotation axis.
       position_mm: [-155.0, -20.0, -286.5]
-      target_mm: [0.0, 0.0, 0.0]
+      # Approximate optical-axis target from measured camera position and
+      # mechanical angles: yaw +30 deg, elevation +20 deg.
+      target_mm: [0.0, 92.8, -18.0]
       up_mm: [0.0, 1.0, 0.0]
 
 laser:
@@ -126,6 +128,7 @@ reconstruction:
 
 calibration:
   use_checkerboard: true    # true = utilise les fichiers intrinsics_path calibres par camera
+  global_laser_plane_path: config/laser_plane.yaml
   approx_focal_scale: 1.25  # focale approx = largeur_image * facteur (640 px -> 800 px)
 
 export:

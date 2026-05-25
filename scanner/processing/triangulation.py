@@ -19,9 +19,10 @@ def triangulate(
 ) -> np.ndarray:
     """Convert laser line pixels to 3D object-frame points.
 
-    The laser plane is expressed in the camera frame. Points are first
-    intersected in that frame, optionally transformed into a stationary
-    platform frame, then unrotated by the turntable angle around the Y axis.
+    The laser plane is expressed in the stationary platform frame. Pixel rays
+    are first back-projected in the camera frame, transformed into the platform
+    frame, intersected with the shared laser plane, then unrotated by the
+    turntable angle around the Y axis.
     """
     if line_pixels.shape[0] == 0:
         return np.empty((0, 3), dtype=np.float64)
@@ -52,20 +53,7 @@ def triangulate(
         pts_distorted = line_pixels.reshape(-1, 1, 2).astype(np.float64)
         pts_undistorted = cv2.undistortPoints(pts_distorted, camera_matrix, dist_coeffs)
         xy_norm = pts_undistorted.reshape(-1, 2)
-    rays = np.hstack([xy_norm, np.ones((n_points, 1), dtype=np.float64)])
-
-    a, b, c, d = laser_plane.astype(np.float64)
-    plane_normal = np.array([a, b, c], dtype=np.float64)
-    denom = rays @ plane_normal
-    valid_mask = np.abs(denom) > 1e-9
-    n_valid = int(valid_mask.sum())
-    if n_valid == 0:
-        logger.warning("triangulate: all rays parallel to laser plane")
-        return np.empty((0, 3), dtype=np.float64)
-
-    t = np.full(n_points, np.nan, dtype=np.float64)
-    t[valid_mask] = -d / denom[valid_mask]
-    points_cam = (rays * t[:, np.newaxis])[valid_mask]
+    rays_cam = np.hstack([xy_norm, np.ones((n_points, 1), dtype=np.float64)])
 
     if camera_to_platform_rotation is None:
         rot = np.eye(3, dtype=np.float64)
@@ -79,7 +67,21 @@ def triangulate(
     else:
         trans = np.asarray(camera_to_platform_translation, dtype=np.float64).reshape(3)
 
-    points_platform = (rot @ points_cam.T).T + trans
+    rays_platform = (rot @ rays_cam.T).T
+
+    a, b, c, d = laser_plane.astype(np.float64)
+    plane_normal = np.array([a, b, c], dtype=np.float64)
+    denom = rays_platform @ plane_normal
+    numer = -(float(trans @ plane_normal) + d)
+    valid_mask = np.abs(denom) > 1e-9
+    n_valid = int(valid_mask.sum())
+    if n_valid == 0:
+        logger.warning("triangulate: all rays parallel to laser plane")
+        return np.empty((0, 3), dtype=np.float64)
+
+    t = np.full(n_points, np.nan, dtype=np.float64)
+    t[valid_mask] = numer / denom[valid_mask]
+    points_platform = trans + rays_platform[valid_mask] * t[valid_mask, np.newaxis]
 
     cos_a = np.cos(rotation_angle_rad)
     sin_a = np.sin(rotation_angle_rad)

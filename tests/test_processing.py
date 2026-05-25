@@ -233,7 +233,7 @@ class TestTriangulate:
             0.0,
             camera_to_platform_translation=np.array([10.0, 20.0, 30.0]),
         )
-        np.testing.assert_allclose(result[0], np.array([10.0, 20.0, 330.0]), atol=1e-6)
+        np.testing.assert_allclose(result[0], np.array([10.0, 20.0, 300.0]), atol=1e-6)
 
     def test_bad_shape_raises(self) -> None:
         with pytest.raises(ValueError):
