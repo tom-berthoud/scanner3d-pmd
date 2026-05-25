@@ -113,6 +113,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         "captures": [],
         "last_result": None,
     }
+    _extrinsics_calib_lock = threading.Lock()
+    _extrinsics_calib_session: dict = {
+        "last_result": None,
+        "captures": [],
+    }
 
     def _project_path(path: str | None) -> str | None:
         if not path:
@@ -231,6 +236,80 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             values.append(float(raw))
         return values
 
+    def _extrinsics_aruco_defaults() -> dict:
+        cfg = settings.get("calibration", {}).get("extrinsics_aruco_cube", {}) or {}
+        return {
+            "cube_size_mm": float(cfg.get("cube_size_mm", 30.0)),
+            "marker_size_mm": float(cfg.get("marker_size_mm", 20.0)),
+            "cube_center_mm": cfg.get("cube_center_mm", [0.0, 15.0, 0.0]),
+            "captures_per_turn": int(cfg.get("captures_per_turn", 16)),
+            "direction": str(cfg.get("direction", settings.get("scan", {}).get("direction", "clockwise"))),
+            "dictionary": str(cfg.get("dictionary", "DICT_4X4_50")),
+            "side_marker_ids": cfg.get("side_marker_ids", [0, 1, 2, 3]),
+            "top_marker_id": cfg.get("top_marker_id", 4),
+        }
+
+    def _parse_extrinsics_aruco_payload() -> dict:
+        payload = request.get_json(silent=True) or {}
+        source = payload if payload else request.values
+        defaults = _extrinsics_aruco_defaults()
+        center = source.get("cube_center_mm")
+        if isinstance(center, str):
+            center_values = [float(value.strip()) for value in center.split(",") if value.strip()]
+        elif isinstance(center, list | tuple):
+            center_values = [float(value) for value in center]
+        else:
+            center_y = float(source.get("cube_center_y_mm", defaults["cube_center_mm"][1]))
+            center_values = [0.0, center_y, 0.0]
+        if len(center_values) != 3:
+            raise ValueError("cube_center_mm must contain exactly 3 values")
+
+        side_ids_raw = source.get("side_marker_ids", defaults["side_marker_ids"])
+        if isinstance(side_ids_raw, str):
+            side_ids = [int(value.strip()) for value in side_ids_raw.split(",") if value.strip()]
+        else:
+            side_ids = [int(value) for value in side_ids_raw]
+        if len(side_ids) != 4:
+            raise ValueError("side_marker_ids must contain exactly 4 IDs")
+
+        top_raw = source.get("top_marker_id", defaults["top_marker_id"])
+        top_marker_id = None if str(top_raw).strip().lower() in ("", "none", "null", "-1") else int(top_raw)
+        captures_per_turn = max(4, min(72, int(source.get("captures_per_turn", defaults["captures_per_turn"]))))
+        direction = str(source.get("direction", defaults["direction"])).strip().lower()
+        if direction not in ("clockwise", "counterclockwise"):
+            raise ValueError("direction must be clockwise or counterclockwise")
+        return {
+            "cube_size_mm": float(source.get("cube_size_mm", defaults["cube_size_mm"])),
+            "marker_size_mm": float(source.get("marker_size_mm", defaults["marker_size_mm"])),
+            "cube_center_mm": center_values,
+            "captures_per_turn": captures_per_turn,
+            "direction": direction,
+            "dictionary": str(source.get("dictionary", defaults["dictionary"])),
+            "side_marker_ids": side_ids,
+            "top_marker_id": top_marker_id,
+        }
+
+    def _camera_intrinsics_for_extrinsics(camera_id: str) -> tuple:
+        from scanner.calibration import (
+            CalibrationError,
+            approximate_camera_intrinsics,
+            load_camera_calibration,
+        )
+
+        cam_cfg = _calibration_camera_config(camera_id)
+        calib_cfg = settings.get("calibration", {})
+        focal_scale = float(cam_cfg.get("approx_focal_scale", calib_cfg.get("approx_focal_scale", 1.25)))
+        resolution = cam_cfg.get("resolution", settings.get("camera", {}).get("resolution", [640, 480]))
+        cam_res = (int(resolution[0]), int(resolution[1]))
+        intrinsics_path = _project_path(cam_cfg.get("intrinsics_path"))
+        if intrinsics_path and os.path.exists(intrinsics_path):
+            return load_camera_calibration(intrinsics_path)
+        if bool(calib_cfg.get("allow_approx_extrinsics_intrinsics", False)):
+            return approximate_camera_intrinsics(cam_res, focal_scale=focal_scale)
+        raise CalibrationError(
+            f"Intrinseques manquantes pour {camera_id}: {intrinsics_path}. "
+            "Calibre d'abord les intrinseques camera."
+        )
 
     def _encode_jpeg_base64(frame, quality: int = 85) -> str:
         import cv2
@@ -1130,6 +1209,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             cameras=camera_views,
             selected_camera=selected_camera,
             camera_calib=_camera_calib_summary(selected_camera),
+            aruco_cube_calib=_extrinsics_aruco_defaults(),
         )
 
     @app.route("/calibration/camera/session")
@@ -1432,6 +1512,178 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except Exception as exc:
             logger.exception("Camera calibration error")
             return jsonify({"error": f"Internal error during calibration: {exc}"}), 500
+
+    @app.route("/calibration/extrinsics/aruco-cube/session")
+    def calibration_extrinsics_aruco_session() -> Response:
+        """Return the last ArUco cube extrinsics calibration result."""
+        with _extrinsics_calib_lock:
+            return jsonify(
+                {
+                    "last_result": _extrinsics_calib_session.get("last_result"),
+                    "captures": _extrinsics_calib_session.get("captures", []),
+                    "defaults": _extrinsics_aruco_defaults(),
+                }
+            )
+
+    @app.route("/calibration/extrinsics/aruco-cube/reset", methods=["POST"])
+    def calibration_extrinsics_aruco_reset() -> Response:
+        """Clear ArUco cube calibration previews."""
+        with _extrinsics_calib_lock:
+            _extrinsics_calib_session["last_result"] = None
+            _extrinsics_calib_session["captures"] = []
+        return jsonify({"status": "ok", "defaults": _extrinsics_aruco_defaults()})
+
+    @app.route("/calibration/extrinsics/aruco-cube/run", methods=["POST"])
+    def calibration_extrinsics_aruco_run() -> Response:
+        """Calibrate camera extrinsics from a rotating ArUco cube."""
+        import numpy as np
+
+        from scanner.calibration import (
+            CalibrationError,
+            camera_ids,
+            detect_aruco_markers,
+            draw_aruco_overlay,
+            save_camera_extrinsics,
+            solve_camera_extrinsics_from_aruco_cube,
+        )
+        from scanner.hardware import (
+            HardwareError,
+            camera_capture_all,
+            camera_set_exposure,
+            laser_set,
+            motor_step,
+        )
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+        try:
+            payload = _parse_extrinsics_aruco_payload()
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid ArUco cube payload: {exc}"}), 400
+
+        motor_cfg = settings.get("motor", {})
+        total_motor_steps = int(motor_cfg.get("steps_per_rev", 200)) * int(
+            motor_cfg.get("microstepping", 1)
+        )
+        captures_per_turn = int(payload["captures_per_turn"])
+        steps_per_capture = max(1, int(round(total_motor_steps / captures_per_turn)))
+        actual_angle_step = (2.0 * np.pi * steps_per_capture) / float(total_motor_steps)
+        if payload["direction"] == "counterclockwise":
+            actual_angle_step = -actual_angle_step
+
+        observations_by_camera = {camera_id: [] for camera_id in camera_ids(settings)}
+        capture_summaries = []
+        exposure_restore: dict[str, tuple[int, float]] = {}
+        try:
+            laser_set(False)
+            for camera_id in camera_ids(settings):
+                cam_cfg = _calibration_camera_config(camera_id)
+                scan_exposure = int(
+                    cam_cfg.get("exposure_us", settings.get("camera", {}).get("exposure_us", 1000))
+                )
+                scan_gain = float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0)))
+                exposure_restore[camera_id] = (scan_exposure, scan_gain)
+                try:
+                    camera_set_exposure(
+                        int(cam_cfg.get("calibration_exposure_us", max(5000, scan_exposure * 6))),
+                        float(cam_cfg.get("calibration_gain", scan_gain)),
+                        camera_id=camera_id,
+                    )
+                except HardwareError as exc:
+                    logger.warning("ArUco calibration exposure unavailable for %s: %s", camera_id, exc)
+            time.sleep(0.12)
+            for idx in range(captures_per_turn):
+                angle_rad = float(idx * actual_angle_step)
+                frames = camera_capture_all()
+                capture_summary = {
+                    "index": idx + 1,
+                    "angle_deg": float(np.rad2deg(angle_rad)),
+                    "cameras": {},
+                }
+                for camera_id, frame in frames.items():
+                    corners, ids = detect_aruco_markers(frame, payload["dictionary"])
+                    markers = [
+                        {"id": int(marker_id), "corners": corner.astype(float).tolist()}
+                        for corner, marker_id in zip(corners, ids)
+                    ]
+                    observations_by_camera.setdefault(camera_id, []).append(
+                        {"angle_rad": angle_rad, "markers": markers}
+                    )
+                    overlay = draw_aruco_overlay(frame, corners, ids)
+                    capture_summary["cameras"][camera_id] = {
+                        "detected_ids": ids,
+                        "preview_jpeg_base64": _encode_jpeg_base64(overlay, quality=70),
+                    }
+                capture_summaries.append(capture_summary)
+                if idx < captures_per_turn - 1:
+                    motor_step(steps_per_capture, payload["direction"])
+            if captures_per_turn > 1:
+                remaining_steps = total_motor_steps - steps_per_capture * (captures_per_turn - 1)
+                if remaining_steps > 0:
+                    motor_step(remaining_steps, payload["direction"])
+        except CalibrationError as exc:
+            return jsonify({"error": str(exc)}), 422
+        except HardwareError as exc:
+            return jsonify({"error": str(exc)}), 503
+        except Exception as exc:
+            logger.exception("ArUco cube capture error")
+            return jsonify({"error": f"Internal error during ArUco capture: {exc}"}), 500
+        finally:
+            try:
+                laser_set(False)
+            except Exception:
+                pass
+            for camera_id, (exposure, gain) in exposure_restore.items():
+                try:
+                    camera_set_exposure(exposure, gain, camera_id=camera_id)
+                except Exception:
+                    pass
+
+        results = {}
+        for camera_id in camera_ids(settings):
+            try:
+                cam_cfg = _calibration_camera_config(camera_id)
+                camera_matrix, dist_coeffs = _camera_intrinsics_for_extrinsics(camera_id)
+                rotation, translation, report = solve_camera_extrinsics_from_aruco_cube(
+                    observations_by_camera.get(camera_id, []),
+                    camera_matrix,
+                    dist_coeffs,
+                    cube_size_mm=payload["cube_size_mm"],
+                    marker_size_mm=payload["marker_size_mm"],
+                    cube_center_mm=payload["cube_center_mm"],
+                    dictionary_name=payload["dictionary"],
+                    side_marker_ids=payload["side_marker_ids"],
+                    top_marker_id=payload["top_marker_id"],
+                )
+                output_path = _project_path(cam_cfg.get("extrinsics_path"))
+                save_camera_extrinsics(rotation, translation, output_path, report=report)
+                results[camera_id] = {
+                    "status": "ok",
+                    "output_path": output_path,
+                    "rotation_matrix": rotation.tolist(),
+                    "translation_mm": translation.tolist(),
+                    "report": report,
+                }
+            except CalibrationError as exc:
+                results[camera_id] = {"status": "error", "error": str(exc)}
+            except Exception as exc:
+                logger.exception("ArUco cube solve error for %s", camera_id)
+                results[camera_id] = {"status": "error", "error": str(exc)}
+
+        ok_count = sum(1 for item in results.values() if item.get("status") == "ok")
+        status_code = 200 if ok_count else 422
+        result = {
+            "status": "ok" if ok_count else "error",
+            "calibrated_cameras": ok_count,
+            "payload": payload,
+            "steps_per_capture": steps_per_capture,
+            "actual_angle_step_deg": float(np.rad2deg(actual_angle_step)),
+            "results": results,
+        }
+        with _extrinsics_calib_lock:
+            _extrinsics_calib_session["last_result"] = result
+            _extrinsics_calib_session["captures"] = capture_summaries
+        return jsonify(result), status_code
 
     @app.route("/calibration/laser", methods=["POST"])
     def calibration_laser() -> Response:

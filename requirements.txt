@@ -1,5 +1,5 @@
 numpy>=1.24
-opencv-python>=4.8
+opencv-contrib-python>=4.8
 scipy>=1.11
 # Official Open3D wheels are limited by Python/platform tags. On Raspberry Pi
 # aarch64 with Python 3.13, use the ARM wheel package that still imports as open3d.
