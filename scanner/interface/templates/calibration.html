@@ -213,6 +213,55 @@
         </div>
 
         <div id="camera-result"></div>
+
+        <hr style="border-color:#30363d; margin:0;" />
+
+        <div class="d-flex flex-column gap-3">
+          <div class="d-flex gap-3 align-items-start">
+            <span class="step-badge mt-1">E</span>
+            <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
+              Extrinseque: placez le damier dans une pose connue du repere plateau.
+              Par defaut: damier vertical face au laser, colonnes vers +X, lignes vers -Y.
+            </p>
+          </div>
+
+          <div class="row g-3">
+            <div class="col">
+              <label class="form-label form-label-sm">Origine coin X</label>
+              <input class="form-control form-control-sm" type="number" id="ext-origin-x" value="-100" step="0.5" />
+            </div>
+            <div class="col">
+              <label class="form-label form-label-sm">Origine coin Y</label>
+              <input class="form-control form-control-sm" type="number" id="ext-origin-y" value="125" step="0.5" />
+            </div>
+            <div class="col">
+              <label class="form-label form-label-sm">Origine coin Z</label>
+              <input class="form-control form-control-sm" type="number" id="ext-origin-z" value="0" step="0.5" />
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col">
+              <label class="form-label form-label-sm">Colonnes axe</label>
+              <input class="form-control form-control-sm" type="text" id="ext-col-axis" value="1,0,0" />
+            </div>
+            <div class="col">
+              <label class="form-label form-label-sm">Lignes axe</label>
+              <input class="form-control form-control-sm" type="text" id="ext-row-axis" value="0,-1,0" />
+            </div>
+          </div>
+
+          <div class="form-text" style="color:#6e7681;">
+            Origine = premier coin interne du damier. Si vous regardez le damier depuis le laser:
+            colonnes vers la droite = <code>1,0,0</code>, lignes vers le bas = <code>0,-1,0</code>.
+          </div>
+
+          <button type="button" class="btn btn-success calib-btn" id="btn-extrinsics-run" onclick="runExtrinsicsCalibration()">
+            <i class="bi bi-crosshair me-2"></i>Calibrer extrinseque camera
+          </button>
+
+          <div id="extrinsics-result"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -322,6 +371,32 @@ function checkerPayload() {
     calibration_gain: parseFloat(document.getElementById('cam-calib-gain').value || '0'),
     auto_bracket: !!document.getElementById('checker-auto-bracket').checked
   };
+}
+
+function parseAxisInput(id) {
+  var parts = (document.getElementById(id).value || '').split(',').map(function(value) {
+    return parseFloat(value.trim());
+  });
+  if (parts.length !== 3 || parts.some(function(value) { return !Number.isFinite(value); })) {
+    throw new Error('Axe invalide: utilisez le format x,y,z');
+  }
+  return parts;
+}
+
+function extrinsicsPayload() {
+  var p = checkerPayload();
+  var col = parseAxisInput('ext-col-axis');
+  var row = parseAxisInput('ext-row-axis');
+  p.board_origin_x = parseFloat(document.getElementById('ext-origin-x').value || '0');
+  p.board_origin_y = parseFloat(document.getElementById('ext-origin-y').value || '0');
+  p.board_origin_z = parseFloat(document.getElementById('ext-origin-z').value || '0');
+  p.board_col_axis_x = col[0];
+  p.board_col_axis_y = col[1];
+  p.board_col_axis_z = col[2];
+  p.board_row_axis_x = row[0];
+  p.board_row_axis_y = row[1];
+  p.board_row_axis_z = row[2];
+  return p;
 }
 
 function applyCameraCalibrationDefaults(cameraId) {
@@ -558,6 +633,45 @@ async function submitCalibForm(formId, endpoint, resultId) {
     result.innerHTML =
       '<div class="alert alert-danger py-2 mb-0 mt-2">' +
       '<i class="bi bi-wifi-off me-2"></i>Erreur reseau : ' + e +
+      '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function runExtrinsicsCalibration() {
+  var result = document.getElementById('extrinsics-result');
+  var btn = document.getElementById('btn-extrinsics-run');
+  btn.disabled = true;
+  result.innerHTML =
+    '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
+    '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
+    'Capture et calcul extrinseque en cours\u2026</div>';
+  try {
+    var payload = extrinsicsPayload();
+    var resp = await fetch('/calibration/extrinsics/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Erreur calibration extrinseque');
+    result.innerHTML =
+      '<div class="alert alert-success py-2 mb-0 mt-2">' +
+      '<strong>Extrinseque sauvegardee</strong>' +
+      '<div class="mt-1" style="font-size:0.85rem;">Position camera: [' +
+      (data.translation_mm || []).map(function(v) { return Number(v).toFixed(1); }).join(', ') +
+      '] mm</div>' +
+      '<div style="font-size:0.85rem;">Erreur reprojection moyenne: ' +
+      Number((data.report || {}).mean_reprojection_error_px || 0).toFixed(3) +
+      ' px</div>' +
+      '<pre class="mb-0 mt-2" style="font-size:0.72rem; color:#adbac7;">' +
+      JSON.stringify(data, null, 2) + '</pre></div>';
+    if (typeof showToast === 'function') showToast('Extrinseque sauvegardee', 'success');
+  } catch (e) {
+    result.innerHTML =
+      '<div class="alert alert-danger py-2 mb-0 mt-2">' +
+      '<i class="bi bi-exclamation-triangle-fill me-2"></i>' + e +
       '</div>';
   } finally {
     btn.disabled = false;

@@ -16,6 +16,11 @@ from scanner.calibration.camera import (
     draw_checkerboard_overlay,
     load_camera_calibration,
 )
+from scanner.calibration.extrinsics import (
+    calibrate_camera_extrinsics,
+    default_extrinsics_path,
+    save_camera_extrinsics,
+)
 from scanner.calibration.laser_plane import (
     calibrate_laser_plane,
     calibrate_laser_plane_global_platform_z,
@@ -45,6 +50,9 @@ __all__ = [
     "draw_checkerboard_overlay",
     "approximate_camera_intrinsics",
     "load_camera_calibration",
+    "calibrate_camera_extrinsics",
+    "default_extrinsics_path",
+    "save_camera_extrinsics",
     "calibrate_laser_plane",
     "calibrate_laser_plane_platform_z",
     "calibrate_laser_plane_global_platform_z",

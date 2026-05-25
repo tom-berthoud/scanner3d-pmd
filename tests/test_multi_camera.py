@@ -1,6 +1,7 @@
 """Tests for multi-camera configuration helpers."""
 
 import numpy as np
+import yaml
 
 from scanner.calibration import camera_configs, camera_ids, default_camera_id
 
@@ -70,3 +71,40 @@ def test_measured_pose_extrinsics_point_camera_at_target() -> None:
     np.testing.assert_allclose(translation, position, atol=1e-6)
     np.testing.assert_allclose(forward, expected_forward, atol=1e-6)
     np.testing.assert_allclose(rotation.T @ rotation, np.eye(3), atol=1e-6)
+
+
+def test_rotation_matrix_extrinsics_override_look_at_when_file_loaded(tmp_path) -> None:
+    from scanner.calibration.multi_camera import _load_extrinsics
+
+    path = tmp_path / "camera_extrinsics_left.yaml"
+    file_rotation = np.array(
+        [
+            [0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=float,
+    )
+    file_translation = np.array([1.0, 2.0, 3.0], dtype=float)
+    path.write_text(
+        yaml.dump(
+            {
+                "rotation_matrix": file_rotation.tolist(),
+                "translation_mm": file_translation.tolist(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rotation, translation = _load_extrinsics(
+        {
+            "extrinsics_path": str(path),
+            "extrinsics": {
+                "position_mm": [100.0, 100.0, 100.0],
+                "target_mm": [0.0, 0.0, 0.0],
+            },
+        }
+    )
+
+    np.testing.assert_allclose(rotation, file_rotation)
+    np.testing.assert_allclose(translation, file_translation)

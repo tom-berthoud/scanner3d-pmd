@@ -40,6 +40,7 @@ cameras:
     awb_mode: off
     awb_gains: [0.5, 1.0]
     intrinsics_path: config/camera_intrinsics_right.yaml
+    extrinsics_path: config/camera_extrinsics_right.yaml
     extrinsics:
       # Rough measured pose in the shared platform frame:
       # origin = turntable center at top surface.
@@ -89,6 +90,7 @@ cameras:
       - [[1488, 1080], [1377, 0], [1920, 0], [1920, 1080]]
       - [550, 1065, 1500, 1080]
     intrinsics_path: config/camera_intrinsics_left.yaml
+    extrinsics_path: config/camera_extrinsics_left.yaml
     extrinsics:
       # Rough measured pose in the shared platform frame:
       # origin = turntable center at top surface.

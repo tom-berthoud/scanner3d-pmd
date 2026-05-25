@@ -161,6 +161,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             captures = list(state["captures"])
             report = state.get("last_report")
         intrinsics_path = _project_path(cam_cfg.get("intrinsics_path"))
+        extrinsics_path = _project_path(cam_cfg.get("extrinsics_path"))
         return {
             "camera_id": selected_id,
             "camera_label": _camera_label(selected_id),
@@ -171,6 +172,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             "last_report": report,
             "intrinsics_path": intrinsics_path,
             "intrinsics_exists": bool(intrinsics_path and os.path.exists(intrinsics_path)),
+            "extrinsics_path": extrinsics_path,
+            "extrinsics_exists": bool(extrinsics_path and os.path.exists(extrinsics_path)),
         }
 
     def _laser_calib_summary() -> dict:
@@ -220,6 +223,13 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             calibration_exposure_us,
             calibration_gain,
         )
+
+    def _parse_vector3(source, prefix: str, default: tuple[float, float, float]) -> list[float]:
+        values = []
+        for axis, fallback in zip(("x", "y", "z"), default):
+            raw = source.get(f"{prefix}_{axis}", fallback)
+            values.append(float(raw))
+        return values
 
     def _encode_jpeg_base64(frame, quality: int = 85) -> str:
         import cv2
@@ -1360,6 +1370,83 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except Exception as exc:
             logger.exception("Guided camera calibration error")
             return jsonify({"error": f"Internal error during calibration: {exc}"}), 500
+
+    @app.route("/calibration/extrinsics/run", methods=["POST"])
+    def calibration_extrinsics_run() -> Response:
+        """Capture one known-pose checkerboard image and solve camera extrinsics."""
+        from scanner.calibration import (
+            CalibrationError,
+            calibrate_camera_extrinsics,
+            default_extrinsics_path,
+            load_camera_calibration,
+        )
+        from scanner.hardware import HardwareError
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+
+        payload = request.get_json(silent=True) or {}
+        source = payload if payload else request.values
+        try:
+            (
+                camera_id,
+                board_size,
+                square_mm,
+                auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
+            ) = _parse_camera_board_payload()
+            board_origin = _parse_vector3(source, "board_origin", (-100.0, 125.0, 0.0))
+            board_col_axis = _parse_vector3(source, "board_col_axis", (1.0, 0.0, 0.0))
+            board_row_axis = _parse_vector3(source, "board_row_axis", (0.0, -1.0, 0.0))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid extrinsics payload: {exc}"}), 400
+
+        try:
+            cam_cfg = _calibration_camera_config(camera_id)
+            intrinsics_path = _project_path(cam_cfg.get("intrinsics_path"))
+            if not intrinsics_path or not os.path.exists(intrinsics_path):
+                return jsonify({"error": f"Camera {camera_id}: intrinsics file missing"}), 409
+            camera_matrix, dist_coeffs = load_camera_calibration(intrinsics_path)
+            frame, overlay, quality = _capture_checkerboard_candidate(
+                camera_id,
+                board_size,
+                auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
+            )
+            output_path = _project_path(cam_cfg.get("extrinsics_path")) or default_extrinsics_path(camera_id)
+            rotation, translation, report = calibrate_camera_extrinsics(
+                frame,
+                camera_matrix,
+                dist_coeffs,
+                board_size,
+                square_mm,
+                board_origin,
+                board_col_axis,
+                board_row_axis,
+                output_path=output_path,
+            )
+            return jsonify(
+                {
+                    "status": "ok",
+                    "camera": camera_id,
+                    "output_path": output_path,
+                    "intrinsics_path": intrinsics_path,
+                    "rotation_matrix": rotation.tolist(),
+                    "translation_mm": translation.tolist(),
+                    "report": report,
+                    "quality": quality,
+                    "preview_jpeg_base64": _encode_jpeg_base64(overlay),
+                }
+            )
+        except HardwareError as exc:
+            return jsonify({"error": str(exc)}), 503
+        except CalibrationError as exc:
+            return jsonify({"error": str(exc)}), 422
+        except Exception as exc:
+            logger.exception("Extrinsics calibration error")
+            return jsonify({"error": f"Internal error during extrinsics calibration: {exc}"}), 500
 
     @app.route("/calibration/camera", methods=["POST"])
     def calibration_camera() -> Response:

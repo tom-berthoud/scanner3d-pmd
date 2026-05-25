@@ -105,16 +105,19 @@ def _load_extrinsics(cam_cfg: dict) -> tuple[np.ndarray, np.ndarray]:
         if isinstance(file_data, dict):
             extr = {**extr, **file_data}
 
+    rot_raw: Any = extr.get("rotation_matrix", np.eye(3).tolist())
+    trans_raw: Any = extr.get("translation_mm", [0.0, 0.0, 0.0])
+    if "rotation_matrix" in extr or "translation_mm" in extr:
+        rotation = np.asarray(rot_raw, dtype=np.float64)
+        translation = np.asarray(trans_raw, dtype=np.float64).reshape(3)
+        if rotation.shape != (3, 3):
+            raise ValueError(f"extrinsics.rotation_matrix must be 3x3, got {rotation.shape}")
+        return rotation, translation
+
     if "position_mm" in extr:
         return _look_at_extrinsics(extr)
 
-    rot_raw: Any = extr.get("rotation_matrix", np.eye(3).tolist())
-    trans_raw: Any = extr.get("translation_mm", [0.0, 0.0, 0.0])
-    rotation = np.asarray(rot_raw, dtype=np.float64)
-    translation = np.asarray(trans_raw, dtype=np.float64).reshape(3)
-    if rotation.shape != (3, 3):
-        raise ValueError(f"extrinsics.rotation_matrix must be 3x3, got {rotation.shape}")
-    return rotation, translation
+    return np.eye(3, dtype=np.float64), np.zeros(3, dtype=np.float64)
 
 
 def load_camera_model(
