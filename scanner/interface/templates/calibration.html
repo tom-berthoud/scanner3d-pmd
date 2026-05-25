@@ -284,6 +284,18 @@
             </div>
           </div>
 
+          <div class="row g-3">
+            <div class="col">
+              <label class="form-label form-label-sm">Angles auto</label>
+              <input class="form-control form-control-sm" type="text" id="ext-turntable-angles" value="0,45,90,135,180,225,270,315" />
+            </div>
+            <div class="col d-flex align-items-end">
+              <button type="button" class="btn btn-outline-primary calib-btn w-100" id="btn-ext-turntable-auto" onclick="autoCaptureTurntableExtrinsics()">
+                <i class="bi bi-arrow-repeat me-2"></i>Auto angles
+              </button>
+            </div>
+          </div>
+
           <div class="d-flex gap-2">
             <button type="button" class="btn btn-outline-danger calib-btn flex-fill" onclick="resetTurntableExtrinsics()">
               <i class="bi bi-trash me-2"></i>Reset captures
@@ -779,6 +791,36 @@ async function captureTurntableExtrinsics() {
     renderTurntableExtrinsics(data);
     if (result) result.innerHTML = '';
     if (typeof showToast === 'function') showToast('Capture extrinseque ajoutee', 'success');
+  } catch (e) {
+    if (result) result.innerHTML = '<div class="alert alert-danger py-2 mb-0 mt-2">' + e + '</div>';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function autoCaptureTurntableExtrinsics() {
+  var btn = document.getElementById('btn-ext-turntable-auto');
+  var result = document.getElementById('extrinsics-turntable-result');
+  if (btn) btn.disabled = true;
+  if (result) {
+    result.innerHTML =
+      '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
+      '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
+      'Rotation moteur et captures en cours\u2026</div>';
+  }
+  try {
+    var payload = checkerPayload();
+    payload.angles_deg = document.getElementById('ext-turntable-angles').value || '0,45,90,135,180,225,270,315';
+    var resp = await fetch('/calibration/extrinsics/turntable/auto_capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Erreur auto captures');
+    renderTurntableExtrinsics(data);
+    if (result) result.innerHTML = '';
+    if (typeof showToast === 'function') showToast('Captures multi-angle terminees', 'success');
   } catch (e) {
     if (result) result.innerHTML = '<div class="alert alert-danger py-2 mb-0 mt-2">' + e + '</div>';
   } finally {

@@ -1552,10 +1552,51 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             state["last_report"] = None
         return jsonify(_extrinsics_turntable_summary(camera_id))
 
+    def _store_turntable_extrinsics_capture(
+        camera_id: str,
+        board_size: tuple[int, int],
+        angle_deg: float,
+        auto_bracket: bool,
+        calibration_exposure_us: int | None,
+        calibration_gain: float | None,
+    ) -> dict:
+        from scanner.calibration import checkerboard_capture_quality, draw_checkerboard_overlay
+
+        frame, overlay, quality = _capture_checkerboard_candidate(
+            camera_id,
+            board_size,
+            auto_bracket,
+            calibration_exposure_us,
+            calibration_gain,
+        )
+        if not quality.get("accepted"):
+            return {
+                "accepted": False,
+                "quality": quality,
+                "preview_jpeg_base64": _encode_jpeg_base64(overlay),
+            }
+        quality = checkerboard_capture_quality(frame, board_size)
+        overlay = draw_checkerboard_overlay(frame, board_size, quality)
+        with _extrinsics_turntable_lock:
+            state = _extrinsics_turntable_state(camera_id)
+            state["captures"].append(
+                {
+                    "angle_deg": float(angle_deg),
+                    "angle_rad": float(np.deg2rad(angle_deg)),
+                    "image": frame,
+                    "quality": {
+                        key: value
+                        for key, value in quality.items()
+                        if key != "corners"
+                    },
+                    "preview_jpeg_base64": _encode_jpeg_base64(overlay, quality=70),
+                }
+            )
+        return {"accepted": True, "quality": quality}
+
     @app.route("/calibration/extrinsics/turntable/capture", methods=["POST"])
     def calibration_extrinsics_turntable_capture() -> Response:
         """Capture one checkerboard observation at the current turntable angle."""
-        from scanner.calibration import checkerboard_capture_quality, draw_checkerboard_overlay
         from scanner.hardware import HardwareError
 
         if not _manual_allowed():
@@ -1577,44 +1618,132 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return jsonify({"error": f"Invalid turntable extrinsics payload: {exc}"}), 400
 
         try:
-            frame, overlay, quality = _capture_checkerboard_candidate(
+            stored = _store_turntable_extrinsics_capture(
                 camera_id,
                 board_size,
+                angle_deg,
                 auto_bracket,
                 calibration_exposure_us,
                 calibration_gain,
             )
-            if not quality.get("accepted"):
+            if not stored["accepted"]:
                 return jsonify(
                     {
-                        "error": quality.get("status", "checkerboard capture rejected"),
-                        "quality": quality,
-                        "preview_jpeg_base64": _encode_jpeg_base64(overlay),
+                        "error": stored["quality"].get("status", "checkerboard capture rejected"),
+                        "quality": stored["quality"],
+                        "preview_jpeg_base64": stored["preview_jpeg_base64"],
                     }
                 ), 422
-            quality = checkerboard_capture_quality(frame, board_size)
-            overlay = draw_checkerboard_overlay(frame, board_size, quality)
         except HardwareError as exc:
             return jsonify({"error": str(exc)}), 503
         except Exception as exc:
             logger.exception("Turntable extrinsics capture error")
             return jsonify({"error": f"Internal error during capture: {exc}"}), 500
 
+        return jsonify(_extrinsics_turntable_summary(camera_id))
+
+    @app.route("/calibration/extrinsics/turntable/auto_capture", methods=["POST"])
+    def calibration_extrinsics_turntable_auto_capture() -> Response:
+        """Move the turntable through a list of angles and capture the checkerboard."""
+        from scanner.hardware import HardwareError, motor_step
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+
+        payload = request.get_json(silent=True) or {}
+        try:
+            (
+                camera_id,
+                board_size,
+                _square_mm,
+                auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
+            ) = _parse_camera_board_payload()
+            raw_angles = str(payload.get("angles_deg", "0,45,90,135,180,225,270,315"))
+            angles = [float(value.strip()) for value in raw_angles.split(",") if value.strip()]
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid automatic capture payload: {exc}"}), 400
+
+        if not angles:
+            return jsonify({"error": "angles_deg must contain at least one angle"}), 400
+        if abs(angles[0]) > 1e-6:
+            angles.insert(0, 0.0)
+
+        motor_cfg = settings.get("motor", {})
+        effective_steps = int(motor_cfg.get("steps_per_rev", 200)) * int(
+            motor_cfg.get("microstepping", 1)
+        )
+        if effective_steps <= 0:
+            return jsonify({"error": "Invalid motor steps_per_rev/microstepping configuration"}), 500
+        steps_per_degree = effective_steps / 360.0
+        positive_direction = str(settings.get("scan", {}).get("direction", "clockwise"))
+        if positive_direction not in ("clockwise", "counterclockwise"):
+            positive_direction = "clockwise"
+        negative_direction = (
+            "counterclockwise" if positive_direction == "clockwise" else "clockwise"
+        )
+
         with _extrinsics_turntable_lock:
             state = _extrinsics_turntable_state(camera_id)
-            state["captures"].append(
-                {
-                    "angle_deg": angle_deg,
-                    "angle_rad": float(np.deg2rad(angle_deg)),
-                    "image": frame,
-                    "quality": {
-                        key: value
-                        for key, value in quality.items()
-                        if key != "corners"
-                    },
-                    "preview_jpeg_base64": _encode_jpeg_base64(overlay, quality=70),
-                }
+            state["captures"] = []
+            state["last_report"] = None
+
+        current_angle = angles[0]
+        try:
+            stored = _store_turntable_extrinsics_capture(
+                camera_id,
+                board_size,
+                current_angle,
+                auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
             )
+            if not stored["accepted"]:
+                return jsonify(
+                    {
+                        "error": stored["quality"].get("status", "checkerboard capture rejected"),
+                        "quality": stored["quality"],
+                        "preview_jpeg_base64": stored["preview_jpeg_base64"],
+                    }
+                ), 422
+
+            for angle in angles[1:]:
+                delta = float(angle - current_angle)
+                steps = int(round(abs(delta) * steps_per_degree))
+                if steps > 0:
+                    motor_step(
+                        steps,
+                        direction=positive_direction if delta >= 0 else negative_direction,
+                    )
+                    time.sleep(0.2)
+                stored = _store_turntable_extrinsics_capture(
+                    camera_id,
+                    board_size,
+                    angle,
+                    auto_bracket,
+                    calibration_exposure_us,
+                    calibration_gain,
+                )
+                if not stored["accepted"]:
+                    return jsonify(
+                        {
+                            "error": stored["quality"].get(
+                                "status",
+                                "checkerboard capture rejected",
+                            ),
+                            "failed_angle_deg": angle,
+                            "quality": stored["quality"],
+                            "summary": _extrinsics_turntable_summary(camera_id),
+                        }
+                    ), 422
+                current_angle = angle
+        except HardwareError as exc:
+            return jsonify({"error": str(exc), "summary": _extrinsics_turntable_summary(camera_id)}), 503
+        except Exception as exc:
+            logger.exception("Automatic turntable extrinsics capture error")
+            return jsonify({"error": f"Internal error during automatic capture: {exc}"}), 500
+
         return jsonify(_extrinsics_turntable_summary(camera_id))
 
     @app.route("/calibration/extrinsics/turntable/run", methods=["POST"])
