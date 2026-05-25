@@ -17,8 +17,6 @@ from scanner.calibration.camera import (
     load_camera_calibration,
 )
 from scanner.calibration.extrinsics import (
-    calibrate_camera_extrinsics,
-    calibrate_camera_extrinsics_turntable,
     default_extrinsics_path,
     save_camera_extrinsics,
 )
@@ -51,8 +49,6 @@ __all__ = [
     "draw_checkerboard_overlay",
     "approximate_camera_intrinsics",
     "load_camera_calibration",
-    "calibrate_camera_extrinsics",
-    "calibrate_camera_extrinsics_turntable",
     "default_extrinsics_path",
     "save_camera_extrinsics",
     "calibrate_laser_plane",
