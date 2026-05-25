@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import itertools
 from pathlib import Path
 
 import numpy as np
@@ -72,6 +73,8 @@ def aruco_cube_marker_points(
     cube_center_mm: list[float] | tuple[float, float, float] | np.ndarray = (0.0, 15.0, 0.0),
     side_marker_ids: list[int] | tuple[int, int, int, int] = (0, 1, 2, 3),
     top_marker_id: int | None = 4,
+    front_normal_z: float = -1.0,
+    corner_shift: int = 0,
 ) -> np.ndarray | None:
     """Return known platform-frame ArUco marker corners on a rotating cube.
 
@@ -82,12 +85,22 @@ def aruco_cube_marker_points(
     side_ids = [int(value) for value in side_marker_ids]
     half_cube = float(cube_size_mm) / 2.0
     cube_center = np.asarray(cube_center_mm, dtype=np.float64).reshape(3)
-    face_normals = {
-        side_ids[0]: np.array([0.0, 0.0, -1.0], dtype=np.float64),
-        side_ids[1]: np.array([1.0, 0.0, 0.0], dtype=np.float64),
-        side_ids[2]: np.array([0.0, 0.0, 1.0], dtype=np.float64),
-        side_ids[3]: np.array([-1.0, 0.0, 0.0], dtype=np.float64),
-    }
+    front_z = -1.0 if float(front_normal_z) < 0.0 else 1.0
+    if front_z < 0.0:
+        side_normals = (
+            np.array([0.0, 0.0, -1.0], dtype=np.float64),
+            np.array([1.0, 0.0, 0.0], dtype=np.float64),
+            np.array([0.0, 0.0, 1.0], dtype=np.float64),
+            np.array([-1.0, 0.0, 0.0], dtype=np.float64),
+        )
+    else:
+        side_normals = (
+            np.array([0.0, 0.0, 1.0], dtype=np.float64),
+            np.array([-1.0, 0.0, 0.0], dtype=np.float64),
+            np.array([0.0, 0.0, -1.0], dtype=np.float64),
+            np.array([1.0, 0.0, 0.0], dtype=np.float64),
+        )
+    face_normals = {side_id: normal for side_id, normal in zip(side_ids, side_normals)}
     if top_marker_id is not None:
         face_normals[int(top_marker_id)] = np.array([0.0, 1.0, 0.0], dtype=np.float64)
     normal = face_normals.get(int(marker_id))
@@ -96,6 +109,8 @@ def aruco_cube_marker_points(
 
     center_obj = cube_center + normal * half_cube
     corners_obj = _marker_corners_from_face(center_obj, normal, marker_size_mm)
+    if int(corner_shift) % 4:
+        corners_obj = np.roll(corners_obj, -int(corner_shift), axis=0)
     rot = _rotation_y(float(rotation_angle_rad))
     return (rot @ corners_obj.T).T.astype(np.float32)
 
@@ -186,34 +201,21 @@ def solve_camera_extrinsics_from_aruco_cube(
     dictionary_name: str = "DICT_4X4_50",
     side_marker_ids: list[int] | tuple[int, int, int, int] = (0, 1, 2, 3),
     top_marker_id: int | None = 4,
+    auto_layout: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, dict]:
     """Solve camera-to-platform extrinsics from detected ArUco cube observations."""
     cv2, _aruco, _dictionary, _parameters = _get_aruco_api(dictionary_name)
-    object_points: list[np.ndarray] = []
-    image_points: list[np.ndarray] = []
     marker_counts: dict[int, int] = {}
-    used_observations = 0
-
+    observed_marker_ids: set[int] = set()
     for observation in observations:
-        angle = float(observation["angle_rad"])
         for marker in observation.get("markers", []):
             marker_id = int(marker["id"])
-            obj = aruco_cube_marker_points(
-                marker_id,
-                angle,
-                cube_size_mm=cube_size_mm,
-                marker_size_mm=marker_size_mm,
-                cube_center_mm=cube_center_mm,
-                side_marker_ids=side_marker_ids,
-                top_marker_id=top_marker_id,
-            )
-            if obj is None:
-                continue
             img = np.asarray(marker["corners"], dtype=np.float32).reshape(4, 2)
-            object_points.append(obj)
-            image_points.append(img)
             marker_counts[marker_id] = marker_counts.get(marker_id, 0) + 1
-            used_observations += 1
+            if img.shape == (4, 2):
+                observed_marker_ids.add(marker_id)
+
+    used_observations = int(sum(marker_counts.values()))
 
     if used_observations < 3:
         from scanner.calibration import CalibrationError
@@ -222,50 +224,152 @@ def solve_camera_extrinsics_from_aruco_cube(
             f"At least 3 marker observations are required, got {used_observations}"
         )
 
-    obj_all = np.concatenate(object_points, axis=0).astype(np.float32)
-    img_all = np.concatenate(image_points, axis=0).astype(np.float32)
-    if obj_all.shape[0] < 12:
-        from scanner.calibration import CalibrationError
+    def _build_points(
+        angle_sign: float,
+        front_normal_z: float,
+        corner_shifts: dict[int, int],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        object_points: list[np.ndarray] = []
+        image_points: list[np.ndarray] = []
+        for observation in observations:
+            angle = float(observation["angle_rad"]) * float(angle_sign)
+            for marker in observation.get("markers", []):
+                marker_id = int(marker["id"])
+                obj = aruco_cube_marker_points(
+                    marker_id,
+                    angle,
+                    cube_size_mm=cube_size_mm,
+                    marker_size_mm=marker_size_mm,
+                    cube_center_mm=cube_center_mm,
+                    side_marker_ids=side_marker_ids,
+                    top_marker_id=top_marker_id,
+                    front_normal_z=front_normal_z,
+                    corner_shift=corner_shifts.get(marker_id, 0),
+                )
+                if obj is None:
+                    continue
+                img = np.asarray(marker["corners"], dtype=np.float32).reshape(4, 2)
+                object_points.append(obj)
+                image_points.append(img)
+        if not object_points:
+            return np.empty((0, 3), dtype=np.float32), np.empty((0, 2), dtype=np.float32)
+        return (
+            np.concatenate(object_points, axis=0).astype(np.float32),
+            np.concatenate(image_points, axis=0).astype(np.float32),
+        )
 
-        raise CalibrationError(f"At least 12 marker corners are required, got {obj_all.shape[0]}")
+    def _solve_candidate(
+        angle_sign: float,
+        front_normal_z: float,
+        corner_shifts: dict[int, int],
+    ) -> dict | None:
+        obj_all, img_all = _build_points(angle_sign, front_normal_z, corner_shifts)
+        if obj_all.shape[0] < 12:
+            return None
+        ok, rvec, tvec, inliers = cv2.solvePnPRansac(
+            obj_all,
+            img_all,
+            camera_matrix,
+            dist,
+            flags=cv2.SOLVEPNP_ITERATIVE,
+            reprojectionError=3.0,
+            iterationsCount=200,
+            confidence=0.995,
+        )
+        if not ok:
+            return None
+        if inliers is not None and int(len(inliers)) >= 6:
+            inlier_idx = inliers.reshape(-1)
+            cv2.solvePnP(
+                obj_all[inlier_idx],
+                img_all[inlier_idx],
+                camera_matrix,
+                dist,
+                rvec,
+                tvec,
+                useExtrinsicGuess=True,
+                flags=cv2.SOLVEPNP_ITERATIVE,
+            )
+        projected, _ = cv2.projectPoints(obj_all, rvec, tvec, camera_matrix, dist)
+        projected = projected.reshape(-1, 2)
+        errors = np.linalg.norm(projected - img_all, axis=1)
+        if inliers is not None and int(len(inliers)) > 0:
+            inlier_errors = errors[inliers.reshape(-1)]
+            inlier_count = int(len(inliers))
+        else:
+            inlier_errors = errors
+            inlier_count = int(obj_all.shape[0])
+        return {
+            "obj_all": obj_all,
+            "img_all": img_all,
+            "rvec": rvec,
+            "tvec": tvec,
+            "inliers": inliers,
+            "inlier_count": inlier_count,
+            "mean_inlier_error": float(np.mean(inlier_errors)),
+            "mean_error": float(np.mean(errors)),
+            "max_error": float(np.max(errors)),
+            "angle_sign": float(angle_sign),
+            "front_normal_z": float(front_normal_z),
+            "corner_shifts": dict(corner_shifts),
+        }
 
     dist = np.asarray(dist_coeffs, dtype=np.float64).reshape(-1, 1)
     camera_matrix = np.asarray(camera_matrix, dtype=np.float64)
-    ok, rvec, tvec, inliers = cv2.solvePnPRansac(
-        obj_all,
-        img_all,
-        camera_matrix,
-        dist,
-        flags=cv2.SOLVEPNP_ITERATIVE,
-        reprojectionError=3.0,
-        iterationsCount=200,
-        confidence=0.995,
-    )
-    if not ok:
+    ids_for_layout = [
+        marker_id
+        for marker_id in [*side_marker_ids, top_marker_id]
+        if marker_id is not None and int(marker_id) in observed_marker_ids
+    ]
+    if auto_layout:
+        shift_products = itertools.product(range(4), repeat=len(ids_for_layout))
+        angle_signs = (1.0, -1.0)
+        front_normals = (-1.0, 1.0)
+    else:
+        shift_products = [tuple(0 for _ in ids_for_layout)]
+        angle_signs = (1.0,)
+        front_normals = (-1.0,)
+
+    best: dict | None = None
+    candidates_tested = 0
+    for shifts in shift_products:
+        corner_shifts = {int(marker_id): int(shift) for marker_id, shift in zip(ids_for_layout, shifts)}
+        for angle_sign in angle_signs:
+            for front_normal_z in front_normals:
+                candidates_tested += 1
+                candidate = _solve_candidate(angle_sign, front_normal_z, corner_shifts)
+                if candidate is None:
+                    continue
+                candidate_score = (
+                    -candidate["inlier_count"],
+                    candidate["mean_inlier_error"],
+                    candidate["mean_error"],
+                )
+                if best is None:
+                    best = candidate
+                    best_score = candidate_score
+                elif candidate_score < best_score:
+                    best = candidate
+                    best_score = candidate_score
+
+    if best is None:
         from scanner.calibration import CalibrationError
 
-        raise CalibrationError("solvePnPRansac failed for ArUco cube extrinsics")
-    if inliers is not None and int(len(inliers)) >= 6:
-        inlier_idx = inliers.reshape(-1)
-        cv2.solvePnP(
-            obj_all[inlier_idx],
-            img_all[inlier_idx],
-            camera_matrix,
-            dist,
-            rvec,
-            tvec,
-            useExtrinsicGuess=True,
-            flags=cv2.SOLVEPNP_ITERATIVE,
-        )
+        raise CalibrationError("solvePnPRansac failed for all ArUco cube layout candidates")
+
+    obj_all = best["obj_all"]
+    img_all = best["img_all"]
+    rvec = best["rvec"]
+    tvec = best["tvec"]
+    inliers = best["inliers"]
 
     world_to_camera_rotation, _ = cv2.Rodrigues(rvec)
     camera_to_platform_rotation = world_to_camera_rotation.T
     camera_to_platform_translation = (-camera_to_platform_rotation @ tvec.reshape(3)).reshape(3)
 
     projected, _ = cv2.projectPoints(obj_all, rvec, tvec, camera_matrix, dist)
-    projected = projected.reshape(-1, 2)
-    errors = np.linalg.norm(projected - img_all, axis=1)
-    inlier_count = int(len(inliers)) if inliers is not None else int(obj_all.shape[0])
+    errors = np.linalg.norm(projected.reshape(-1, 2) - img_all, axis=1)
+    inlier_count = int(best["inlier_count"])
     report = {
         "method": "aruco_cube_turntable",
         "dictionary": dictionary_name,
@@ -278,8 +382,16 @@ def solve_camera_extrinsics_from_aruco_cube(
         "points": int(obj_all.shape[0]),
         "inliers": inlier_count,
         "mean_reprojection_error_px": float(np.mean(errors)),
+        "mean_inlier_reprojection_error_px": float(best["mean_inlier_error"]),
         "max_reprojection_error_px": float(np.max(errors)),
         "markers": {str(key): int(value) for key, value in sorted(marker_counts.items())},
+        "auto_layout": bool(auto_layout),
+        "layout_candidates_tested": int(candidates_tested),
+        "selected_angle_sign": float(best["angle_sign"]),
+        "selected_front_normal_z": float(best["front_normal_z"]),
+        "selected_corner_shifts": {
+            str(key): int(value) for key, value in sorted(best["corner_shifts"].items())
+        },
         "camera_position_mm": camera_to_platform_translation.tolist(),
     }
     logger.info(
