@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+{% block title %}Scanner 3D - Extrinseque{% endblock %}
+
+{% block extra_head %}
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  .extr-grid {
+    display: grid;
+    grid-template-columns: 340px minmax(0, 1fr);
+    gap: 18px;
+  }
+  .extr-panel {
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    padding: 14px;
+  }
+  .extr-view {
+    height: min(72vh, 720px);
+    min-height: 460px;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    background: #000;
+    overflow: hidden;
+  }
+  .extr-view canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .param-row {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 92px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 9px;
+  }
+  .param-row label {
+    margin: 0;
+    color: #8b949e;
+    font-size: 0.85rem;
+    font-family: monospace;
+  }
+  .extr-stat {
+    color: #8b949e;
+    font-family: monospace;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+  }
+  @media (max-width: 992px) {
+    .extr-grid { grid-template-columns: 1fr; }
+    .extr-view { height: 520px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<script>
+window.EXTR_CAMERAS = {{ cameras | tojson }};
+window.EXTR_DEFAULTS = {{ defaults | tojson }};
+</script>
+
+<div class="extr-grid">
+  <div class="extr-panel">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <i class="bi bi-bounding-box text-info"></i>
+      <strong>Extrinseque</strong>
+    </div>
+
+    <label class="form-label">Camera</label>
+    <select class="form-select mb-3" id="camera-select" onchange="selectCamera(this.value)">
+      {% for cam in cameras %}
+      <option value="{{ cam.id }}">{{ cam.label }} - {{ cam.id }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="row g-2 mb-3">
+      <div class="col-7">
+        <label class="form-label form-label-sm">Photos</label>
+        <input class="form-control form-control-sm" id="capture-steps" type="number" value="80" min="8" max="400" step="1" />
+      </div>
+      <div class="col-5 d-flex align-items-end">
+        <button class="btn btn-info w-100" id="capture-btn" onclick="captureProfiles()">
+          <i class="bi bi-record-circle me-1"></i>Scan
+        </button>
+      </div>
+    </div>
+
+    <hr style="border-color:#30363d;" />
+
+    <div id="param-box">
+      <div class="param-row">
+        <label>X</label>
+        <input type="range" id="x-range" min="-450" max="450" step="1" oninput="syncParam('x', this.value, true)" />
+        <input class="form-control form-control-sm" type="number" id="x-num" step="0.5" oninput="syncParam('x', this.value, true)" />
+      </div>
+      <div class="param-row">
+        <label>Y</label>
+        <input type="range" id="y-range" min="-250" max="250" step="1" oninput="syncParam('y', this.value, true)" />
+        <input class="form-control form-control-sm" type="number" id="y-num" step="0.5" oninput="syncParam('y', this.value, true)" />
+      </div>
+      <div class="param-row">
+        <label>Z</label>
+        <input type="range" id="z-range" min="-500" max="500" step="1" oninput="syncParam('z', this.value, true)" />
+        <input class="form-control form-control-sm" type="number" id="z-num" step="0.5" oninput="syncParam('z', this.value, true)" />
+      </div>
+      <div class="param-row">
+        <label>Yaw</label>
+        <input type="range" id="yaw-range" min="-80" max="80" step="0.1" oninput="syncParam('yaw', this.value, true)" />
+        <input class="form-control form-control-sm" type="number" id="yaw-num" step="0.1" oninput="syncParam('yaw', this.value, true)" />
+      </div>
+      <div class="param-row">
+        <label>Elev</label>
+        <input type="range" id="elev-range" min="-60" max="60" step="0.1" oninput="syncParam('elev', this.value, true)" />
+        <input class="form-control form-control-sm" type="number" id="elev-num" step="0.1" oninput="syncParam('elev', this.value, true)" />
+      </div>
+    </div>
+
+    <div class="d-grid gap-2 mt-3">
+      <button class="btn btn-outline-info" onclick="recomputeCloud()">
+        <i class="bi bi-arrow-repeat me-1"></i>Recalculer
+      </button>
+      <button class="btn btn-outline-primary" onclick="applyExtrinsics(false)">
+        <i class="bi bi-lightning me-1"></i>Appliquer en memoire
+      </button>
+      <button class="btn btn-primary" onclick="applyExtrinsics(true)">
+        <i class="bi bi-save me-1"></i>Sauvegarder settings.yaml
+      </button>
+    </div>
+
+    <hr style="border-color:#30363d;" />
+    <div class="extr-stat" id="status-box">Aucune capture.</div>
+  </div>
+
+  <div class="extr-panel p-0">
+    <div class="extr-view">
+      <canvas id="extr-canvas"></canvas>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+let viewer = null;
+let pointsObj = null;
+let selectedCamera = (window.EXTR_CAMERAS[0] || {}).id || '';
+let debounce = null;
+
+function ensureViewer() {
+  if (viewer) return viewer;
+  const canvas = document.getElementById('extr-canvas');
+  const wrap = canvas.parentElement;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+  renderer.setClearColor(0x000000);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, wrap.clientWidth / wrap.clientHeight, 0.1, 5000);
+  camera.position.set(260, 220, 420);
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(0, 0, 0);
+
+  const grid = new THREE.GridHelper(500, 50, 0x2d6cdf, 0x26313c);
+  grid.rotation.x = Math.PI / 2;
+  scene.add(grid);
+  scene.add(new THREE.AxesHelper(160));
+
+  const xMat = new THREE.LineBasicMaterial({ color: 0xff4040 });
+  const yMat = new THREE.LineBasicMaterial({ color: 0x40ff70 });
+  const zMat = new THREE.LineBasicMaterial({ color: 0x4090ff });
+  scene.add(axisLine([0,0,0], [140,0,0], xMat));
+  scene.add(axisLine([0,0,0], [0,140,0], yMat));
+  scene.add(axisLine([0,0,0], [0,0,140], zMat));
+
+  const light = new THREE.AmbientLight(0xffffff, 1.0);
+  scene.add(light);
+
+  function loop() {
+    requestAnimationFrame(loop);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  loop();
+
+  window.addEventListener('resize', () => {
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    camera.aspect = wrap.clientWidth / wrap.clientHeight;
+    camera.updateProjectionMatrix();
+  });
+  viewer = { renderer, scene, camera, controls };
+  return viewer;
+}
+
+function axisLine(a, b, mat) {
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(a[0], a[1], a[2]),
+    new THREE.Vector3(b[0], b[1], b[2])
+  ]);
+  return new THREE.Line(geo, mat);
+}
+
+function params() {
+  return {
+    camera: selectedCamera,
+    x_mm: parseFloat(document.getElementById('x-num').value || '0'),
+    y_mm: parseFloat(document.getElementById('y-num').value || '0'),
+    z_mm: parseFloat(document.getElementById('z-num').value || '0'),
+    angle_camera_laser_deg: parseFloat(document.getElementById('yaw-num').value || '0'),
+    angle_planxz_camera_deg: parseFloat(document.getElementById('elev-num').value || '0'),
+    max_points: 60000
+  };
+}
+
+window.selectCamera = function(cameraId) {
+  selectedCamera = cameraId;
+  const d = window.EXTR_DEFAULTS[cameraId] || {};
+  const p = d.position_mm || [0, 0, 0];
+  setParam('x', p[0]);
+  setParam('y', p[1]);
+  setParam('z', p[2]);
+  setParam('yaw', d.angle_camera_laser_deg || 0);
+  setParam('elev', d.angle_planxz_camera_deg || 0);
+  window.recomputeCloud();
+};
+
+function setParam(name, value) {
+  document.getElementById(name + '-range').value = value;
+  document.getElementById(name + '-num').value = Number(value).toFixed(name === 'yaw' || name === 'elev' ? 1 : 1);
+}
+
+window.syncParam = function(name, value, live) {
+  document.getElementById(name + '-range').value = value;
+  document.getElementById(name + '-num').value = value;
+  if (live) {
+    clearTimeout(debounce);
+    debounce = setTimeout(window.recomputeCloud, 120);
+  }
+};
+
+window.captureProfiles = async function() {
+  const btn = document.getElementById('capture-btn');
+  const box = document.getElementById('status-box');
+  btn.disabled = true;
+  box.textContent = 'Capture en cours...';
+  try {
+    const resp = await fetch('/extrinsics/capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ n_steps: parseInt(document.getElementById('capture-steps').value || '80', 10) })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'capture failed');
+    box.textContent = JSON.stringify(data.captures, null, 2);
+    await window.recomputeCloud();
+  } catch (err) {
+    box.textContent = 'Erreur capture: ' + err;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+window.recomputeCloud = async function() {
+  if (!selectedCamera) return;
+  const box = document.getElementById('status-box');
+  try {
+    const resp = await fetch('/extrinsics/cloud', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params())
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      box.textContent = data.error || 'Aucune capture.';
+      return;
+    }
+    renderPoints(data.points);
+    box.textContent =
+      selectedCamera + '\\n' +
+      'points: ' + data.count + '\\n' +
+      'position: ' + JSON.stringify(data.translation_mm.map(v => Number(v).toFixed(1))) + '\\n' +
+      'bounds: ' + JSON.stringify(data.bounds, null, 2);
+  } catch (err) {
+    box.textContent = 'Erreur recalcul: ' + err;
+  }
+};
+
+function renderPoints(points) {
+  const v = ensureViewer();
+  if (pointsObj) {
+    v.scene.remove(pointsObj);
+    pointsObj.geometry.dispose();
+    pointsObj.material.dispose();
+  }
+  const arr = new Float32Array(points.length * 3);
+  for (let i = 0; i < points.length; i++) {
+    arr[i * 3] = points[i][0];
+    arr[i * 3 + 1] = points[i][1];
+    arr[i * 3 + 2] = points[i][2];
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  pointsObj = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: selectedCamera === 'right' ? 0x00d4ff : 0xffc857,
+    size: 1.8,
+    sizeAttenuation: true
+  }));
+  v.scene.add(pointsObj);
+}
+
+window.applyExtrinsics = async function(save) {
+  const box = document.getElementById('status-box');
+  try {
+    const payload = params();
+    payload.save = !!save;
+    const resp = await fetch('/extrinsics/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'apply failed');
+    box.textContent = (save ? 'Sauvegarde OK' : 'Application memoire OK') + '\\n' + JSON.stringify(payload, null, 2);
+  } catch (err) {
+    box.textContent = 'Erreur apply: ' + err;
+  }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  ensureViewer();
+  window.selectCamera(selectedCamera);
+});
+</script>
+{% endblock %}

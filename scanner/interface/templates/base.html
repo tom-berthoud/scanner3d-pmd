@@ -52,6 +52,9 @@
     <a href="/calibration" {% if request.path.startswith('/calibration') %}class="active"{% endif %}>
       <i class="bi bi-sliders me-1"></i>Calibration
     </a>
+    <a href="/extrinsics" {% if request.path.startswith('/extrinsics') %}class="active"{% endif %}>
+      <i class="bi bi-bounding-box me-1"></i>Extrinseque
+    </a>
     <a href="/camera-config" {% if request.path.startswith('/camera-config') %}class="active"{% endif %}>
       <i class="bi bi-camera-video me-1"></i>Cam Config
     </a>
@@ -76,6 +79,7 @@
   <h6>Navigation</h6>
   <a href="/"><i class="bi bi-play-circle"></i> Scan</a>
   <a href="/calibration"><i class="bi bi-sliders"></i> Calibration</a>
+  <a href="/extrinsics"><i class="bi bi-bounding-box"></i> Extrinseque</a>
   <a href="/camera-config"><i class="bi bi-camera-video"></i> Cam Config</a>
   <a href="/manual"><i class="bi bi-tools"></i> Manuel</a>
   <div class="ip-info" id="ip-info">
@@ -92,6 +96,10 @@
   <a href="/calibration" {% if request.path.startswith('/calibration') %}class="active"{% endif %}>
     <i class="bi bi-sliders"></i>
     <span>Calibration</span>
+  </a>
+  <a href="/extrinsics" {% if request.path.startswith('/extrinsics') %}class="active"{% endif %}>
+    <i class="bi bi-bounding-box"></i>
+    <span>Extr.</span>
   </a>
   <a href="/camera-config" {% if request.path.startswith('/camera-config') %}class="active"{% endif %}>
     <i class="bi bi-camera-video"></i>

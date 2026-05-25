@@ -113,6 +113,12 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         "captures": [],
         "last_result": None,
     }
+    _extrinsics_debug_lock = threading.Lock()
+    _extrinsics_debug_session: dict = {
+        "captures": {},
+        "last_cloud": {},
+        "last_error": None,
+    }
 
     def _project_path(path: str | None) -> str | None:
         if not path:
@@ -230,6 +236,144 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             raw = source.get(f"{prefix}_{axis}", fallback)
             values.append(float(raw))
         return values
+
+    def _platform_axis_point():
+        import numpy as np
+
+        platform_path = Path(__file__).resolve().parent.parent.parent / "config" / "platform.yaml"
+        if not platform_path.exists():
+            return None
+        try:
+            with open(platform_path, "r", encoding="utf-8") as fh:
+                data = yaml.safe_load(fh) or {}
+            axis = data.get("rotation_axis_point_mm")
+            if axis is None:
+                return None
+            return np.asarray(axis, dtype=np.float64).reshape(3)
+        except Exception:
+            return None
+
+    def _manual_extrinsics_from_payload(payload: dict) -> tuple:
+        import numpy as np
+        from scanner.calibration.multi_camera import _load_extrinsics
+
+        position = [
+            float(payload.get("x_mm", 0.0)),
+            float(payload.get("y_mm", 0.0)),
+            float(payload.get("z_mm", 0.0)),
+        ]
+        yaw = float(payload.get("angle_camera_laser_deg", 0.0))
+        elevation = float(payload.get("angle_planxz_camera_deg", 0.0))
+        rotation, translation = _load_extrinsics(
+            {
+                "extrinsics": {
+                    "position_mm": position,
+                    "angle_camera_laser_deg": yaw,
+                    "angle_planxz_camera_deg": elevation,
+                    "up_mm": [0.0, 1.0, 0.0],
+                }
+            }
+        )
+        return np.asarray(rotation, dtype=np.float64), np.asarray(translation, dtype=np.float64)
+
+    def _extrinsics_debug_defaults() -> dict:
+        result = {}
+        from scanner.calibration import camera_configs
+
+        for cam_cfg in camera_configs(settings):
+            camera_id = str(cam_cfg.get("id", "main"))
+            extr = cam_cfg.get("extrinsics", {}) or {}
+            pos = list(extr.get("position_mm", [0.0, 0.0, 0.0]))
+            result[camera_id] = {
+                "camera_id": camera_id,
+                "label": _camera_label(camera_id),
+                "position_mm": [float(pos[0]), float(pos[1]), float(pos[2])],
+                "angle_camera_laser_deg": float(extr.get("angle_camera_laser_deg", extr.get("yaw_deg", 0.0))),
+                "angle_planxz_camera_deg": float(
+                    extr.get(
+                        "angle_planxz_camera_deg",
+                        extr.get("elevation_deg", extr.get("pitch_deg", 0.0)),
+                    )
+                ),
+            }
+        return result
+
+    def _decimate_points(points, max_points: int = 60000):
+        import numpy as np
+
+        if points.shape[0] <= max_points:
+            return points
+        idx = np.linspace(0, points.shape[0] - 1, max_points).astype(np.int64)
+        return points[idx]
+
+    def _settings_update_manual_extrinsics(camera_id: str, payload: dict) -> None:
+        """Update only one camera manual extrinsics block in config/settings.yaml."""
+        lines = Path(cfg_file).read_text(encoding="utf-8").splitlines()
+        in_camera = False
+        in_extrinsics = False
+        camera_indent = ""
+        extr_indent = ""
+        found_camera = False
+        replaced = {"position": False, "yaw": False, "elevation": False}
+        pos = [float(payload["x_mm"]), float(payload["y_mm"]), float(payload["z_mm"])]
+        yaw = float(payload["angle_camera_laser_deg"])
+        elevation = float(payload["angle_planxz_camera_deg"])
+        out: list[str] = []
+
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("- id:"):
+                current_id = stripped.split(":", 1)[1].strip()
+                in_camera = current_id == str(camera_id)
+                found_camera = found_camera or in_camera
+                in_extrinsics = False
+                camera_indent = line[: len(line) - len(line.lstrip())]
+            elif in_camera and line.startswith(camera_indent + "- ") and not stripped.startswith("- id:"):
+                in_camera = False
+                in_extrinsics = False
+
+            if in_camera and stripped == "extrinsics:":
+                in_extrinsics = True
+                extr_indent = line[: len(line) - len(line.lstrip())] + "  "
+                out.append(line)
+                continue
+
+            if in_extrinsics:
+                current_indent_len = len(line) - len(line.lstrip())
+                if stripped and current_indent_len <= len(extr_indent) - 2:
+                    in_extrinsics = False
+                elif stripped.startswith("position_mm:"):
+                    out.append(
+                        f"{extr_indent}position_mm: "
+                        f"[{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]"
+                    )
+                    replaced["position"] = True
+                    continue
+                elif stripped.startswith("angle_camera_laser_deg:"):
+                    out.append(f"{extr_indent}angle_camera_laser_deg: {yaw:.3f}")
+                    replaced["yaw"] = True
+                    continue
+                elif stripped.startswith("angle_planxz_camera_deg:"):
+                    out.append(f"{extr_indent}angle_planxz_camera_deg: {elevation:.3f}")
+                    replaced["elevation"] = True
+                    continue
+
+            out.append(line)
+
+        if not found_camera:
+            raise ValueError(f"Unknown camera id: {camera_id}")
+        if not all(replaced.values()):
+            raise ValueError(f"Could not find complete extrinsics block for {camera_id}")
+
+        Path(cfg_file).write_text("\n".join(out) + "\n", encoding="utf-8")
+
+        for cam_cfg in settings.get("cameras", []):
+            if str(cam_cfg.get("id")) == str(camera_id):
+                extr = cam_cfg.setdefault("extrinsics", {})
+                extr["position_mm"] = pos
+                extr["angle_camera_laser_deg"] = yaw
+                extr["angle_planxz_camera_deg"] = elevation
+                break
 
 
     def _encode_jpeg_base64(frame, quality: int = 85) -> str:
@@ -829,6 +973,210 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             except HardwareError as exc:
                 result[camera_id] = {"label": cam["label"], "type": cam["type"], "error": str(exc)}
         return jsonify(result)
+
+    @app.route("/extrinsics")
+    def extrinsics_page() -> str:
+        return render_template(
+            "extrinsics.html",
+            cameras=_camera_view_configs(),
+            defaults=_extrinsics_debug_defaults(),
+        )
+
+    @app.route("/extrinsics/status")
+    def extrinsics_status() -> Response:
+        with _extrinsics_debug_lock:
+            captures = {
+                camera_id: {
+                    "profiles": len(data.get("profiles", [])),
+                    "raw_points": int(sum(item["line_pixels"].shape[0] for item in data.get("profiles", []))),
+                }
+                for camera_id, data in _extrinsics_debug_session.get("captures", {}).items()
+            }
+            last_cloud = dict(_extrinsics_debug_session.get("last_cloud", {}))
+            last_error = _extrinsics_debug_session.get("last_error")
+        return jsonify(
+            {
+                "defaults": _extrinsics_debug_defaults(),
+                "captures": captures,
+                "last_cloud": last_cloud,
+                "last_error": last_error,
+            }
+        )
+
+    @app.route("/extrinsics/capture", methods=["POST"])
+    def extrinsics_capture() -> Response:
+        """Capture laser profiles once and keep extracted pixels for fast retuning."""
+        from scanner.acquisition import run_capture_sequence_multi
+        from scanner.calibration import CalibrationError, camera_config_by_id, load_camera_model
+        from scanner.hardware import HardwareError
+        from scanner.processing import extract_laser_line
+
+        if not _manual_allowed():
+            return jsonify({"error": "Extrinsics tuning disabled while scan is running"}), 409
+
+        payload = request.get_json(silent=True) or {}
+        n_steps = max(4, min(400, int(payload.get("n_steps", settings.get("scan", {}).get("n_steps", 200)))))
+        proc_cfg = settings.get("processing", {})
+        default_threshold = int(proc_cfg.get("laser_threshold", 180))
+        min_pixels = int(payload.get("min_pixels", proc_cfg.get("min_line_pixels", 1)))
+        subpixel = bool(proc_cfg.get("subpixel", True))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
+        angle_step_rad = 2.0 * 3.141592653589793 / float(n_steps)
+
+        try:
+            camera_models = {}
+            for cam in _camera_view_configs():
+                camera_id = cam["id"]
+                camera_models[camera_id] = load_camera_model(settings, camera_id)
+            frames_by_camera = run_capture_sequence_multi(n_steps, settings, save_frames=True)
+        except (HardwareError, CalibrationError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 422
+        except Exception as exc:
+            logger.exception("Extrinsics debug capture failed")
+            return jsonify({"error": str(exc)}), 500
+
+        captures: dict = {}
+        summary: dict = {}
+        for camera_id, frames in frames_by_camera.items():
+            try:
+                cam_cfg = camera_config_by_id(settings, camera_id)
+            except KeyError:
+                cam_cfg = {}
+            threshold = int(cam_cfg.get("laser_threshold", default_threshold))
+            mask_rects = cam_cfg.get("laser_mask", []) or []
+            sampling = _sampling_config(cam_cfg)
+            camera_matrix, dist_coeffs, laser_plane, _rot, _trans = camera_models[camera_id]
+            profiles = []
+            detected = 0
+            for idx, frame in enumerate(frames):
+                line_px = extract_laser_line(
+                    frame,
+                    threshold=threshold,
+                    min_pixels=min_pixels,
+                    subpixel=subpixel,
+                    mode=extraction_mode,
+                    camera_id=camera_id,
+                    mask_rects=mask_rects,
+                    **sampling,
+                )
+                detected += int(line_px.shape[0])
+                profiles.append(
+                    {
+                        "angle_rad": float(idx * angle_step_rad),
+                        "line_pixels": line_px,
+                    }
+                )
+            captures[camera_id] = {
+                "camera_matrix": camera_matrix,
+                "dist_coeffs": dist_coeffs,
+                "laser_plane": laser_plane,
+                "profiles": profiles,
+            }
+            summary[camera_id] = {"profiles": len(profiles), "raw_points": detected}
+
+        with _extrinsics_debug_lock:
+            _extrinsics_debug_session["captures"] = captures
+            _extrinsics_debug_session["last_cloud"] = {}
+            _extrinsics_debug_session["last_error"] = None
+        return jsonify({"status": "ok", "n_steps": n_steps, "captures": summary})
+
+    @app.route("/extrinsics/cloud", methods=["POST"])
+    def extrinsics_cloud() -> Response:
+        """Recompute one camera cloud from cached profile pixels and proposed extrinsics."""
+        import numpy as np
+        from scanner.processing import triangulate
+
+        payload = request.get_json(silent=True) or {}
+        camera_id = str(payload.get("camera", ""))
+        if not camera_id:
+            return jsonify({"error": "camera is required"}), 400
+
+        with _extrinsics_debug_lock:
+            session = _extrinsics_debug_session.get("captures", {}).get(camera_id)
+        if not session:
+            return jsonify({"error": f"No cached capture for camera {camera_id}. Capture first."}), 409
+
+        try:
+            cam_rot, cam_trans = _manual_extrinsics_from_payload(payload)
+            points_parts = []
+            axis_point = _platform_axis_point()
+            for item in session["profiles"]:
+                line_px = item["line_pixels"]
+                if line_px.shape[0] == 0:
+                    continue
+                pts = triangulate(
+                    line_px,
+                    session["camera_matrix"],
+                    session["dist_coeffs"],
+                    session["laser_plane"],
+                    float(item["angle_rad"]),
+                    axis_point=axis_point,
+                    camera_to_platform_rotation=cam_rot,
+                    camera_to_platform_translation=cam_trans,
+                )
+                if pts.shape[0] > 0:
+                    points_parts.append(pts)
+            if points_parts:
+                cloud = np.vstack(points_parts).astype(np.float64)
+            else:
+                cloud = np.empty((0, 3), dtype=np.float64)
+            cloud = _decimate_points(cloud, int(payload.get("max_points", 60000)))
+            bounds = None
+            if cloud.shape[0] > 0:
+                bounds = {
+                    "min": cloud.min(axis=0).tolist(),
+                    "max": cloud.max(axis=0).tolist(),
+                }
+            result = {
+                "status": "ok",
+                "camera": camera_id,
+                "points": cloud.tolist(),
+                "count": int(cloud.shape[0]),
+                "bounds": bounds,
+                "rotation_matrix": cam_rot.tolist(),
+                "translation_mm": cam_trans.tolist(),
+            }
+            with _extrinsics_debug_lock:
+                _extrinsics_debug_session.setdefault("last_cloud", {})[camera_id] = {
+                    "count": result["count"],
+                    "bounds": bounds,
+                }
+                _extrinsics_debug_session["last_error"] = None
+            return jsonify(result)
+        except Exception as exc:
+            logger.exception("Extrinsics cloud recompute failed")
+            with _extrinsics_debug_lock:
+                _extrinsics_debug_session["last_error"] = str(exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/extrinsics/apply", methods=["POST"])
+    def extrinsics_apply() -> Response:
+        """Apply proposed manual extrinsics to memory and optionally settings.yaml."""
+        payload = request.get_json(silent=True) or {}
+        camera_id = str(payload.get("camera", ""))
+        if not camera_id:
+            return jsonify({"error": "camera is required"}), 400
+        save = bool(payload.get("save", False))
+        try:
+            _manual_extrinsics_from_payload(payload)
+            for cam_cfg in settings.get("cameras", []):
+                if str(cam_cfg.get("id")) == camera_id:
+                    extr = cam_cfg.setdefault("extrinsics", {})
+                    extr["position_mm"] = [
+                        float(payload["x_mm"]),
+                        float(payload["y_mm"]),
+                        float(payload["z_mm"]),
+                    ]
+                    extr["angle_camera_laser_deg"] = float(payload["angle_camera_laser_deg"])
+                    extr["angle_planxz_camera_deg"] = float(payload["angle_planxz_camera_deg"])
+                    break
+            else:
+                return jsonify({"error": f"Unknown camera id: {camera_id}"}), 404
+            if save:
+                _settings_update_manual_extrinsics(camera_id, payload)
+            return jsonify({"status": "ok", "camera": camera_id, "saved": save})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @app.route("/camera-config/apply", methods=["POST"])
     def camera_config_apply() -> Response:
