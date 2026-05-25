@@ -23,6 +23,7 @@
     padding: 14px;
   }
   .extr-view {
+    position: relative;
     height: min(72vh, 720px);
     min-height: 460px;
     border: 1px solid #30363d;
@@ -35,6 +36,17 @@
     height: 100%;
     display: block;
   }
+  .axis-label {
+    color: #d7e8ff;
+    font: 11px/1.1 monospace;
+    text-shadow: 0 0 4px #000, 0 0 8px #000;
+    pointer-events: none;
+    user-select: none;
+  }
+  .axis-label.axis-x { color: #ff6b57; }
+  .axis-label.axis-y { color: #5dff8a; }
+  .axis-label.axis-z { color: #66a3ff; }
+  .axis-label.grid-step { color: #aeb8c4; }
   .param-row {
     display: grid;
     grid-template-columns: 42px minmax(0, 1fr) 92px;
@@ -151,6 +163,7 @@ window.EXTR_DEFAULTS = {{ defaults | tojson }};
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 let viewer = null;
 let pointsObj = null;
@@ -165,6 +178,13 @@ function ensureViewer() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(wrap.clientWidth, wrap.clientHeight);
   renderer.setClearColor(0x000000);
+  const labelRenderer = new CSS2DRenderer();
+  labelRenderer.setSize(wrap.clientWidth, wrap.clientHeight);
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.left = '0';
+  labelRenderer.domElement.style.top = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  wrap.appendChild(labelRenderer.domElement);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, wrap.clientWidth / wrap.clientHeight, 0.1, 5000);
@@ -174,17 +194,7 @@ function ensureViewer() {
   controls.dampingFactor = 0.08;
   controls.target.set(0, 0, 0);
 
-  const grid = new THREE.GridHelper(500, 50, 0x2d6cdf, 0x26313c);
-  grid.rotation.x = Math.PI / 2;
-  scene.add(grid);
-  scene.add(new THREE.AxesHelper(160));
-
-  const xMat = new THREE.LineBasicMaterial({ color: 0xff4040 });
-  const yMat = new THREE.LineBasicMaterial({ color: 0x40ff70 });
-  const zMat = new THREE.LineBasicMaterial({ color: 0x4090ff });
-  scene.add(axisLine([0,0,0], [140,0,0], xMat));
-  scene.add(axisLine([0,0,0], [0,140,0], yMat));
-  scene.add(axisLine([0,0,0], [0,0,140], zMat));
+  addVolumeReference(scene);
 
   const light = new THREE.AmbientLight(0xffffff, 1.0);
   scene.add(light);
@@ -193,24 +203,94 @@ function ensureViewer() {
     requestAnimationFrame(loop);
     controls.update();
     renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
   }
   loop();
 
   window.addEventListener('resize', () => {
     renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    labelRenderer.setSize(wrap.clientWidth, wrap.clientHeight);
     camera.aspect = wrap.clientWidth / wrap.clientHeight;
     camera.updateProjectionMatrix();
   });
-  viewer = { renderer, scene, camera, controls };
+  viewer = { renderer, labelRenderer, scene, camera, controls };
   return viewer;
 }
 
-function axisLine(a, b, mat) {
-  const geo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(a[0], a[1], a[2]),
-    new THREE.Vector3(b[0], b[1], b[2])
-  ]);
-  return new THREE.Line(geo, mat);
+function addVolumeReference(scene) {
+  const step = 10;
+  const major = 50;
+  const minX = -250;
+  const maxX = 250;
+  const minY = -150;
+  const maxY = 250;
+  const minZ = -250;
+  const maxZ = 250;
+  const minor = [];
+  const majorLines = [];
+
+  function pushLine(list, a, b) {
+    list.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+  }
+
+  for (let x = minX; x <= maxX; x += step) {
+    for (let y = minY; y <= maxY; y += step) {
+      pushLine((x % major === 0 || y % major === 0) ? majorLines : minor, [x, y, minZ], [x, y, maxZ]);
+    }
+    for (let z = minZ; z <= maxZ; z += step) {
+      pushLine((x % major === 0 || z % major === 0) ? majorLines : minor, [x, minY, z], [x, maxY, z]);
+    }
+  }
+  for (let y = minY; y <= maxY; y += step) {
+    for (let z = minZ; z <= maxZ; z += step) {
+      pushLine((y % major === 0 || z % major === 0) ? majorLines : minor, [minX, y, z], [maxX, y, z]);
+    }
+  }
+
+  scene.add(lineSegments(minor, 0x16202a, 0.26));
+  scene.add(lineSegments(majorLines, 0x2e3f52, 0.52));
+
+  const axisLength = 300;
+  scene.add(lineSegments([0,0,0, axisLength,0,0], 0xff4f3a, 1.0));
+  scene.add(lineSegments([0,0,0, 0,axisLength,0], 0x50ff78, 1.0));
+  scene.add(lineSegments([0,0,0, 0,0,axisLength], 0x4f8cff, 1.0));
+
+  scene.add(textLabel('X', [axisLength + 16, 0, 0], 'axis-label axis-x'));
+  scene.add(textLabel('Y', [0, axisLength + 16, 0], 'axis-label axis-y'));
+  scene.add(textLabel('Z', [0, 0, axisLength + 16], 'axis-label axis-z'));
+  scene.add(textLabel('grille 10 mm', [minX, maxY + 18, minZ], 'axis-label grid-step'));
+
+  for (let v = -250; v <= 250; v += major) {
+    if (v !== 0) {
+      scene.add(textLabel(String(v), [v, -8, 0], 'axis-label axis-x'));
+      scene.add(textLabel(String(v), [0, -8, v], 'axis-label axis-z'));
+    }
+  }
+  for (let v = -150; v <= 250; v += major) {
+    if (v !== 0) scene.add(textLabel(String(v), [-10, v, 0], 'axis-label axis-y'));
+  }
+  scene.add(textLabel('0', [-12, -12, 0], 'axis-label'));
+}
+
+function lineSegments(values, color, opacity) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(values, 3));
+  const mat = new THREE.LineBasicMaterial({
+    color,
+    transparent: opacity < 1,
+    opacity,
+    depthWrite: false
+  });
+  return new THREE.LineSegments(geo, mat);
+}
+
+function textLabel(text, position, className) {
+  const div = document.createElement('div');
+  div.className = className;
+  div.textContent = text;
+  const label = new CSS2DObject(div);
+  label.position.set(position[0], position[1], position[2]);
+  return label;
 }
 
 function params() {
