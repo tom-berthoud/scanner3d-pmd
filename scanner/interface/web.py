@@ -1416,6 +1416,19 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 calibration_gain,
             )
             output_path = _project_path(cam_cfg.get("extrinsics_path")) or default_extrinsics_path(camera_id)
+            initial_rotation = None
+            initial_translation = None
+            try:
+                from scanner.calibration.multi_camera import _look_at_extrinsics
+
+                if isinstance(cam_cfg.get("extrinsics"), dict) and "position_mm" in cam_cfg["extrinsics"]:
+                    initial_rotation, initial_translation = _look_at_extrinsics(cam_cfg["extrinsics"])
+            except Exception:
+                logger.warning(
+                    "Camera %s extrinsics mechanical prior is invalid; solving without prior",
+                    camera_id,
+                    exc_info=True,
+                )
             rotation, translation, report = calibrate_camera_extrinsics(
                 frame,
                 camera_matrix,
@@ -1426,6 +1439,15 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 board_col_axis,
                 board_row_axis,
                 output_path=output_path,
+                initial_camera_to_platform_rotation=initial_rotation,
+                initial_camera_to_platform_translation=initial_translation,
+                max_prior_distance_mm=float(cam_cfg.get("extrinsics_prior_max_distance_mm", 120.0)),
+                max_translation_fallback_distance_mm=float(
+                    cam_cfg.get("extrinsics_translation_fallback_max_distance_mm", 250.0)
+                ),
+                max_fixed_translation_reprojection_px=float(
+                    cam_cfg.get("extrinsics_fixed_translation_max_reprojection_px", 5.0)
+                ),
             )
             return jsonify(
                 {
@@ -1443,7 +1465,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except HardwareError as exc:
             return jsonify({"error": str(exc)}), 503
         except CalibrationError as exc:
-            return jsonify({"error": str(exc)}), 422
+            payload = {"error": str(exc)}
+            report = getattr(exc, "report", None)
+            if report is not None:
+                payload["report"] = report
+            return jsonify(payload), 422
         except Exception as exc:
             logger.exception("Extrinsics calibration error")
             return jsonify({"error": f"Internal error during extrinsics calibration: {exc}"}), 500
