@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import itertools
 from pathlib import Path
 
 import numpy as np
@@ -202,6 +201,7 @@ def solve_camera_extrinsics_from_aruco_cube(
     side_marker_ids: list[int] | tuple[int, int, int, int] = (0, 1, 2, 3),
     top_marker_id: int | None = 4,
     auto_layout: bool = True,
+    angle_offset_deg: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict]:
     """Solve camera-to-platform extrinsics from detected ArUco cube observations."""
     cv2, _aruco, _dictionary, _parameters = _get_aruco_api(dictionary_name)
@@ -226,13 +226,14 @@ def solve_camera_extrinsics_from_aruco_cube(
 
     def _build_points(
         angle_sign: float,
+        angle_offset_rad: float,
         front_normal_z: float,
         corner_shifts: dict[int, int],
     ) -> tuple[np.ndarray, np.ndarray]:
         object_points: list[np.ndarray] = []
         image_points: list[np.ndarray] = []
         for observation in observations:
-            angle = float(observation["angle_rad"]) * float(angle_sign)
+            angle = float(observation["angle_rad"]) * float(angle_sign) + float(angle_offset_rad)
             for marker in observation.get("markers", []):
                 marker_id = int(marker["id"])
                 obj = aruco_cube_marker_points(
@@ -260,10 +261,16 @@ def solve_camera_extrinsics_from_aruco_cube(
 
     def _solve_candidate(
         angle_sign: float,
+        angle_offset_rad: float,
         front_normal_z: float,
         corner_shifts: dict[int, int],
     ) -> dict | None:
-        obj_all, img_all = _build_points(angle_sign, front_normal_z, corner_shifts)
+        obj_all, img_all = _build_points(
+            angle_sign,
+            angle_offset_rad,
+            front_normal_z,
+            corner_shifts,
+        )
         if obj_all.shape[0] < 12:
             return None
         ok, rvec, tvec, inliers = cv2.solvePnPRansac(
@@ -310,6 +317,7 @@ def solve_camera_extrinsics_from_aruco_cube(
             "mean_error": float(np.mean(errors)),
             "max_error": float(np.max(errors)),
             "angle_sign": float(angle_sign),
+            "angle_offset_rad": float(angle_offset_rad),
             "front_normal_z": float(front_normal_z),
             "corner_shifts": dict(corner_shifts),
         }
@@ -321,23 +329,92 @@ def solve_camera_extrinsics_from_aruco_cube(
         for marker_id in [*side_marker_ids, top_marker_id]
         if marker_id is not None and int(marker_id) in observed_marker_ids
     ]
-    if auto_layout:
-        shift_products = itertools.product(range(4), repeat=len(ids_for_layout))
+    if auto_layout and angle_offset_deg is None:
+        coarse_offsets = np.deg2rad(np.arange(0.0, 360.0, 5.0, dtype=np.float64))
+        angle_signs = (1.0, -1.0)
+        front_normals = (-1.0, 1.0)
+    elif angle_offset_deg is None:
+        coarse_offsets = np.array([0.0], dtype=np.float64)
         angle_signs = (1.0, -1.0)
         front_normals = (-1.0, 1.0)
     else:
-        shift_products = [tuple(0 for _ in ids_for_layout)]
+        coarse_offsets = np.array([np.deg2rad(float(angle_offset_deg))], dtype=np.float64)
         angle_signs = (1.0,)
         front_normals = (-1.0,)
 
     best: dict | None = None
     candidates_tested = 0
-    for shifts in shift_products:
-        corner_shifts = {int(marker_id): int(shift) for marker_id, shift in zip(ids_for_layout, shifts)}
+    zero_corner_shifts = {int(marker_id): 0 for marker_id in ids_for_layout}
+
+    def _try_candidate(
+        angle_sign: float,
+        angle_offset_rad: float,
+        front_normal_z: float,
+        corner_shifts: dict[int, int],
+    ) -> None:
+        nonlocal best, best_score, candidates_tested
+        candidates_tested += 1
+        candidate = _solve_candidate(
+            angle_sign,
+            angle_offset_rad,
+            front_normal_z,
+            corner_shifts,
+        )
+        if candidate is None:
+            return
+        candidate_score = (
+            -candidate["inlier_count"],
+            candidate["mean_inlier_error"],
+            candidate["mean_error"],
+        )
+        if best is None:
+            best = candidate
+            best_score = candidate_score
+        elif candidate_score < best_score:
+            best = candidate
+            best_score = candidate_score
+
+    best_score = (0, float("inf"), float("inf"))
+    for angle_offset_rad in coarse_offsets:
         for angle_sign in angle_signs:
             for front_normal_z in front_normals:
+                _try_candidate(
+                    angle_sign,
+                    float(angle_offset_rad),
+                    front_normal_z,
+                    zero_corner_shifts,
+                )
+
+    if auto_layout and angle_offset_deg is None and best is not None:
+        base_offset = float(best["angle_offset_rad"])
+        fine_offsets = base_offset + np.deg2rad(np.arange(-5.0, 5.01, 0.5, dtype=np.float64))
+        angle_sign = float(best["angle_sign"])
+        front_normal_z = float(best["front_normal_z"])
+        for angle_offset_rad in fine_offsets:
+            _try_candidate(
+                angle_sign,
+                float(angle_offset_rad),
+                front_normal_z,
+                zero_corner_shifts,
+            )
+
+        # If the user mounted one or more tags rotated by 90-degree steps, try
+        # single-marker corner shifts around the best angular convention. This
+        # keeps runtime bounded while covering the common physical mistake.
+        current_best_offset = float(best["angle_offset_rad"])
+        current_best_sign = float(best["angle_sign"])
+        current_best_front = float(best["front_normal_z"])
+        for marker_id in ids_for_layout:
+            for shift in (1, 2, 3):
+                corner_shifts = dict(zero_corner_shifts)
+                corner_shifts[int(marker_id)] = shift
                 candidates_tested += 1
-                candidate = _solve_candidate(angle_sign, front_normal_z, corner_shifts)
+                candidate = _solve_candidate(
+                    current_best_sign,
+                    current_best_offset,
+                    current_best_front,
+                    corner_shifts,
+                )
                 if candidate is None:
                     continue
                 candidate_score = (
@@ -388,6 +465,9 @@ def solve_camera_extrinsics_from_aruco_cube(
         "auto_layout": bool(auto_layout),
         "layout_candidates_tested": int(candidates_tested),
         "selected_angle_sign": float(best["angle_sign"]),
+        "selected_angle_offset_deg": float(
+            (np.rad2deg(float(best["angle_offset_rad"])) + 360.0) % 360.0
+        ),
         "selected_front_normal_z": float(best["front_normal_z"]),
         "selected_corner_shifts": {
             str(key): int(value) for key, value in sorted(best["corner_shifts"].items())
