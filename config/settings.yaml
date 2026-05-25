@@ -95,10 +95,10 @@ cameras:
       # +Z follows the laser axis from the laser toward the turntable center.
       # +X points right when looking from the laser toward the turntable.
       # +Y is vertical up and is the turntable rotation axis.
-      position_mm: [-155.0, -20.0, -286.5]
+      position_mm: [-155.0, -20.0, -260.0]
       # Approximate optical-axis target from measured camera position and
       # mechanical angles: yaw +30 deg, elevation +20 deg.
-      target_mm: [0.0, 92.8, -18.0]
+      target_mm: [0.0, 92.8, 8.5]
       up_mm: [0.0, 1.0, 0.0]
 
 laser:
