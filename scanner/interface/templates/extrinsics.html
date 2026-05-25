@@ -260,7 +260,10 @@ window.captureProfiles = async function() {
     const resp = await fetch('/extrinsics/capture', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ n_steps: parseInt(document.getElementById('capture-steps').value || '80', 10) })
+      body: JSON.stringify({
+        camera: selectedCamera,
+        n_steps: parseInt(document.getElementById('capture-steps').value || '80', 10)
+      })
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'capture failed');

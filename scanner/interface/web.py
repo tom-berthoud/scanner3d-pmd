@@ -1008,13 +1008,14 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         """Capture laser profiles once and keep extracted pixels for fast retuning."""
         from scanner.acquisition import run_capture_sequence_multi
         from scanner.calibration import CalibrationError, camera_config_by_id, load_camera_model
-        from scanner.hardware import HardwareError
+        from scanner.hardware import HardwareError, camera_capture, laser_set, motor_step
         from scanner.processing import extract_laser_line
 
         if not _manual_allowed():
             return jsonify({"error": "Extrinsics tuning disabled while scan is running"}), 409
 
         payload = request.get_json(silent=True) or {}
+        selected_camera = str(payload.get("camera", ""))
         n_steps = max(4, min(400, int(payload.get("n_steps", settings.get("scan", {}).get("n_steps", 200)))))
         proc_cfg = settings.get("processing", {})
         default_threshold = int(proc_cfg.get("laser_threshold", 180))
@@ -1027,17 +1028,52 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             camera_models = {}
             for cam in _camera_view_configs():
                 camera_id = cam["id"]
+                if selected_camera and camera_id != selected_camera:
+                    continue
                 camera_models[camera_id] = load_camera_model(settings, camera_id)
-            frames_by_camera = run_capture_sequence_multi(n_steps, settings, save_frames=True)
+            if selected_camera:
+                direction = str(settings.get("scan", {}).get("direction", "clockwise"))
+                motor_cfg = settings.get("motor", {})
+                total_motor_steps = int(motor_cfg.get("steps_per_rev", 200)) * int(
+                    motor_cfg.get("microstepping", 1)
+                )
+                steps_per_photo = max(1, total_motor_steps // n_steps)
+                frames = []
+                logger.info(
+                    "Starting extrinsics capture for camera %s: %d photos, %d motor steps/photo",
+                    selected_camera,
+                    n_steps,
+                    steps_per_photo,
+                )
+                for step_idx in range(n_steps):
+                    motor_step(steps_per_photo, direction)
+                    laser_set(True)
+                    try:
+                        frames.append(camera_capture(selected_camera))
+                    finally:
+                        laser_set(False)
+                frames_by_camera = {selected_camera: frames}
+            else:
+                frames_by_camera = run_capture_sequence_multi(n_steps, settings, save_frames=False)
         except (HardwareError, CalibrationError, ValueError) as exc:
+            try:
+                laser_set(False)
+            except HardwareError:
+                logger.exception("Could not turn off laser after extrinsics capture error")
             return jsonify({"error": str(exc)}), 422
         except Exception as exc:
+            try:
+                laser_set(False)
+            except HardwareError:
+                logger.exception("Could not turn off laser after extrinsics capture error")
             logger.exception("Extrinsics debug capture failed")
             return jsonify({"error": str(exc)}), 500
 
         captures: dict = {}
         summary: dict = {}
         for camera_id, frames in frames_by_camera.items():
+            if selected_camera and camera_id != selected_camera:
+                continue
             try:
                 cam_cfg = camera_config_by_id(settings, camera_id)
             except KeyError:
@@ -1075,7 +1111,14 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             summary[camera_id] = {"profiles": len(profiles), "raw_points": detected}
 
         with _extrinsics_debug_lock:
-            _extrinsics_debug_session["captures"] = captures
+            if selected_camera:
+                if selected_camera not in captures:
+                    return jsonify({"error": f"No capture produced for camera {selected_camera}"}), 422
+                current = dict(_extrinsics_debug_session.get("captures", {}))
+                current[selected_camera] = captures[selected_camera]
+                _extrinsics_debug_session["captures"] = current
+            else:
+                _extrinsics_debug_session["captures"] = captures
             _extrinsics_debug_session["last_cloud"] = {}
             _extrinsics_debug_session["last_error"] = None
         return jsonify({"status": "ok", "n_steps": n_steps, "captures": summary})
