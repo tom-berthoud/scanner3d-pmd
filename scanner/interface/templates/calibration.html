@@ -261,6 +261,41 @@
           </button>
 
           <div id="extrinsics-result"></div>
+
+          <hr style="border-color:#30363d; margin:0;" />
+
+          <div class="d-flex gap-3 align-items-start">
+            <span class="step-badge mt-1">R</span>
+            <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
+              Alternative robuste: fixez le damier verticalement sur le plateau, capturez-le a plusieurs angles connus,
+              puis lancez la calibration tournante.
+            </p>
+          </div>
+
+          <div class="row g-3">
+            <div class="col">
+              <label class="form-label form-label-sm">Angle plateau</label>
+              <input class="form-control form-control-sm" type="number" id="ext-turntable-angle" value="0" step="1" />
+            </div>
+            <div class="col d-flex align-items-end">
+              <button type="button" class="btn btn-outline-primary calib-btn w-100" id="btn-ext-turntable-capture" onclick="captureTurntableExtrinsics()">
+                <i class="bi bi-camera me-2"></i>Capturer angle
+              </button>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-danger calib-btn flex-fill" onclick="resetTurntableExtrinsics()">
+              <i class="bi bi-trash me-2"></i>Reset captures
+            </button>
+            <button type="button" class="btn btn-success calib-btn flex-fill" id="btn-ext-turntable-run" onclick="runTurntableExtrinsics()">
+              <i class="bi bi-arrow-repeat me-2"></i>Calibrer multi-angle
+            </button>
+          </div>
+
+          <div id="extrinsics-turntable-summary" class="form-text" style="color:#6e7681;">0 capture</div>
+          <div class="calib-thumbs" id="extrinsics-turntable-thumbs"></div>
+          <div id="extrinsics-turntable-result"></div>
         </div>
       </div>
     </div>
@@ -359,6 +394,7 @@ async function onCalibrationCameraChange() {
   document.getElementById('camera-result').innerHTML = '';
   await refreshCheckerSession();
   refreshCheckerLiveFrame();
+  refreshTurntableExtrinsics();
 }
 
 function checkerPayload() {
@@ -678,6 +714,124 @@ async function runExtrinsicsCalibration() {
   }
 }
 
+function renderTurntableExtrinsics(data) {
+  var summary = document.getElementById('extrinsics-turntable-summary');
+  if (summary) {
+    summary.textContent = (data.count || 0) + ' capture(s), minimum recommande: ' +
+      (data.recommended_min || 6);
+  }
+  var thumbs = document.getElementById('extrinsics-turntable-thumbs');
+  if (!thumbs) return;
+  thumbs.innerHTML = '';
+  (data.captures || []).forEach(function(c) {
+    if (!c.preview_jpeg_base64) return;
+    var box = document.createElement('div');
+    var img = document.createElement('img');
+    img.src = 'data:image/jpeg;base64,' + c.preview_jpeg_base64;
+    img.alt = 'Angle ' + c.angle_deg;
+    box.appendChild(img);
+    var label = document.createElement('div');
+    label.style.color = '#8b949e';
+    label.style.fontSize = '0.75rem';
+    label.textContent = Number(c.angle_deg).toFixed(1) + ' deg';
+    box.appendChild(label);
+    thumbs.appendChild(box);
+  });
+}
+
+async function refreshTurntableExtrinsics() {
+  try {
+    var resp = await fetch('/calibration/extrinsics/turntable/session?camera=' +
+      encodeURIComponent(selectedCalibrationCamera()));
+    var data = await resp.json();
+    if (resp.ok) renderTurntableExtrinsics(data);
+  } catch (e) {}
+}
+
+async function resetTurntableExtrinsics() {
+  var result = document.getElementById('extrinsics-turntable-result');
+  try {
+    var resp = await fetch('/calibration/extrinsics/turntable/reset?camera=' +
+      encodeURIComponent(selectedCalibrationCamera()), { method: 'POST' });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Erreur reset extrinseque tournante');
+    renderTurntableExtrinsics(data);
+    if (result) result.innerHTML = '';
+  } catch (e) {
+    if (result) result.innerHTML = '<div class="alert alert-danger py-2 mb-0 mt-2">' + e + '</div>';
+  }
+}
+
+async function captureTurntableExtrinsics() {
+  var btn = document.getElementById('btn-ext-turntable-capture');
+  var result = document.getElementById('extrinsics-turntable-result');
+  if (btn) btn.disabled = true;
+  try {
+    var payload = checkerPayload();
+    payload.angle_deg = parseFloat(document.getElementById('ext-turntable-angle').value || '0');
+    var resp = await fetch('/calibration/extrinsics/turntable/capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Erreur capture multi-angle');
+    renderTurntableExtrinsics(data);
+    if (result) result.innerHTML = '';
+    if (typeof showToast === 'function') showToast('Capture extrinseque ajoutee', 'success');
+  } catch (e) {
+    if (result) result.innerHTML = '<div class="alert alert-danger py-2 mb-0 mt-2">' + e + '</div>';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function runTurntableExtrinsics() {
+  var btn = document.getElementById('btn-ext-turntable-run');
+  var result = document.getElementById('extrinsics-turntable-result');
+  if (btn) btn.disabled = true;
+  if (result) {
+    result.innerHTML =
+      '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
+      '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
+      'Calibration extrinseque multi-angle en cours\u2026</div>';
+  }
+  try {
+    var payload = extrinsicsPayload();
+    var resp = await fetch('/calibration/extrinsics/turntable/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Erreur calibration multi-angle');
+    if (result) {
+      result.innerHTML =
+        '<div class="alert alert-success py-2 mb-0 mt-2">' +
+        '<strong>Extrinseque multi-angle sauvegardee</strong>' +
+        '<div class="mt-1" style="font-size:0.85rem;">Position camera: [' +
+        (data.translation_mm || []).map(function(v) { return Number(v).toFixed(1); }).join(', ') +
+        '] mm</div>' +
+        '<div style="font-size:0.85rem;">Erreur moyenne: ' +
+        Number((data.report || {}).mean_reprojection_error_px || 0).toFixed(3) +
+        ' px, signe angle: ' + ((data.report || {}).angle_sign || '?') + '</div>' +
+        '<pre class="mb-0 mt-2" style="font-size:0.72rem; color:#adbac7;">' +
+        JSON.stringify(data, null, 2) + '</pre></div>';
+    }
+    if (typeof showToast === 'function') showToast('Calibration multi-angle reussie', 'success');
+    await refreshTurntableExtrinsics();
+  } catch (e) {
+    if (result) {
+      result.innerHTML =
+        '<div class="alert alert-danger py-2 mb-0 mt-2">' +
+        '<i class="bi bi-exclamation-triangle-fill me-2"></i>' + e +
+        '</div>';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 var camForm = document.getElementById('form-camera');
 if (camForm) {
   camForm.addEventListener('submit', function(e) {
@@ -818,6 +972,7 @@ document.addEventListener('DOMContentLoaded', function() {
   applyCameraCalibrationDefaults(selectedCalibrationCamera());
   syncUploadFields();
   refreshLaserSession();
+  refreshTurntableExtrinsics();
   refreshCheckerLiveFrame();
 });
 </script>

@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
+import numpy as np
 from flask import (
     Flask,
     Response,
@@ -108,6 +109,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     _camera_calib_session: dict = {
         "sessions": {},
     }
+    _extrinsics_turntable_lock = threading.Lock()
+    _extrinsics_turntable_session: dict = {
+        "sessions": {},
+    }
     _laser_calib_lock = threading.Lock()
     _laser_calib_session: dict = {
         "captures": [],
@@ -145,6 +150,43 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if camera_id not in sessions:
             sessions[camera_id] = {"images": [], "captures": [], "last_report": None}
         return sessions[camera_id]
+
+    def _extrinsics_turntable_state(camera_id: str) -> dict:
+        sessions = _extrinsics_turntable_session.setdefault("sessions", {})
+        if camera_id not in sessions:
+            sessions[camera_id] = {"captures": [], "last_report": None}
+        return sessions[camera_id]
+
+    def _extrinsics_turntable_summary(camera_id: str | None = None) -> dict:
+        try:
+            selected_id = camera_id or _selected_camera_id()
+            cam_cfg = _calibration_camera_config(selected_id)
+        except ValueError:
+            from scanner.calibration import default_camera_id
+
+            selected_id = default_camera_id(settings)
+            cam_cfg = _calibration_camera_config(selected_id)
+        with _extrinsics_turntable_lock:
+            state = _extrinsics_turntable_state(selected_id)
+            captures = [
+                {
+                    "index": idx + 1,
+                    "angle_deg": item["angle_deg"],
+                    "quality": item.get("quality", {}),
+                    "preview_jpeg_base64": item.get("preview_jpeg_base64"),
+                }
+                for idx, item in enumerate(state["captures"])
+            ]
+            report = state.get("last_report")
+        return {
+            "camera_id": selected_id,
+            "camera_label": _camera_label(selected_id),
+            "count": len(captures),
+            "recommended_min": 6,
+            "captures": captures,
+            "last_report": report,
+            "extrinsics_path": _project_path(cam_cfg.get("extrinsics_path")),
+        }
 
     def _camera_calib_summary(camera_id: str | None = None) -> dict:
         try:
@@ -230,6 +272,20 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             raw = source.get(f"{prefix}_{axis}", fallback)
             values.append(float(raw))
         return values
+
+    def _platform_rotation_config() -> tuple[list[float], list[float]]:
+        path = Path(__file__).resolve().parent.parent.parent / "config" / "platform.yaml"
+        data = {}
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    data = yaml.safe_load(fh) or {}
+            except Exception:
+                logger.warning("Could not load platform rotation config", exc_info=True)
+        return (
+            list(data.get("rotation_axis", [0.0, 1.0, 0.0])),
+            list(data.get("rotation_axis_point_mm", [0.0, 0.0, 0.0])),
+        )
 
     def _encode_jpeg_base64(frame, quality: int = 85) -> str:
         import cv2
@@ -1473,6 +1529,192 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except Exception as exc:
             logger.exception("Extrinsics calibration error")
             return jsonify({"error": f"Internal error during extrinsics calibration: {exc}"}), 500
+
+    @app.route("/calibration/extrinsics/turntable/session")
+    def calibration_extrinsics_turntable_session() -> Response:
+        """Return guided rotating-checkerboard extrinsics session."""
+        try:
+            camera_id = _selected_camera_id()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(_extrinsics_turntable_summary(camera_id))
+
+    @app.route("/calibration/extrinsics/turntable/reset", methods=["POST"])
+    def calibration_extrinsics_turntable_reset() -> Response:
+        """Clear rotating-checkerboard extrinsics captures for one camera."""
+        try:
+            camera_id = _selected_camera_id()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        with _extrinsics_turntable_lock:
+            state = _extrinsics_turntable_state(camera_id)
+            state["captures"] = []
+            state["last_report"] = None
+        return jsonify(_extrinsics_turntable_summary(camera_id))
+
+    @app.route("/calibration/extrinsics/turntable/capture", methods=["POST"])
+    def calibration_extrinsics_turntable_capture() -> Response:
+        """Capture one checkerboard observation at the current turntable angle."""
+        from scanner.calibration import checkerboard_capture_quality, draw_checkerboard_overlay
+        from scanner.hardware import HardwareError
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+
+        payload = request.get_json(silent=True) or {}
+        source = payload if payload else request.values
+        try:
+            (
+                camera_id,
+                board_size,
+                _square_mm,
+                auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
+            ) = _parse_camera_board_payload()
+            angle_deg = float(source.get("angle_deg", 0.0))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid turntable extrinsics payload: {exc}"}), 400
+
+        try:
+            frame, overlay, quality = _capture_checkerboard_candidate(
+                camera_id,
+                board_size,
+                auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
+            )
+            if not quality.get("accepted"):
+                return jsonify(
+                    {
+                        "error": quality.get("status", "checkerboard capture rejected"),
+                        "quality": quality,
+                        "preview_jpeg_base64": _encode_jpeg_base64(overlay),
+                    }
+                ), 422
+            quality = checkerboard_capture_quality(frame, board_size)
+            overlay = draw_checkerboard_overlay(frame, board_size, quality)
+        except HardwareError as exc:
+            return jsonify({"error": str(exc)}), 503
+        except Exception as exc:
+            logger.exception("Turntable extrinsics capture error")
+            return jsonify({"error": f"Internal error during capture: {exc}"}), 500
+
+        with _extrinsics_turntable_lock:
+            state = _extrinsics_turntable_state(camera_id)
+            state["captures"].append(
+                {
+                    "angle_deg": angle_deg,
+                    "angle_rad": float(np.deg2rad(angle_deg)),
+                    "image": frame,
+                    "quality": {
+                        key: value
+                        for key, value in quality.items()
+                        if key != "corners"
+                    },
+                    "preview_jpeg_base64": _encode_jpeg_base64(overlay, quality=70),
+                }
+            )
+        return jsonify(_extrinsics_turntable_summary(camera_id))
+
+    @app.route("/calibration/extrinsics/turntable/run", methods=["POST"])
+    def calibration_extrinsics_turntable_run() -> Response:
+        """Solve camera extrinsics from a checkerboard captured at multiple turntable angles."""
+        from scanner.calibration import (
+            CalibrationError,
+            calibrate_camera_extrinsics_turntable,
+            default_extrinsics_path,
+            load_camera_calibration,
+        )
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+
+        payload = request.get_json(silent=True) or {}
+        source = payload if payload else request.values
+        try:
+            (
+                camera_id,
+                board_size,
+                square_mm,
+                _auto_bracket,
+                _calibration_exposure_us,
+                _calibration_gain,
+            ) = _parse_camera_board_payload()
+            board_origin = _parse_vector3(source, "board_origin", (-100.0, 125.0, 0.0))
+            board_col_axis = _parse_vector3(source, "board_col_axis", (1.0, 0.0, 0.0))
+            board_row_axis = _parse_vector3(source, "board_row_axis", (0.0, -1.0, 0.0))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid turntable extrinsics payload: {exc}"}), 400
+
+        with _extrinsics_turntable_lock:
+            captures = list(_extrinsics_turntable_state(camera_id)["captures"])
+        if len(captures) < 3:
+            return jsonify({"error": f"At least 3 angle captures are required, got {len(captures)}"}), 422
+
+        try:
+            cam_cfg = _calibration_camera_config(camera_id)
+            intrinsics_path = _project_path(cam_cfg.get("intrinsics_path"))
+            if not intrinsics_path or not os.path.exists(intrinsics_path):
+                return jsonify({"error": f"Camera {camera_id}: intrinsics file missing"}), 409
+            camera_matrix, dist_coeffs = load_camera_calibration(intrinsics_path)
+            output_path = _project_path(cam_cfg.get("extrinsics_path")) or default_extrinsics_path(camera_id)
+            initial_rotation = None
+            initial_translation = None
+            try:
+                from scanner.calibration.multi_camera import _look_at_extrinsics
+
+                if isinstance(cam_cfg.get("extrinsics"), dict) and "position_mm" in cam_cfg["extrinsics"]:
+                    initial_rotation, initial_translation = _look_at_extrinsics(cam_cfg["extrinsics"])
+            except Exception:
+                logger.warning(
+                    "Camera %s extrinsics mechanical prior is invalid; solving without prior",
+                    camera_id,
+                    exc_info=True,
+                )
+            rotation_axis, rotation_axis_point = _platform_rotation_config()
+            observations = [
+                {
+                    "image": item["image"],
+                    "angle_rad": item["angle_rad"],
+                }
+                for item in captures
+            ]
+            rotation, translation, report = calibrate_camera_extrinsics_turntable(
+                observations,
+                camera_matrix,
+                dist_coeffs,
+                board_size,
+                square_mm,
+                board_origin,
+                board_col_axis,
+                board_row_axis,
+                rotation_axis=rotation_axis,
+                rotation_axis_point_mm=rotation_axis_point,
+                output_path=output_path,
+                initial_camera_to_platform_rotation=initial_rotation,
+                initial_camera_to_platform_translation=initial_translation,
+            )
+            with _extrinsics_turntable_lock:
+                _extrinsics_turntable_state(camera_id)["last_report"] = report
+            return jsonify(
+                {
+                    "status": "ok",
+                    "camera": camera_id,
+                    "output_path": output_path,
+                    "intrinsics_path": intrinsics_path,
+                    "rotation_matrix": rotation.tolist(),
+                    "translation_mm": translation.tolist(),
+                    "report": report,
+                }
+            )
+        except CalibrationError as exc:
+            return jsonify({"error": str(exc)}), 422
+        except Exception as exc:
+            logger.exception("Turntable extrinsics calibration error")
+            return jsonify(
+                {"error": f"Internal error during turntable extrinsics calibration: {exc}"}
+            ), 500
 
     @app.route("/calibration/camera", methods=["POST"])
     def calibration_camera() -> Response:

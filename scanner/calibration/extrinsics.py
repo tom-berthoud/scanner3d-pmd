@@ -53,6 +53,39 @@ def _checkerboard_object_point_variants(
     return [(name, variant.reshape(-1, 3).astype(np.float32)) for name, variant in variants]
 
 
+def _axis_angle_rotation_matrix(axis: np.ndarray, angle_rad: float) -> np.ndarray:
+    """Return a right-handed rotation matrix around an arbitrary axis."""
+    axis = np.asarray(axis, dtype=np.float64).reshape(3)
+    norm = float(np.linalg.norm(axis))
+    if norm < 1e-9:
+        raise ValueError("rotation axis must be non-zero")
+    x, y, z = axis / norm
+    c = float(np.cos(angle_rad))
+    s = float(np.sin(angle_rad))
+    t = 1.0 - c
+    return np.array(
+        [
+            [t * x * x + c, t * x * y - s * z, t * x * z + s * y],
+            [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
+            [t * x * z - s * y, t * y * z + s * x, t * z * z + c],
+        ],
+        dtype=np.float64,
+    )
+
+
+def _rotate_points_around_axis(
+    points: np.ndarray,
+    angle_rad: float,
+    axis: np.ndarray,
+    axis_point: np.ndarray,
+) -> np.ndarray:
+    """Rotate platform-frame points around the turntable axis."""
+    rot = _axis_angle_rotation_matrix(axis, angle_rad)
+    origin = np.asarray(axis_point, dtype=np.float64).reshape(3)
+    pts = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+    return ((rot @ (pts - origin).T).T + origin).astype(np.float32)
+
+
 def _extrinsics_report(
     object_points: np.ndarray,
     image_points: np.ndarray,
@@ -492,6 +525,221 @@ def calibrate_camera_extrinsics(
             report=report,
         )
     return rot_camera_to_platform, trans_camera_to_platform, report
+
+
+def calibrate_camera_extrinsics_turntable(
+    observations: list[dict],
+    camera_matrix: np.ndarray,
+    dist_coeffs: np.ndarray,
+    board_size: tuple[int, int],
+    square_size_mm: float,
+    board_origin_mm: list[float] | tuple[float, float, float] | np.ndarray,
+    board_col_axis: list[float] | tuple[float, float, float] | np.ndarray,
+    board_row_axis: list[float] | tuple[float, float, float] | np.ndarray,
+    rotation_axis: list[float] | tuple[float, float, float] | np.ndarray = (0.0, 1.0, 0.0),
+    rotation_axis_point_mm: list[float] | tuple[float, float, float] | np.ndarray = (
+        0.0,
+        0.0,
+        0.0,
+    ),
+    output_path: Optional[str] = None,
+    initial_camera_to_platform_rotation: np.ndarray | None = None,
+    initial_camera_to_platform_translation: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Calibrate camera extrinsics from a checkerboard fixed on the rotating turntable.
+
+    Each observation must contain ``image`` and ``angle_rad``. The checkerboard
+    coordinates are specified at angle zero, then rotated around the platform
+    turntable axis for each capture.
+    """
+    import cv2  # type: ignore[import]
+    from scipy.optimize import least_squares  # type: ignore[import]
+
+    from scanner.calibration import CalibrationError
+
+    if len(observations) < 3:
+        raise CalibrationError(f"At least 3 turntable observations are required, got {len(observations)}")
+
+    base_points = _platform_board_points(
+        board_size,
+        square_size_mm,
+        np.asarray(board_origin_mm, dtype=np.float64),
+        np.asarray(board_col_axis, dtype=np.float64),
+        np.asarray(board_row_axis, dtype=np.float64),
+    )
+    axis = np.asarray(rotation_axis, dtype=np.float64).reshape(3)
+    axis_point = np.asarray(rotation_axis_point_mm, dtype=np.float64).reshape(3)
+
+    detected = []
+    for idx, observation in enumerate(observations):
+        image = observation.get("image")
+        angle_rad = float(observation.get("angle_rad", 0.0))
+        found, corners, _gray = _detect_checkerboard(image, board_size)
+        if not found or corners is None:
+            raise CalibrationError(f"Checkerboard not found in turntable observation {idx + 1}")
+        image_points = corners.reshape(-1, 2).astype(np.float32)
+        detected.append(
+            {
+                "index": idx,
+                "angle_rad": angle_rad,
+                "image_points": image_points,
+            }
+        )
+
+    def select_points_for_sign(angle_sign: float) -> tuple[list[dict], list[dict], float]:
+        selected_observations = []
+        selected_reports = []
+        total_error = 0.0
+        for item in detected:
+            rotated_points = _rotate_points_around_axis(
+                base_points,
+                angle_sign * float(item["angle_rad"]),
+                axis,
+                axis_point,
+            )
+            variants = _checkerboard_object_point_variants(rotated_points, board_size)
+            rvec, tvec, selected_points, candidates, _selection = _solve_extrinsics_pnp(
+                rotated_points,
+                item["image_points"],
+                camera_matrix,
+                dist_coeffs,
+                initial_camera_to_platform_rotation=initial_camera_to_platform_rotation,
+                initial_camera_to_platform_translation=initial_camera_to_platform_translation,
+                object_point_variants=variants,
+            )
+            one_report = _extrinsics_report(
+                selected_points,
+                item["image_points"],
+                camera_matrix,
+                dist_coeffs,
+                rvec,
+                tvec,
+            )
+            total_error += float(one_report["mean_reprojection_error_px"])
+            selected_observations.append(
+                {
+                    "index": item["index"],
+                    "angle_rad": item["angle_rad"],
+                    "object_points": selected_points,
+                    "image_points": item["image_points"],
+                }
+            )
+            selected_candidate = next(
+                (candidate for candidate in candidates if candidate.get("selected")),
+                candidates[0],
+            )
+            selected_reports.append(
+                {
+                    "index": item["index"],
+                    "angle_rad": item["angle_rad"],
+                    "corner_order": selected_candidate.get("corner_order"),
+                    "single_view_mean_reprojection_error_px": one_report[
+                        "mean_reprojection_error_px"
+                    ],
+                    "single_view_camera_position_mm": selected_candidate.get("camera_position_mm"),
+                    "single_view_prior_distance_mm": selected_candidate.get("prior_distance_mm"),
+                }
+            )
+        return selected_observations, selected_reports, total_error / max(len(detected), 1)
+
+    candidates_by_sign = []
+    for angle_sign in (1.0, -1.0):
+        selected_observations, selected_reports, mean_error = select_points_for_sign(angle_sign)
+        candidates_by_sign.append((mean_error, angle_sign, selected_observations, selected_reports))
+    _mean_error, angle_sign, selected_observations, selected_reports = min(
+        candidates_by_sign,
+        key=lambda item: item[0],
+    )
+
+    if (
+        initial_camera_to_platform_rotation is not None
+        and initial_camera_to_platform_translation is not None
+    ):
+        initial_rvec, initial_tvec = _pnp_guess_from_camera_pose(
+            initial_camera_to_platform_rotation,
+            initial_camera_to_platform_translation,
+        )
+    else:
+        first = selected_observations[0]
+        ok, initial_rvec, initial_tvec = cv2.solvePnP(
+            first["object_points"],
+            first["image_points"],
+            camera_matrix,
+            dist_coeffs,
+            flags=cv2.SOLVEPNP_ITERATIVE,
+        )
+        if not ok:
+            raise CalibrationError("OpenCV solvePnP failed for initial turntable extrinsics")
+
+    def residuals(params: np.ndarray) -> np.ndarray:
+        rvec = params[:3].reshape(3, 1)
+        tvec = params[3:6].reshape(3, 1)
+        residual_chunks = []
+        for item in selected_observations:
+            projected, _ = cv2.projectPoints(
+                item["object_points"],
+                rvec,
+                tvec,
+                camera_matrix,
+                dist_coeffs,
+            )
+            residual_chunks.append((projected.reshape(-1, 2) - item["image_points"]).reshape(-1))
+        return np.concatenate(residual_chunks)
+
+    x0 = np.concatenate([initial_rvec.reshape(3), initial_tvec.reshape(3)])
+    result = least_squares(residuals, x0, method="trf", max_nfev=400)
+    if not result.success:
+        raise CalibrationError(f"Turntable extrinsics optimisation failed: {result.message}")
+
+    rvec = result.x[:3].reshape(3, 1).astype(np.float64)
+    tvec = result.x[3:6].reshape(3, 1).astype(np.float64)
+    rotation, translation = _camera_pose_from_pnp(rvec, tvec)
+
+    per_capture = []
+    all_errors = []
+    for item, selected_report in zip(selected_observations, selected_reports):
+        report = _extrinsics_report(
+            item["object_points"],
+            item["image_points"],
+            camera_matrix,
+            dist_coeffs,
+            rvec,
+            tvec,
+        )
+        per_capture.append({**selected_report, **report})
+        projected, _ = cv2.projectPoints(
+            item["object_points"],
+            rvec,
+            tvec,
+            camera_matrix,
+            dist_coeffs,
+        )
+        errors = np.linalg.norm(projected.reshape(-1, 2) - item["image_points"], axis=1)
+        all_errors.extend(float(value) for value in errors)
+
+    all_errors_arr = np.asarray(all_errors, dtype=np.float64)
+    report = {
+        "method": "turntable_checkerboard",
+        "captures": len(selected_observations),
+        "points": int(sum(len(item["object_points"]) for item in selected_observations)),
+        "angle_sign": angle_sign,
+        "mean_reprojection_error_px": float(all_errors_arr.mean()),
+        "max_reprojection_error_px": float(all_errors_arr.max()),
+        "camera_position_mm": translation.tolist(),
+        "board_origin_mm": [float(v) for v in board_origin_mm],
+        "board_col_axis": [float(v) for v in board_col_axis],
+        "board_row_axis": [float(v) for v in board_row_axis],
+        "rotation_axis": axis.tolist(),
+        "rotation_axis_point_mm": axis_point.tolist(),
+        "per_capture": per_capture,
+    }
+    if initial_camera_to_platform_translation is not None:
+        prior = np.asarray(initial_camera_to_platform_translation, dtype=np.float64).reshape(3)
+        report["prior_distance_mm"] = float(np.linalg.norm(translation - prior))
+
+    if output_path:
+        save_camera_extrinsics(rotation, translation, output_path, report=report)
+    return rotation, translation, report
 
 
 def save_camera_extrinsics(
