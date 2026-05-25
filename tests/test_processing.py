@@ -147,6 +147,61 @@ class TestExtractLaserLine:
         )
         assert result.shape == (1, 2)
 
+    def test_y_stride_reduces_detected_rows_in_original_coordinates(self) -> None:
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        frame[:, 120, 1] = 220
+
+        result = extract_laser_line(frame, threshold=100, min_pixels=1, y_stride=2)
+
+        assert result.shape[0] == 240
+        assert result[:, 1].min() == 0.0
+        assert result[:, 1].max() == 478.0
+        assert np.all((result[:, 1] % 2) == 0)
+
+    def test_x_stride_keeps_original_column_coordinates(self) -> None:
+        frame = np.zeros((20, 30, 3), dtype=np.uint8)
+        frame[:, 12, 1] = 220
+
+        result = extract_laser_line(frame, threshold=100, min_pixels=1, x_stride=3)
+
+        assert result.shape[0] == 20
+        assert np.all(result[:, 0] == 12.0)
+
+    def test_sampled_rectangle_mask_uses_original_coordinates(self) -> None:
+        frame = np.zeros((20, 30, 3), dtype=np.uint8)
+        frame[:, 12, 1] = 220
+
+        result = extract_laser_line(
+            frame,
+            threshold=100,
+            min_pixels=1,
+            x_stride=3,
+            y_stride=2,
+            mask_rects=[[0, 4, 30, 12]],
+        )
+
+        assert result.shape[0] == 6
+        assert set(result[:, 1].astype(int).tolist()) == {0, 2, 12, 14, 16, 18}
+
+    def test_sampled_polygon_mask_uses_original_coordinates(self) -> None:
+        frame = np.zeros((30, 40, 3), dtype=np.uint8)
+        frame[:, 18, 1] = 220
+
+        result = extract_laser_line(
+            frame,
+            threshold=100,
+            min_pixels=1,
+            x_stride=2,
+            y_stride=3,
+            mask_rects=[[[14, 6], [24, 6], [24, 21], [14, 21]]],
+        )
+
+        rows = set(result[:, 1].astype(int).tolist())
+        assert 9 not in rows
+        assert 18 not in rows
+        assert 0 in rows
+        assert 24 in rows
+
 
 def _make_camera_matrix(
     fx: float = 800.0, fy: float = 800.0, cx: float = 320.0, cy: float = 240.0

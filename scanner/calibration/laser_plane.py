@@ -62,6 +62,10 @@ def calibrate_laser_plane(
     mode: str = "row_mean",
     mask_rects: list | None = None,
     camera_id: str | None = None,
+    x_stride: int = 1,
+    y_stride: int = 1,
+    x_offset: int = 0,
+    y_offset: int = 0,
 ) -> np.ndarray:
     """Fit the laser sheet plane from flat-surface reference images.
 
@@ -106,6 +110,10 @@ def calibrate_laser_plane(
             mode=mode,
             camera_id=camera_id,
             mask_rects=mask_rects,
+            x_stride=x_stride,
+            y_stride=y_stride,
+            x_offset=x_offset,
+            y_offset=y_offset,
         )
         if line_px.shape[0] < 5:
             logger.warning(
@@ -184,6 +192,10 @@ def calibrate_laser_plane_platform_z(
     mode: str = "row_mean",
     mask_rects: list | None = None,
     camera_id: str | None = None,
+    x_stride: int = 1,
+    y_stride: int = 1,
+    x_offset: int = 0,
+    y_offset: int = 0,
 ) -> np.ndarray:
     """Fit the laser plane using vertical reference boards at known platform Z.
 
@@ -215,6 +227,10 @@ def calibrate_laser_plane_platform_z(
             mode=mode,
             camera_id=camera_id,
             mask_rects=mask_rects,
+            x_stride=x_stride,
+            y_stride=y_stride,
+            x_offset=x_offset,
+            y_offset=y_offset,
         )
         if line_px.shape[0] < min_pixels:
             logger.warning(
@@ -275,6 +291,10 @@ def collect_laser_points_platform_z(
     mode: str = "row_mean",
     mask_rects: list | None = None,
     camera_id: str | None = None,
+    x_stride: int = 1,
+    y_stride: int = 1,
+    x_offset: int = 0,
+    y_offset: int = 0,
 ) -> np.ndarray:
     """Back-project laser detections onto known platform ``Z`` boards.
 
@@ -305,6 +325,10 @@ def collect_laser_points_platform_z(
             mode=mode,
             camera_id=camera_id,
             mask_rects=mask_rects,
+            x_stride=x_stride,
+            y_stride=y_stride,
+            x_offset=x_offset,
+            y_offset=y_offset,
         )
         if line_px.shape[0] < min_pixels:
             logger.warning(
@@ -395,6 +419,10 @@ def calibrate_laser_plane_global_platform_z(
             mode=str(obs.get("mode", "row_mean")),
             mask_rects=obs.get("mask_rects"),
             camera_id=obs.get("camera_id"),
+            x_stride=int(obs.get("x_stride", 1)),
+            y_stride=int(obs.get("y_stride", 1)),
+            x_offset=int(obs.get("x_offset", 0)),
+            y_offset=int(obs.get("y_offset", 0)),
         )
         all_points.append(points)
 

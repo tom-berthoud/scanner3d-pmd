@@ -288,6 +288,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                     )
                 ),
                 "laser_mask": cam_cfg.get("laser_mask", []) or [],
+                "laser_sampling": cam_cfg.get("laser_sampling", {}) or {},
             }
             for cam_cfg in camera_configs(settings)
         ]
@@ -330,10 +331,22 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 masks.append(points)
         return masks
 
-    def _camera_processing_config(camera_id: str | None = None) -> tuple[int, list]:
+    def _sampling_config(cam_cfg: dict | None = None) -> dict[str, int]:
+        sampling = (cam_cfg or {}).get("laser_sampling", {}) or {}
+        return {
+            "x_stride": max(1, int(sampling.get("x_stride", 1))),
+            "y_stride": max(1, int(sampling.get("y_stride", 1))),
+            "x_offset": max(0, int(sampling.get("x_offset", 0))),
+            "y_offset": max(0, int(sampling.get("y_offset", 0))),
+        }
+
+    def _camera_processing_config(
+        camera_id: str | None = None,
+    ) -> tuple[int, list, dict[str, int]]:
         proc_cfg = settings.get("processing", {})
         threshold = int(proc_cfg.get("laser_threshold", 180))
         mask = []
+        sampling = _sampling_config()
         if camera_id:
             from scanner.calibration import camera_configs
 
@@ -341,8 +354,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 if str(cam_cfg.get("id")) == str(camera_id):
                     threshold = int(cam_cfg.get("laser_threshold", threshold))
                     mask = cam_cfg.get("laser_mask", []) or []
+                    sampling = _sampling_config(cam_cfg)
                     break
-        return threshold, mask
+        return threshold, mask, sampling
 
     def _artifact_tabs() -> list[dict]:
         tabs: list[dict] = []
@@ -724,7 +738,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         frame = cam.capture()
 
         proc_cfg = settings.get("processing", {})
-        threshold, mask_rects = _camera_processing_config()
+        threshold, mask_rects, sampling = _camera_processing_config()
         min_px = int(proc_cfg.get("min_line_pixels", 10))
         subpixel = bool(proc_cfg.get("subpixel", True))
         extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
@@ -736,6 +750,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             subpixel=subpixel,
             mode=extraction_mode,
             mask_rects=mask_rects,
+            **sampling,
         )
         # Draw detected pixels as red dots on the frame
         overlay = frame.copy()
@@ -896,7 +911,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
         proc_cfg = settings.get("processing", {})
         camera_id = request.args.get("camera")
-        default_threshold, mask_rects = _camera_processing_config(camera_id)
+        default_threshold, mask_rects, sampling = _camera_processing_config(camera_id)
         default_min_px = int(proc_cfg.get("min_line_pixels", 15))
         extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
 
@@ -929,6 +944,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             mode=extraction_mode,
             camera_id=camera_id,
             mask_rects=mask_rects,
+            **sampling,
         )
 
         signal = frame[:, :, 1]  # green channel only
@@ -1481,7 +1497,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 or settings.get("laser", {}).get("plane_path")
                 or "config/laser_plane.yaml"
             )
-            default_threshold, mask_rects = _camera_processing_config(camera_id)
+            default_threshold, mask_rects, sampling = _camera_processing_config(camera_id)
             proc_cfg = settings.get("processing", {})
             min_px = int(proc_cfg.get("min_line_pixels", 5))
             extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
@@ -1498,6 +1514,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                     mode=extraction_mode,
                     mask_rects=mask_rects,
                     camera_id=camera_id,
+                    **sampling,
                 )
             elif plane_mode == "platform_z":
                 cam_rot, cam_trans = _load_extrinsics(cam_cfg)
@@ -1513,6 +1530,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                     mode=extraction_mode,
                     mask_rects=mask_rects,
                     camera_id=camera_id,
+                    **sampling,
                 )
                 output_path = global_output_path
                 plane = fit_laser_plane_points(points, output_path=output_path)
@@ -1584,7 +1602,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         metrics: dict = {}
         stored_frames: dict = {}
         for camera_id, frame in frames.items():
-            default_threshold, mask_rects = _camera_processing_config(camera_id)
+            default_threshold, mask_rects, sampling = _camera_processing_config(camera_id)
             threshold = int(threshold_override if threshold_override is not None else default_threshold)
             threshold = max(0, min(255, threshold))
             line = extract_laser_line(
@@ -1595,6 +1613,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 mode=extraction_mode,
                 camera_id=camera_id,
                 mask_rects=mask_rects,
+                **sampling,
             )
             overlay = frame.copy()
             for i in range(line.shape[0]):
@@ -1668,7 +1687,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                         cam_res, focal_scale=focal_scale
                     )
                 cam_rot, cam_trans = _load_extrinsics(cam_cfg)
-                default_threshold, mask_rects = _camera_processing_config(camera_id)
+                default_threshold, mask_rects, sampling = _camera_processing_config(camera_id)
                 points = collect_laser_points_platform_z(
                     images,
                     z_values,
@@ -1681,6 +1700,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                     mode=extraction_mode,
                     mask_rects=mask_rects,
                     camera_id=camera_id,
+                    **sampling,
                 )
             except CalibrationError as exc:
                 return jsonify({"error": f"Camera {camera_id}: {exc}"}), 422
@@ -1734,7 +1754,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         payload = request.get_json(silent=True) or {}
         camera_id = payload.get("camera")
         try:
-            default_threshold, mask_rects = _camera_processing_config(camera_id)
+            default_threshold, mask_rects, sampling = _camera_processing_config(camera_id)
             threshold = int(payload.get("threshold", default_threshold))
             min_px = int(payload.get("min_pixels", proc_cfg.get("min_line_pixels", 15)))
         except (TypeError, ValueError) as exc:
@@ -1763,6 +1783,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             mode=extraction_mode,
             camera_id=camera_id,
             mask_rects=mask_rects,
+            **sampling,
         )
         overlay = frame.copy()
         for i in range(line.shape[0]):

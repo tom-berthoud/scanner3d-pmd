@@ -142,6 +142,15 @@ def run_scan(
             logger.warning("Could not transition to ERROR (current=%s)", sm.current_state.name)
         logger.error("Scan failed: %s", exc)
 
+    def _sampling_config(cam_cfg: dict) -> dict[str, int]:
+        sampling = cam_cfg.get("laser_sampling", {}) or {}
+        return {
+            "x_stride": max(1, int(sampling.get("x_stride", 1))),
+            "y_stride": max(1, int(sampling.get("y_stride", 1))),
+            "x_offset": max(0, int(sampling.get("x_offset", 0))),
+            "y_offset": max(0, int(sampling.get("y_offset", 0))),
+        }
+
     # ------------------------------------------------------------------ #
     # Load calibration
     # ------------------------------------------------------------------ #
@@ -218,6 +227,7 @@ def run_scan(
             )
             threshold = int(cam_cfg.get("laser_threshold", default_threshold))
             mask_rects = cam_cfg.get("laser_mask", []) or []
+            sampling = _sampling_config(cam_cfg)
             camera_matrix, dist_coeffs, laser_plane, cam_rot, cam_trans = camera_models[camera_id]
             for idx, frame in enumerate(frames):
                 angle_rad = idx * angle_step_rad
@@ -229,6 +239,7 @@ def run_scan(
                     mode=extraction_mode,
                     camera_id=camera_id,
                     mask_rects=mask_rects,
+                    **sampling,
                 )
                 if line_px.shape[0] > 0:
                     pts_3d = triangulate(

@@ -23,10 +23,24 @@ logger = logging.getLogger(__name__)
 _FRAME_DIR = "/tmp/scan_frames"
 
 
-def _camera_processing_config(config: dict, camera_id: str | None = None) -> tuple[int, list]:
+def _sampling_config(cam_cfg: dict | None = None) -> dict[str, int]:
+    sampling = (cam_cfg or {}).get("laser_sampling", {}) or {}
+    return {
+        "x_stride": max(1, int(sampling.get("x_stride", 1))),
+        "y_stride": max(1, int(sampling.get("y_stride", 1))),
+        "x_offset": max(0, int(sampling.get("x_offset", 0))),
+        "y_offset": max(0, int(sampling.get("y_offset", 0))),
+    }
+
+
+def _camera_processing_config(
+    config: dict,
+    camera_id: str | None = None,
+) -> tuple[int, list, dict[str, int]]:
     proc_cfg = config.get("processing", {})
     threshold = int(proc_cfg.get("laser_threshold", 180))
     mask = []
+    sampling = _sampling_config()
     if camera_id is not None:
         try:
             from scanner.calibration import camera_config_by_id
@@ -34,9 +48,10 @@ def _camera_processing_config(config: dict, camera_id: str | None = None) -> tup
             cam_cfg = camera_config_by_id(config, str(camera_id))
             threshold = int(cam_cfg.get("laser_threshold", threshold))
             mask = cam_cfg.get("laser_mask", []) or []
+            sampling = _sampling_config(cam_cfg)
         except Exception:
             pass
-    return threshold, mask
+    return threshold, mask, sampling
 
 
 def _save_frame(
@@ -53,7 +68,7 @@ def _save_frame(
         os.makedirs(_FRAME_DIR, exist_ok=True)
 
         proc_cfg = config.get("processing", {})
-        threshold, mask_rects = _camera_processing_config(config, camera_id)
+        threshold, mask_rects, sampling = _camera_processing_config(config, camera_id)
         min_px = int(proc_cfg.get("min_line_pixels", 10))
         subpixel = bool(proc_cfg.get("subpixel", True))
         extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
@@ -68,6 +83,7 @@ def _save_frame(
                 mode=extraction_mode,
                 camera_id=camera_id,
                 mask_rects=mask_rects,
+                **sampling,
             )
             for i in range(line.shape[0]):
                 col, row = int(round(line[i, 0])), int(round(line[i, 1]))

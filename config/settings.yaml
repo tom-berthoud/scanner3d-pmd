@@ -29,6 +29,9 @@ cameras:
     calibration_gain: 4
     lens_position: 2.7
     laser_threshold: 70
+    laser_sampling:
+      x_stride: 1
+      y_stride: 2
     laser_mask:
       - [[412, 271], [412, 480], [151, 480], [153, 454]]
       - [411, 0, 640, 480]
@@ -77,10 +80,14 @@ cameras:
     calibration_gain: 100
     focus_absolute: 500
     laser_threshold: 70
+    laser_sampling:
+      x_stride: 3
+      y_stride: 4
     laser_mask:
       - [[577, 1080], [631, 429], [0, 428], [0, 1080]]
       - [[662, 433], [780, 0], [0, 0], [0, 433]]
       - [[1488, 1080], [1377, 0], [1920, 0], [1920, 1080]]
+      - [550, 1065, 1500, 1080]
     intrinsics_path: config/camera_intrinsics_left.yaml
     extrinsics:
       # Rough measured pose in the shared platform frame:
@@ -138,7 +145,7 @@ export:
     normal_radius_mm: 8.0   # rayon voisinage pour estimer les normales (mm)
     normal_max_nn: 30       # nombre max de voisins pour chaque normale
     orientation_k: 50       # voisins utilisés pour orienter automatiquement les normales
-    depth: 8                # profondeur Octree Poisson; +1 = plus fin mais plus lent/memoire
+    depth: 7                # profondeur Octree Poisson; +1 = plus fin mais plus lent/memoire
     width: 0                # 0 = auto Open3D; laisser 0 sauf besoin spécifique
     scale: 1.1              # marge autour du nuage pour la reconstruction Poisson
     linear_fit: false       # true = surface parfois plus nette, mais plus sensible au bruit

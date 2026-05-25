@@ -23,6 +23,20 @@ def test_camera_list_preserves_ids_and_order() -> None:
     assert camera_ids(config) == ["right", "left"]
 
 
+def test_camera_list_preserves_laser_sampling() -> None:
+    config = {
+        "cameras": [
+            {"id": "right", "laser_sampling": {"x_stride": 1, "y_stride": 2}},
+            {"id": "left", "laser_sampling": {"x_stride": 3, "y_stride": 4}},
+        ]
+    }
+
+    cameras = camera_configs(config)
+
+    assert cameras[0]["laser_sampling"] == {"x_stride": 1, "y_stride": 2}
+    assert cameras[1]["laser_sampling"] == {"x_stride": 3, "y_stride": 4}
+
+
 def test_identity_extrinsics_do_not_change_triangulated_point() -> None:
     from scanner.processing import triangulate
 
