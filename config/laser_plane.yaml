@@ -1,7 +1,7 @@
 frame: platform
 plane:
-  a: 0.6028111952525835
-  b: -0.04773788790627225
-  c: -0.7964544914409109
-  d: -13.673273057129485
-triangulation_angle_deg: 37.22075628476118
+  a: 1.0
+  b: 0.0
+  c: 0.0
+  d: 0.0
+triangulation_angle_deg: 90.0
