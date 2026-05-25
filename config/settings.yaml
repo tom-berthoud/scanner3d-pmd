@@ -143,18 +143,6 @@ calibration:
   use_checkerboard: true    # true = utilise les fichiers intrinsics_path calibres par camera
   global_laser_plane_path: config/laser_plane.yaml
   approx_focal_scale: 1.25  # focale approx = largeur_image * facteur (640 px -> 800 px)
-  # Calibration extrinseque par cube ArUco:
-  # cube centre en X/Z sur l'origine plateau, Y = hauteur du centre du cube.
-  # A l'angle zero, ID 0 fait face aux cameras; en horaire: 0 -> 1 -> 2 -> 3.
-  extrinsics_aruco_cube:
-    cube_size_mm: 30.0
-    marker_size_mm: 20.0
-    cube_center_mm: [0.0, 15.0, 0.0]
-    captures_per_turn: 16
-    direction: clockwise
-    dictionary: DICT_4X4_50
-    side_marker_ids: [0, 1, 2, 3]
-    top_marker_id: 4
 
 export:
   default_format: stl       # format par défaut : stl / obj
