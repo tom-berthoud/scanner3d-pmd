@@ -73,6 +73,35 @@ def test_measured_pose_extrinsics_point_camera_at_target() -> None:
     np.testing.assert_allclose(rotation.T @ rotation, np.eye(3), atol=1e-6)
 
 
+def test_measured_angle_extrinsics_point_camera_by_yaw_and_elevation() -> None:
+    from scanner.calibration.multi_camera import _load_extrinsics
+
+    position = np.array([173.5, 140.0, -300.5])
+    rotation, translation = _load_extrinsics(
+        {
+            "extrinsics": {
+                "position_mm": position.tolist(),
+                "angle_camera_laser_deg": -30.0,
+                "angle_planxz_camera_deg": -20.0,
+                "up_mm": [0.0, 1.0, 0.0],
+            }
+        }
+    )
+
+    yaw = np.deg2rad(-30.0)
+    elevation = np.deg2rad(-20.0)
+    expected_forward = np.array(
+        [
+            np.sin(yaw) * np.cos(elevation),
+            np.sin(elevation),
+            np.cos(yaw) * np.cos(elevation),
+        ]
+    )
+    np.testing.assert_allclose(translation, position, atol=1e-6)
+    np.testing.assert_allclose(rotation[:, 2], expected_forward, atol=1e-6)
+    np.testing.assert_allclose(rotation.T @ rotation, np.eye(3), atol=1e-6)
+
+
 def test_rotation_matrix_extrinsics_override_look_at_when_file_loaded(tmp_path) -> None:
     from scanner.calibration.multi_camera import _load_extrinsics
 

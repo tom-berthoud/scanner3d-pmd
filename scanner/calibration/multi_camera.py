@@ -93,6 +93,52 @@ def _look_at_extrinsics(extr: dict) -> tuple[np.ndarray, np.ndarray]:
     return rotation, position
 
 
+def _angle_value_deg(extr: dict, *names: str) -> float | None:
+    for name in names:
+        if name in extr:
+            return float(extr[name])
+    return None
+
+
+def _angle_extrinsics(extr: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Build camera-to-platform extrinsics from measured position and angles.
+
+    ``angle_camera_laser_deg`` is the yaw angle in the platform XZ plane,
+    measured from +Z (laser-to-center direction) toward +X.
+    ``angle_planxz_camera_deg`` is the elevation angle from the XZ plane.
+    """
+    position = np.asarray(extr.get("position_mm"), dtype=np.float64).reshape(3)
+    yaw_deg = _angle_value_deg(extr, "angle_camera_laser_deg", "yaw_deg")
+    elevation_deg = _angle_value_deg(
+        extr,
+        "angle_planxz_camera_deg",
+        "elevation_deg",
+        "pitch_deg",
+    )
+    if yaw_deg is None or elevation_deg is None:
+        raise ValueError("extrinsics angle mode requires yaw and elevation angles")
+
+    yaw = np.deg2rad(yaw_deg)
+    elevation = np.deg2rad(elevation_deg)
+    forward = np.array(
+        [
+            np.sin(yaw) * np.cos(elevation),
+            np.sin(elevation),
+            np.cos(yaw) * np.cos(elevation),
+        ],
+        dtype=np.float64,
+    )
+    forward = _normalize(forward, "camera forward")
+    up = _normalize(np.asarray(extr.get("up_mm", [0.0, 1.0, 0.0]), dtype=np.float64), "camera up")
+    right = np.cross(forward, up)
+    if float(np.linalg.norm(right)) < 1e-9:
+        right = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    right = _normalize(right, "camera right")
+    down = _normalize(np.cross(forward, right), "camera down")
+    rotation = np.column_stack([right, down, forward])
+    return rotation, position
+
+
 def _load_extrinsics(cam_cfg: dict) -> tuple[np.ndarray, np.ndarray]:
     extr = cam_cfg.get("extrinsics") or {}
     if not isinstance(extr, dict):
@@ -113,6 +159,15 @@ def _load_extrinsics(cam_cfg: dict) -> tuple[np.ndarray, np.ndarray]:
         if rotation.shape != (3, 3):
             raise ValueError(f"extrinsics.rotation_matrix must be 3x3, got {rotation.shape}")
         return rotation, translation
+
+    if "position_mm" in extr and (
+        "angle_camera_laser_deg" in extr
+        or "yaw_deg" in extr
+        or "angle_planxz_camera_deg" in extr
+        or "elevation_deg" in extr
+        or "pitch_deg" in extr
+    ):
+        return _angle_extrinsics(extr)
 
     if "position_mm" in extr:
         return _look_at_extrinsics(extr)
