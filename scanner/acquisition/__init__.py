@@ -25,9 +25,19 @@ _FRAME_DIR = "/tmp/scan_frames"
 
 def _sampling_config(cam_cfg: dict | None = None) -> dict[str, int]:
     sampling = (cam_cfg or {}).get("laser_sampling", {}) or {}
+    ratio = sampling.get("pixel_ratio", sampling.get("sampling_ratio"))
+    if ratio is not None and ("x_stride" not in sampling and "y_stride" not in sampling):
+        try:
+            ratio_f = float(ratio)
+        except (TypeError, ValueError):
+            ratio_f = 1.0
+        ratio_f = min(1.0, max(1e-6, ratio_f))
+        auto_stride = max(1, int(round((1.0 / ratio_f) ** 0.5)))
+    else:
+        auto_stride = 1
     return {
-        "x_stride": max(1, int(sampling.get("x_stride", 1))),
-        "y_stride": max(1, int(sampling.get("y_stride", 1))),
+        "x_stride": max(1, int(sampling.get("x_stride", auto_stride))),
+        "y_stride": max(1, int(sampling.get("y_stride", auto_stride))),
         "x_offset": max(0, int(sampling.get("x_offset", 0))),
         "y_offset": max(0, int(sampling.get("y_offset", 0))),
     }

@@ -30,8 +30,8 @@ cameras:
     lens_position: 2.7
     laser_threshold: 70
     laser_sampling:
-      x_stride: 1
-      y_stride: 2
+      # Keep about one third of laser pixels for faster processing.
+      pixel_ratio: 0.33
     laser_mask:
       - [[412, 271], [412, 480], [151, 480], [153, 454]]
       - [411, 0, 640, 480]
@@ -81,8 +81,8 @@ cameras:
     focus_absolute: 500
     laser_threshold: 70
     laser_sampling:
-      x_stride: 3
-      y_stride: 4
+      # Keep about one third of laser pixels for faster processing.
+      pixel_ratio: 0.33
     laser_mask:
       - [[577, 1080], [631, 429], [0, 428], [0, 1080]]
       - [[662, 433], [780, 0], [0, 0], [0, 433]]
