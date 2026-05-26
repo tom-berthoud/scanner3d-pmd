@@ -432,8 +432,8 @@ window.cheatMode = async function() {
   box.textContent = 'Cheat mode: optimisation en cours...';
   try {
     const payload = {
-      moving_camera: selectedCamera || 'left',
-      anchor_camera: (selectedCamera === 'right') ? 'left' : 'right',
+      camera_a: 'right',
+      camera_b: 'left',
       max_points: 14000,
       max_iter: 90
     };
@@ -445,17 +445,46 @@ window.cheatMode = async function() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'cheat mode failed');
 
-    setParam('x', data.recommended.x_mm);
-    setParam('y', data.recommended.y_mm);
-    setParam('z', data.recommended.z_mm);
-    setParam('yaw', data.recommended.angle_camera_laser_deg);
-    setParam('elev', data.recommended.angle_planxz_camera_deg);
-    renderPoints(data.cloud.points || []);
+    // Apply both optimized camera parameter sets in memory.
+    const cams = [data.camera_a, data.camera_b];
+    for (const camId of cams) {
+      const rec = data.recommended[camId];
+      if (!rec) continue;
+      await fetch('/extrinsics/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          camera: camId,
+          x_mm: rec.x_mm,
+          y_mm: rec.y_mm,
+          z_mm: rec.z_mm,
+          angle_camera_laser_deg: rec.angle_camera_laser_deg,
+          angle_planxz_camera_deg: rec.angle_planxz_camera_deg,
+          save: false
+        })
+      });
+      if (window.EXTR_DEFAULTS[camId]) {
+        window.EXTR_DEFAULTS[camId].position_mm = [rec.x_mm, rec.y_mm, rec.z_mm];
+        window.EXTR_DEFAULTS[camId].angle_camera_laser_deg = rec.angle_camera_laser_deg;
+        window.EXTR_DEFAULTS[camId].angle_planxz_camera_deg = rec.angle_planxz_camera_deg;
+      }
+    }
+
+    const selectedRec = data.recommended[selectedCamera];
+    if (selectedRec) {
+      setParam('x', selectedRec.x_mm);
+      setParam('y', selectedRec.y_mm);
+      setParam('z', selectedRec.z_mm);
+      setParam('yaw', selectedRec.angle_camera_laser_deg);
+      setParam('elev', selectedRec.angle_planxz_camera_deg);
+    }
+    const selectedCloud = (data.clouds && data.clouds[selectedCamera]) ? data.clouds[selectedCamera].points : [];
+    renderPoints(selectedCloud || []);
 
     box.textContent =
       'Cheat mode termine\\n' +
-      'camera mobile: ' + data.moving_camera + '\\n' +
-      'camera ref: ' + data.anchor_camera + '\\n' +
+      'camera A: ' + data.camera_a + '\\n' +
+      'camera B: ' + data.camera_b + '\\n' +
       'erreur init (mm): ' + Number(data.initial_error_mm || 0).toFixed(3) + '\\n' +
       'erreur finale (mm): ' + Number(data.final_error_mm || 0).toFixed(3) + '\\n' +
       'gain (mm): ' + Number(data.improvement_mm || 0).toFixed(3) + '\\n' +

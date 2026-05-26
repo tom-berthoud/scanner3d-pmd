@@ -1256,133 +1256,116 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
     @app.route("/extrinsics/cheat", methods=["POST"])
     def extrinsics_cheat() -> Response:
-        """Auto-fit one camera extrinsics against another from cached captures."""
+        """Auto-fit two cameras extrinsics jointly from cached extracted points."""
         import numpy as np
         from scipy.optimize import minimize
         from scipy.spatial import cKDTree
 
         payload = request.get_json(silent=True) or {}
-        moving_camera = str(payload.get("moving_camera", "left"))
-        anchor_camera = str(payload.get("anchor_camera", "right"))
+        camera_a = str(payload.get("camera_a", "right"))
+        camera_b = str(payload.get("camera_b", "left"))
         max_points = max(2000, min(40000, int(payload.get("max_points", 14000))))
         max_iter = max(20, min(300, int(payload.get("max_iter", 90))))
 
-        if moving_camera == anchor_camera:
-            return jsonify({"error": "moving_camera and anchor_camera must differ"}), 400
+        if camera_a == camera_b:
+            return jsonify({"error": "camera_a and camera_b must differ"}), 400
 
         with _extrinsics_debug_lock:
-            moving_session = _extrinsics_debug_session.get("captures", {}).get(moving_camera)
-            anchor_session = _extrinsics_debug_session.get("captures", {}).get(anchor_camera)
-        if not moving_session or not anchor_session:
+            session_a = _extrinsics_debug_session.get("captures", {}).get(camera_a)
+            session_b = _extrinsics_debug_session.get("captures", {}).get(camera_b)
+        if not session_a or not session_b:
             return jsonify(
                 {
                     "error": (
-                        f"Missing cached captures for {moving_camera}/{anchor_camera}. "
+                        f"Missing cached captures for {camera_a}/{camera_b}. "
                         "Run capture first."
                     )
                 }
             ), 409
 
         defaults = _extrinsics_debug_defaults()
-        moving_default = defaults.get(moving_camera)
-        anchor_default = defaults.get(anchor_camera)
-        if not moving_default or not anchor_default:
+        default_a = defaults.get(camera_a)
+        default_b = defaults.get(camera_b)
+        if not default_a or not default_b:
             return jsonify({"error": "Missing camera defaults for cheat mode"}), 422
 
-        moving_init = {
-            "x_mm": float(moving_default["position_mm"][0]),
-            "y_mm": float(moving_default["position_mm"][1]),
-            "z_mm": float(moving_default["position_mm"][2]),
-            "angle_camera_laser_deg": float(moving_default["angle_camera_laser_deg"]),
-            "angle_planxz_camera_deg": float(moving_default["angle_planxz_camera_deg"]),
-        }
-        anchor_payload = {
-            "x_mm": float(anchor_default["position_mm"][0]),
-            "y_mm": float(anchor_default["position_mm"][1]),
-            "z_mm": float(anchor_default["position_mm"][2]),
-            "angle_camera_laser_deg": float(anchor_default["angle_camera_laser_deg"]),
-            "angle_planxz_camera_deg": float(anchor_default["angle_planxz_camera_deg"]),
-        }
-
-        try:
-            anchor_rot, anchor_trans = _manual_extrinsics_from_payload(anchor_payload)
-            anchor_cloud = _build_cloud_from_cached_capture(
-                anchor_session,
-                anchor_rot,
-                anchor_trans,
-                max_points=max_points,
+        def _state_from_default(dct: dict) -> np.ndarray:
+            return np.asarray(
+                [
+                    float(dct["position_mm"][0]),
+                    float(dct["position_mm"][1]),
+                    float(dct["position_mm"][2]),
+                    float(dct["angle_camera_laser_deg"]),
+                    float(dct["angle_planxz_camera_deg"]),
+                ],
+                dtype=np.float64,
             )
-        except Exception as exc:
-            return jsonify({"error": f"Anchor cloud build failed: {exc}"}), 422
-        if anchor_cloud.shape[0] < 200:
-            return jsonify({"error": "Anchor cloud too small for cheat mode"}), 422
 
-        anchor_tree = cKDTree(anchor_cloud)
-        anchor_center = anchor_cloud.mean(axis=0)
+        x0_a = _state_from_default(default_a)
+        x0_b = _state_from_default(default_b)
+        x0 = np.hstack([x0_a, x0_b]).astype(np.float64)
 
-        x0 = np.array(
-            [
-                moving_init["x_mm"],
-                moving_init["y_mm"],
-                moving_init["z_mm"],
-                moving_init["angle_camera_laser_deg"],
-                moving_init["angle_planxz_camera_deg"],
-            ],
-            dtype=np.float64,
-        )
         bounds = [
-            (x0[0] - 120.0, x0[0] + 120.0),
-            (x0[1] - 120.0, x0[1] + 120.0),
-            (x0[2] - 120.0, x0[2] + 120.0),
-            (x0[3] - 20.0, x0[3] + 20.0),
-            (x0[4] - 20.0, x0[4] + 20.0),
+            (x0_a[0] - 120.0, x0_a[0] + 120.0),
+            (x0_a[1] - 120.0, x0_a[1] + 120.0),
+            (x0_a[2] - 120.0, x0_a[2] + 120.0),
+            (x0_a[3] - 20.0, x0_a[3] + 20.0),
+            (x0_a[4] - 20.0, x0_a[4] + 20.0),
+            (x0_b[0] - 120.0, x0_b[0] + 120.0),
+            (x0_b[1] - 120.0, x0_b[1] + 120.0),
+            (x0_b[2] - 120.0, x0_b[2] + 120.0),
+            (x0_b[3] - 20.0, x0_b[3] + 20.0),
+            (x0_b[4] - 20.0, x0_b[4] + 20.0),
         ]
 
-        best_cloud = None
+        best_cloud_a = None
+        best_cloud_b = None
         best_vec = None
         best_score = float("inf")
 
-        def _cloud_and_score(vec):
-            nonlocal best_cloud, best_score, best_vec
-            trial_payload = {
-                "x_mm": float(vec[0]),
-                "y_mm": float(vec[1]),
-                "z_mm": float(vec[2]),
-                "angle_camera_laser_deg": float(vec[3]),
-                "angle_planxz_camera_deg": float(vec[4]),
+        def _vec_to_payload(cam_vec):
+            return {
+                "x_mm": float(cam_vec[0]),
+                "y_mm": float(cam_vec[1]),
+                "z_mm": float(cam_vec[2]),
+                "angle_camera_laser_deg": float(cam_vec[3]),
+                "angle_planxz_camera_deg": float(cam_vec[4]),
             }
-            rot, trans = _manual_extrinsics_from_payload(trial_payload)
-            moving_cloud = _build_cloud_from_cached_capture(
-                moving_session,
-                rot,
-                trans,
-                max_points=max_points,
-            )
-            if moving_cloud.shape[0] < 200:
-                return np.array([]), 1e9
 
-            # Remove far-out points to keep a stable fit around the scanned cube volume.
-            dist_to_center = np.linalg.norm(moving_cloud - anchor_center, axis=1)
-            keep = dist_to_center < 220.0
-            filtered = moving_cloud[keep] if int(keep.sum()) >= 200 else moving_cloud
-            dists, _ = anchor_tree.query(filtered, k=1, workers=-1)
-            if dists.size == 0:
-                return moving_cloud, 1e9
-            score = float(np.sqrt(np.mean(np.square(np.clip(dists, 0.0, 200.0)))))
+        def _clouds_and_score(vec):
+            nonlocal best_cloud_a, best_cloud_b, best_score, best_vec
+            vec_a = np.asarray(vec[:5], dtype=np.float64)
+            vec_b = np.asarray(vec[5:], dtype=np.float64)
+            rot_a, trans_a = _manual_extrinsics_from_payload(_vec_to_payload(vec_a))
+            rot_b, trans_b = _manual_extrinsics_from_payload(_vec_to_payload(vec_b))
+            cloud_a = _build_cloud_from_cached_capture(session_a, rot_a, trans_a, max_points=max_points)
+            cloud_b = _build_cloud_from_cached_capture(session_b, rot_b, trans_b, max_points=max_points)
+            if cloud_a.shape[0] < 200 or cloud_b.shape[0] < 200:
+                return cloud_a, cloud_b, 1e9
+            tree_a = cKDTree(cloud_a)
+            tree_b = cKDTree(cloud_b)
+            d_ba, _ = tree_a.query(cloud_b, k=1, workers=-1)
+            d_ab, _ = tree_b.query(cloud_a, k=1, workers=-1)
+            if d_ba.size == 0 or d_ab.size == 0:
+                return cloud_a, cloud_b, 1e9
+            rms_ba = float(np.sqrt(np.mean(np.square(np.clip(d_ba, 0.0, 200.0)))))
+            rms_ab = float(np.sqrt(np.mean(np.square(np.clip(d_ab, 0.0, 200.0)))))
+            score = 0.5 * (rms_ba + rms_ab)
             if score < best_score:
                 best_score = score
-                best_cloud = moving_cloud
+                best_cloud_a = cloud_a
+                best_cloud_b = cloud_b
                 best_vec = np.asarray(vec, dtype=np.float64).copy()
-            return moving_cloud, score
+            return cloud_a, cloud_b, score
 
         def objective(vec):
             for idx, (low, high) in enumerate(bounds):
                 if vec[idx] < low or vec[idx] > high:
                     return 1e9
-            _, score = _cloud_and_score(vec)
+            _, _, score = _clouds_and_score(vec)
             return score
 
-        _, initial_score = _cloud_and_score(x0)
+        _, _, initial_score = _clouds_and_score(x0)
         result = minimize(
             objective,
             x0,
@@ -1390,16 +1373,25 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             options={"maxiter": max_iter, "xtol": 1e-2, "ftol": 1e-2, "disp": False},
         )
         final_vec = np.asarray(result.x, dtype=np.float64)
-        final_cloud, final_score = _cloud_and_score(final_vec)
-        if best_cloud is not None and best_vec is not None and best_score < final_score:
-            final_cloud = best_cloud
+        final_cloud_a, final_cloud_b, final_score = _clouds_and_score(final_vec)
+        if (
+            best_cloud_a is not None
+            and best_cloud_b is not None
+            and best_vec is not None
+            and best_score < final_score
+        ):
+            final_cloud_a = best_cloud_a
+            final_cloud_b = best_cloud_b
             final_score = best_score
             final_vec = best_vec
 
+        rec_a = _vec_to_payload(final_vec[:5])
+        rec_b = _vec_to_payload(final_vec[5:])
+
         output = {
             "status": "ok",
-            "moving_camera": moving_camera,
-            "anchor_camera": anchor_camera,
+            "camera_a": camera_a,
+            "camera_b": camera_b,
             "initial_error_mm": float(initial_score),
             "final_error_mm": float(final_score),
             "improvement_mm": float(initial_score - final_score),
@@ -1407,15 +1399,18 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             "success": bool(result.success),
             "message": str(result.message),
             "recommended": {
-                "x_mm": float(final_vec[0]),
-                "y_mm": float(final_vec[1]),
-                "z_mm": float(final_vec[2]),
-                "angle_camera_laser_deg": float(final_vec[3]),
-                "angle_planxz_camera_deg": float(final_vec[4]),
+                camera_a: rec_a,
+                camera_b: rec_b,
             },
-            "cloud": {
-                "count": int(final_cloud.shape[0]),
-                "points": final_cloud.tolist(),
+            "clouds": {
+                camera_a: {
+                    "count": int(final_cloud_a.shape[0]),
+                    "points": final_cloud_a.tolist(),
+                },
+                camera_b: {
+                    "count": int(final_cloud_b.shape[0]),
+                    "points": final_cloud_b.tolist(),
+                },
             },
         }
         with _extrinsics_debug_lock:
