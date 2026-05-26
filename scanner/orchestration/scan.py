@@ -151,6 +151,19 @@ def run_scan(
             "y_offset": max(0, int(sampling.get("y_offset", 0))),
         }
 
+    def _camera_scale(cam_cfg: dict) -> np.ndarray:
+        extr = cam_cfg.get("extrinsics", {}) or {}
+        scale_raw = extr.get("scale_xyz", [1.0, 1.0, 1.0])
+        try:
+            scale = np.asarray(scale_raw, dtype=np.float64).reshape(3)
+        except Exception:
+            logger.warning("Invalid extrinsics.scale_xyz=%r, fallback to [1,1,1]", scale_raw)
+            return np.ones(3, dtype=np.float64)
+        if np.any(~np.isfinite(scale)) or np.any(scale <= 0.0):
+            logger.warning("Non-positive or invalid scale_xyz=%r, fallback to [1,1,1]", scale.tolist())
+            return np.ones(3, dtype=np.float64)
+        return scale
+
     # ------------------------------------------------------------------ #
     # Load calibration
     # ------------------------------------------------------------------ #
@@ -228,6 +241,7 @@ def run_scan(
             threshold = int(cam_cfg.get("laser_threshold", default_threshold))
             mask_rects = cam_cfg.get("laser_mask", []) or []
             sampling = _sampling_config(cam_cfg)
+            scale_xyz = _camera_scale(cam_cfg)
             camera_matrix, dist_coeffs, laser_plane, cam_rot, cam_trans = camera_models[camera_id]
             for idx, frame in enumerate(frames):
                 angle_rad = idx * angle_step_rad
@@ -252,6 +266,7 @@ def run_scan(
                         camera_to_platform_rotation=cam_rot,
                         camera_to_platform_translation=cam_trans,
                     )
+                    pts_3d = pts_3d * scale_xyz
                     profiles.append(pts_3d)
                     profiles_by_camera.setdefault(camera_id, []).append(pts_3d)
                 processed += 1
