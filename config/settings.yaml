@@ -102,6 +102,9 @@ cameras:
       # mechanical angles: yaw +30 deg, elevation +20 deg.
       # Meme offset applique au point vise pour conserver l'orientation initiale.
       target_mm: [0.024, 37.392, 8.668]
+      # Quick scale compensation from cube cloud matching (source=left, target=right).
+      # First pass uses isotropic factor; switch to anisotropic if needed.
+      scale_xyz: [1.2129, 1.2129, 1.2129]
       up_mm: [0.0, 1.0, 0.0]
 
 laser:
