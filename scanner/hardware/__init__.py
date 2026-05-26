@@ -93,8 +93,7 @@ def init_hardware(config: dict) -> None:
             _display_instance = MockDisplay(iface_cfg) if display_enabled else None
 
         if not _camera_instances:
-            logger.warning("No camera initialised")
-            _camera_instance = None
+            raise HardwareError("No camera could be initialised")
         else:
             _camera_instance = next(iter(_camera_instances.values()))
         if _display_instance is None:

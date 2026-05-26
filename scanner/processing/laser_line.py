@@ -232,7 +232,9 @@ def extract_laser_line(
     Returns:
         Float array of shape (N, 2), one ``[col, row]`` point per detected row.
     """
-    del subpixel, mode
+    _ = subpixel
+    if mode != "row_mean":
+        logger.warning("extract_laser_line: mode=%r ignored, only 'row_mean' is implemented", mode)
 
     if frame.ndim != 3 or frame.shape[2] != 3:
         logger.warning("extract_laser_line: expected BGR frame (H,W,3), got %s", frame.shape)

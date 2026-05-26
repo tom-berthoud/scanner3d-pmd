@@ -488,6 +488,13 @@ def load_laser_plane(
         with open(load_path, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
 
+        frame = data.get("frame")
+        if frame is not None and frame != "platform":
+            raise CalibrationError(
+                f"Laser plane file {load_path} has frame={frame!r}, expected 'platform'. "
+                f"Per-camera laser planes cannot be used for runtime triangulation."
+            )
+
         pl = data["plane"]
         plane = np.array(
             [float(pl["a"]), float(pl["b"]), float(pl["c"]), float(pl["d"])],
