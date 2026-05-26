@@ -173,7 +173,7 @@ class TestLoadLaserPlane:
         plane_orig = np.array([0.48, 0.02, 0.877, -205.0], dtype=np.float64)
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "rt.yaml")
-            _save_laser_plane(plane_orig, 29.5, path)
+            _save_laser_plane(plane_orig, 29.5, path, frame="platform")
             plane = load_laser_plane(path)
         np.testing.assert_allclose(plane, plane_orig, atol=1e-6)
 

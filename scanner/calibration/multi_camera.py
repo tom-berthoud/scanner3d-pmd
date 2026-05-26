@@ -87,7 +87,7 @@ def _look_at_extrinsics(extr: dict) -> tuple[np.ndarray, np.ndarray]:
     if float(np.linalg.norm(right)) < 1e-9:
         right = np.array([1.0, 0.0, 0.0], dtype=np.float64)
     right = _normalize(right, "camera right")
-    down = _normalize(np.cross(forward, right), "camera down")
+    down = _normalize(np.cross(right, forward), "camera down")
 
     rotation = np.column_stack([right, down, forward])
     return rotation, position
@@ -134,7 +134,7 @@ def _angle_extrinsics(extr: dict) -> tuple[np.ndarray, np.ndarray]:
     if float(np.linalg.norm(right)) < 1e-9:
         right = np.array([1.0, 0.0, 0.0], dtype=np.float64)
     right = _normalize(right, "camera right")
-    down = _normalize(np.cross(forward, right), "camera down")
+    down = _normalize(np.cross(right, forward), "camera down")
     rotation = np.column_stack([right, down, forward])
     return rotation, position
 

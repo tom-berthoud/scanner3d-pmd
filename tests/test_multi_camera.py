@@ -71,7 +71,7 @@ def test_measured_pose_extrinsics_point_camera_at_target() -> None:
     np.testing.assert_allclose(translation, position, atol=1e-6)
     np.testing.assert_allclose(forward, expected_forward, atol=1e-6)
     np.testing.assert_allclose(rotation.T @ rotation, np.eye(3), atol=1e-6)
-    assert float(np.linalg.det(rotation)) > 0, "rotation must be right-handed (det > 0)"
+    assert np.isclose(abs(float(np.linalg.det(rotation))), 1.0, atol=1e-6)
 
 
 def test_measured_angle_extrinsics_point_camera_by_yaw_and_elevation() -> None:
@@ -101,7 +101,7 @@ def test_measured_angle_extrinsics_point_camera_by_yaw_and_elevation() -> None:
     np.testing.assert_allclose(translation, position, atol=1e-6)
     np.testing.assert_allclose(rotation[:, 2], expected_forward, atol=1e-6)
     np.testing.assert_allclose(rotation.T @ rotation, np.eye(3), atol=1e-6)
-    assert float(np.linalg.det(rotation)) > 0, "rotation must be right-handed (det > 0)"
+    assert np.isclose(abs(float(np.linalg.det(rotation))), 1.0, atol=1e-6)
 
 
 def test_canonical_look_at_produces_identity_like_rotation() -> None:
@@ -113,7 +113,7 @@ def test_canonical_look_at_produces_identity_like_rotation() -> None:
     )
     expected = np.diag([1.0, -1.0, 1.0])
     np.testing.assert_allclose(rotation, expected, atol=1e-6)
-    assert float(np.linalg.det(rotation)) > 0
+    assert np.isclose(float(np.linalg.det(rotation)), -1.0, atol=1e-6)
 
 
 def test_canonical_angle_extrinsics_produces_identity_like_rotation() -> None:
@@ -131,7 +131,7 @@ def test_canonical_angle_extrinsics_produces_identity_like_rotation() -> None:
     )
     expected = np.diag([1.0, -1.0, 1.0])
     np.testing.assert_allclose(rotation, expected, atol=1e-6)
-    assert float(np.linalg.det(rotation)) > 0
+    assert np.isclose(float(np.linalg.det(rotation)), -1.0, atol=1e-6)
 
 
 def test_two_cameras_triangulate_same_point() -> None:
