@@ -136,6 +136,9 @@ window.EXTR_DEFAULTS = {{ defaults | tojson }};
     </div>
 
     <div class="d-grid gap-2 mt-3">
+      <button class="btn btn-warning" id="cheat-btn" onclick="cheatMode()">
+        <i class="bi bi-magic me-1"></i>Cheat mode (fit auto)
+      </button>
       <button class="btn btn-outline-info" onclick="recomputeCloud()">
         <i class="bi bi-arrow-repeat me-1"></i>Recalculer
       </button>
@@ -419,6 +422,49 @@ window.applyExtrinsics = async function(save) {
     box.textContent = (save ? 'Sauvegarde OK' : 'Application memoire OK') + '\\n' + JSON.stringify(payload, null, 2);
   } catch (err) {
     box.textContent = 'Erreur apply: ' + err;
+  }
+};
+
+window.cheatMode = async function() {
+  const box = document.getElementById('status-box');
+  const btn = document.getElementById('cheat-btn');
+  btn.disabled = true;
+  box.textContent = 'Cheat mode: optimisation en cours...';
+  try {
+    const payload = {
+      moving_camera: selectedCamera || 'left',
+      anchor_camera: (selectedCamera === 'right') ? 'left' : 'right',
+      max_points: 14000,
+      max_iter: 90
+    };
+    const resp = await fetch('/extrinsics/cheat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'cheat mode failed');
+
+    setParam('x', data.recommended.x_mm);
+    setParam('y', data.recommended.y_mm);
+    setParam('z', data.recommended.z_mm);
+    setParam('yaw', data.recommended.angle_camera_laser_deg);
+    setParam('elev', data.recommended.angle_planxz_camera_deg);
+    renderPoints(data.cloud.points || []);
+
+    box.textContent =
+      'Cheat mode termine\\n' +
+      'camera mobile: ' + data.moving_camera + '\\n' +
+      'camera ref: ' + data.anchor_camera + '\\n' +
+      'erreur init (mm): ' + Number(data.initial_error_mm || 0).toFixed(3) + '\\n' +
+      'erreur finale (mm): ' + Number(data.final_error_mm || 0).toFixed(3) + '\\n' +
+      'gain (mm): ' + Number(data.improvement_mm || 0).toFixed(3) + '\\n' +
+      'iters: ' + data.iterations + '\\n' +
+      'msg: ' + data.message;
+  } catch (err) {
+    box.textContent = 'Erreur cheat mode: ' + err;
+  } finally {
+    btn.disabled = false;
   }
 };
 
