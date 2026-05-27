@@ -60,7 +60,7 @@ def run_scan(
     )
     from scanner.acquisition import run_capture_sequence_multi
     from scanner.processing import extract_laser_line, triangulate
-    from scanner.reconstruction import merge_profiles, filter_outliers
+    from scanner.reconstruction import add_flat_caps_aligned, merge_profiles, filter_outliers
     from scanner.export import export_stl, export_obj, export_point_cloud_ply
 
     sm = state_machine or StateMachine()
@@ -93,6 +93,7 @@ def run_scan(
     recon_cfg = config.get("reconstruction", {})
     nb_neighbors: int = int(recon_cfg.get("outlier_nb_neighbors", 20))
     std_ratio: float = float(recon_cfg.get("outlier_std_ratio", 2.0))
+    flat_caps_cfg = recon_cfg.get("flat_caps", {}) or {}
 
     export_cfg = config.get("export", {})
     fmt: str = export_cfg.get("default_format", "stl").lower()
@@ -286,6 +287,18 @@ def run_scan(
             cloud = filter_outliers(cloud, nb_neighbors=nb_neighbors, std_ratio=std_ratio)
         else:
             logger.warning("Too few points (%d) for outlier filtering", cloud.shape[0])
+
+        if bool(flat_caps_cfg.get("enabled", False)):
+            cloud = add_flat_caps_aligned(
+                cloud,
+                enabled=True,
+                axis_mode=str(flat_caps_cfg.get("axis_mode", "pca")),
+                axis_index=int(flat_caps_cfg.get("axis_index", 2)),
+                grid_mm=float(flat_caps_cfg.get("grid_mm", 0.8)),
+                top_quantile=float(flat_caps_cfg.get("top_quantile", 0.99)),
+                bottom_quantile=float(flat_caps_cfg.get("bottom_quantile", 0.01)),
+                border_pad_mm=float(flat_caps_cfg.get("border_pad_mm", 1.0)),
+            )
 
         logger.info("Processing complete: %d 3D points", cloud.shape[0])
 

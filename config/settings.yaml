@@ -138,6 +138,14 @@ processing:
 reconstruction:
   outlier_nb_neighbors: 20  # voisins pour filtrage outliers (SciPy KDTree)
   outlier_std_ratio: 2.0    # ratio écart-type pour filtrage outliers
+  flat_caps:
+    enabled: true
+    axis_mode: pca
+    axis_index: 2
+    grid_mm: 0.8
+    top_quantile: 0.99
+    bottom_quantile: 0.01
+    border_pad_mm: 1.0
 
 calibration:
   use_checkerboard: true    # true = utilise les fichiers intrinsics_path calibres par camera
