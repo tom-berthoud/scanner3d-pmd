@@ -67,6 +67,7 @@ class USBCamera:
         attempts = max(1, self._open_retries + 1)
         for attempt in range(1, attempts + 1):
             try:
+                self._wait_for_v4l2_ready()
                 self._open_capture()
                 return
             except Exception as exc:
@@ -82,7 +83,10 @@ class USBCamera:
                     exc,
                     self._open_retry_delay_s,
                 )
-                time.sleep(self._open_retry_delay_s)
+                if attempt >= 2 and self._device_path:
+                    self._usb_reset_device()
+                delay = self._open_retry_delay_s * min(attempt, 4)
+                time.sleep(delay)
         raise HardwareError(f"USB camera {self._capture_device} could not be opened: {last_exc}")
 
     def _wait_for_device_path(self) -> bool:
@@ -96,6 +100,51 @@ class USBCamera:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(0.1)
+
+    def _wait_for_v4l2_ready(self) -> None:
+        """Poll until v4l2-ctl can query the device, meaning the driver is ready."""
+        if not self._device_path or not shutil.which("v4l2-ctl"):
+            return
+        if not self._wait_for_device_path():
+            return
+        deadline = time.monotonic() + max(0.0, self._device_wait_s)
+        while time.monotonic() < deadline:
+            try:
+                subprocess.run(
+                    ["v4l2-ctl", "-d", str(self._device_path), "--get-fmt-video"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=2.0,
+                )
+                return
+            except Exception:
+                time.sleep(0.3)
+        logger.warning("USB camera %s: v4l2 not ready after %.1fs", self._device_path, self._device_wait_s)
+
+    def _usb_reset_device(self) -> None:
+        """Try to reset the USB device via sysfs to force re-enumeration."""
+        if not self._device_path:
+            return
+        try:
+            real = os.path.realpath(str(self._device_path))
+            dev_name = os.path.basename(real)
+            sysfs = f"/sys/class/video4linux/{dev_name}/device"
+            if not os.path.isdir(sysfs):
+                return
+            usb_path = os.path.realpath(sysfs)
+            auth_file = os.path.join(os.path.dirname(usb_path), "authorized")
+            if not os.path.isfile(auth_file):
+                return
+            logger.info("USB reset via sysfs for %s (%s)", self._device_path, auth_file)
+            with open(auth_file, "w") as f:
+                f.write("0")
+            time.sleep(0.5)
+            with open(auth_file, "w") as f:
+                f.write("1")
+            time.sleep(1.0)
+        except Exception as exc:
+            logger.debug("USB reset failed for %s: %s", self._device_path, exc)
 
     def _open_capture(self) -> None:
         """Open VideoCapture and apply requested USB camera properties."""
