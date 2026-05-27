@@ -1,0 +1,400 @@
+\documentclass[aspectratio=169,10pt]{beamer}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{tikz}
+\usetikzlibrary{calc}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\graphicspath{
+  {../rapport/images/}
+  {../rapport/diagrams/}
+  {../rapport/assets/}
+  {../preview/}
+}
+
+\definecolor{heigred}{HTML}{D0002B}
+\definecolor{deepblue}{HTML}{17324D}
+\definecolor{softblue}{HTML}{E8F1F8}
+\definecolor{softred}{HTML}{FBE9ED}
+\definecolor{softgreen}{HTML}{E8F5EE}
+\definecolor{textgray}{HTML}{333333}
+\definecolor{mutedgray}{HTML}{6B7280}
+\definecolor{linegray}{HTML}{D7DEE8}
+\definecolor{camorange}{HTML}{C26A0F}
+\definecolor{lasergreen}{HTML}{1F9D55}
+
+\usetheme{default}
+\usefonttheme{professionalfonts}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{itemize item}{\raisebox{0.15ex}{\scriptsize\textcolor{heigred}{$\blacktriangleright$}}}
+\setbeamertemplate{itemize subitem}{\scriptsize\textcolor{deepblue}{$\bullet$}}
+\setbeamertemplate{frametitle}{
+  \vspace{0.25cm}
+  \begin{beamercolorbox}[wd=\paperwidth,leftskip=0.55cm,rightskip=0.55cm]{frametitle}
+    \usebeamerfont{frametitle}\insertframetitle
+    \ifx\insertframesubtitle\empty\else
+      \\[-0.1cm]{\usebeamerfont{framesubtitle}\textcolor{mutedgray}{\insertframesubtitle}}
+    \fi
+  \end{beamercolorbox}
+  \vspace{-0.05cm}
+  \hspace{0.55cm}\textcolor{linegray}{\rule{0.91\paperwidth}{0.4pt}}
+}
+\setbeamertemplate{footline}{
+  \leavevmode
+  \hbox{
+    \begin{beamercolorbox}[wd=.40\paperwidth,ht=2.4ex,dp=1.1ex,leftskip=0.55cm]{author in head/foot}
+      \scriptsize\textcolor{mutedgray}{Scanner 3D -- pr\'{e}sentation finale}
+    \end{beamercolorbox}
+    \begin{beamercolorbox}[wd=.20\paperwidth,ht=2.4ex,dp=1.1ex,center]{date in head/foot}
+      \scriptsize\textcolor{mutedgray}{\insertframenumber/\inserttotalframenumber}
+    \end{beamercolorbox}
+    \begin{beamercolorbox}[wd=.40\paperwidth,ht=2.4ex,dp=1.1ex]{date in head/foot}
+    \end{beamercolorbox}
+  }
+}
+
+\setbeamercolor{normal text}{fg=textgray,bg=white}
+\setbeamercolor{frametitle}{fg=deepblue,bg=white}
+\setbeamerfont{frametitle}{series=\bfseries,size=\Large}
+\setbeamerfont{framesubtitle}{size=\small}
+\setbeamerfont{title}{series=\bfseries,size=\huge}
+\setbeamerfont{subtitle}{size=\large}
+
+\newcommand{\tagbox}[2]{%
+  \tikz[baseline=(n.base)]\node[
+    rounded corners=2pt,
+    fill=#1,
+    inner xsep=5pt,
+    inner ysep=2pt
+  ] (n) {\scriptsize\bfseries #2};%
+}
+
+\newcommand{\validbox}[1]{%
+  \begin{beamercolorbox}[wd=\linewidth,sep=0.25cm,rounded=true]{}
+    \colorbox{softgreen}{%
+      \parbox{\dimexpr\linewidth-0.5cm\relax}{\textbf{\textcolor{deepblue}{Valid\'{e}}}\quad #1}%
+    }
+  \end{beamercolorbox}
+}
+
+\newcommand{\limitbox}[1]{%
+  \begin{beamercolorbox}[wd=\linewidth,sep=0.25cm,rounded=true]{}
+    \colorbox{softred}{%
+      \parbox{\dimexpr\linewidth-0.5cm\relax}{\textbf{\textcolor{heigred}{Limite}}\quad #1}%
+    }
+  \end{beamercolorbox}
+}
+
+\newcommand{\placeholder}[2]{%
+  \begin{center}
+  \begin{tikzpicture}
+    \node[
+      draw=linegray,
+      dashed,
+      rounded corners=3pt,
+      fill=softblue,
+      minimum width=0.96\linewidth,
+      minimum height=#1,
+      align=center,
+      text width=0.86\linewidth,
+      inner sep=8pt
+    ] {
+      \textbf{\textcolor{deepblue}{Image \`{a} ajouter}}\\[0.15cm]
+      \small #2
+    };
+  \end{tikzpicture}
+  \end{center}
+}
+
+\title{Scanner 3D \`{a} triangulation laser}
+\subtitle{Pr\'{e}sentation finale -- Projet multidisciplinaire}
+\author{Luc Marchand \and Tim Stamm \and Jason Weber \and Hadrien Fuentes \and Tom Berthoud}
+\institute{HEIG-VD -- PMD 2026}
+\date{7 juin 2026}
+
+\begin{document}
+
+% ============================================================
+% SLIDE 1 : TITRE
+% ============================================================
+{
+\setbeamertemplate{footline}{}
+\begin{frame}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \includegraphics[height=1.35cm]{HEIG-VD_logo.png}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \raggedleft\includegraphics[height=1.35cm]{logo_hesso.pdf}
+    \end{column}
+  \end{columns}
+
+  \vspace{1.0cm}
+  {\usebeamerfont{title}\textcolor{deepblue}{Scanner 3D \`{a} triangulation laser}}\\[0.25cm]
+  {\usebeamerfont{subtitle}\textcolor{mutedgray}{Pr\'{e}sentation finale -- bilan et r\'{e}sultats}}\\[0.55cm]
+
+  \begin{tikzpicture}
+    \fill[heigred] (0,0) rectangle (1.1,0.08);
+    \fill[deepblue] (1.18,0) rectangle (5.8,0.08);
+  \end{tikzpicture}
+
+  \vfill
+  \small
+  \textbf{\'{E}quipe :} Luc Marchand, Tim Stamm, Jason Weber, Hadrien Fuentes, Tom Berthoud\\
+  \textbf{Contexte :} Projet multidisciplinaire HEIG-VD, semestre 4\\
+  \textbf{Date :} 7 juin 2026
+\end{frame}
+}
+
+% ============================================================
+% SLIDE 2 : RAPPEL PROJET ET OBJECTIFS
+% ============================================================
+\begin{frame}{Rappel du projet}{Un scanner 3D ouvert pour le MakeLab}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.55\textwidth}
+      \begin{itemize}
+        \item Num\'{e}riser des objets physiques en mod\`{e}les 3D (\textbf{STL/OBJ}).
+        \item Syst\`{e}me autonome, complet et open-source.
+        \item Budget $\leq 300$\,CHF, scan $< 10$\,min.
+        \item Objets jusqu'\`{a} $150\times150\times150$\,mm.
+      \end{itemize}
+
+      \vspace{0.35cm}
+      \begin{tabularx}{\linewidth}{@{}>{\bfseries}p{2.4cm}X@{}}
+        \toprule
+        Temps & $< 10$ min (observ\'{e} : $\sim$1,5 min) \\
+        Pr\'{e}cision & Cible $\leq 2$ mm \\
+        Export & STL et OBJ \\
+        Interface & Web + \'{e}cran + LEDs \\
+        \bottomrule
+      \end{tabularx}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \hspace{0.5cm}
+      \includegraphics[width=\linewidth,height=5.8cm,keepaspectratio]{vue_ext_ferme.jpeg}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ============================================================
+% SLIDE 3 : PRINCIPE ET ARCHITECTURE
+% ============================================================
+\begin{frame}{Principe de triangulation}{Du laser au mod\`{e}le 3D}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.46\textwidth}
+      \begin{enumerate}
+        \item Le plateau tourne pas \`{a} pas ($200\times1{,}8^\circ$).
+        \item Le laser ligne \'{e}claire un profil de l'objet.
+        \item La cam\'{e}ra capture la d\'{e}formation de la ligne.
+        \item Triangulation : pixel $\rightarrow$ point 3D.
+        \item Fusion des profils sur $360^\circ$ $\rightarrow$ nuage de points $\rightarrow$ STL.
+      \end{enumerate}
+
+      \vspace{0.15cm}
+      \footnotesize
+      \textbf{Pipeline :} Acquisition $\rightarrow$ Extraction $\rightarrow$ Triangulation $\rightarrow$ Reconstruction $\rightarrow$ Export
+    \end{column}
+    \begin{column}{0.50\textwidth}
+      \hspace{0.5cm}
+      \input{schemas/triangulation.tex}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ============================================================
+% SLIDE 4 : RESULTATS MONO-CAMERA
+% ============================================================
+\begin{frame}{R\'{e}sultats avec une cam\'{e}ra}{Formes simples vs formes anguleuses}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.31\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=4.25cm,keepaspectratio]{vue_interieur_laser_piece.jpeg}\\
+      \scriptsize Laser sur pi\`{e}ce
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=4.25cm,keepaspectratio]{screen_cylindre_stl.png}\\
+      \scriptsize Cylindre : r\'{e}sultat correct
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=4.25cm,keepaspectratio]{carre_gris_stl.png}\\
+      \scriptsize Cube : zones manquantes
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2cm}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \validbox{Formes cylindriques : r\'{e}sultat exploitable et coh\'{e}rent.}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \limitbox{Formes anguleuses : occultations et STL incomplet.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ============================================================
+% SLIDE 5 : PROBLEME OCCULTATION
+% ============================================================
+\begin{frame}{Probl\`{e}me identifi\'{e} : occultation}{Le laser touche la pi\`{e}ce, mais la cam\'{e}ra ne voit pas toujours le point}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \input{schemas/occultation.tex}
+
+      \vspace{0.2cm}
+      \scriptsize
+      Le laser \'{e}claire la face arri\`{e}re, mais une autre face bloque la vue cam\'{e}ra. Aucun r\'{e}glage logiciel ne peut r\'{e}cup\'{e}rer ce point.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=4.0cm,keepaspectratio]{vue_obsturction_laser.jpeg}\\[0.15cm]
+      \scriptsize Photo r\'{e}elle : zone masqu\'{e}e sur pi\`{e}ce anguleuse.
+
+      \vspace{0.3cm}
+      \limitbox{Limite physique de la configuration mono-cam\'{e}ra : certaines zones restent invisibles.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ============================================================
+% SLIDE 6 : SOLUTION DOUBLE CAMERA
+% ============================================================
+\begin{frame}{Solution : double cam\'{e}ra}{Deux points de vue pour r\'{e}duire les zones invisibles}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.46\textwidth}
+      \input{schemas/deux_cameras.tex}
+
+      \vspace{0.15cm}
+      \scriptsize
+      \begin{itemize}
+        \item Cam\'{e}ra 1 (Pi Camera) : vue haute, $+30^\circ$.
+        \item Cam\'{e}ra 2 (USB) : vue basse, $-30^\circ$.
+        \item M\^{e}me laser, capture s\'{e}quentielle.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.50\textwidth}
+      \placeholder{3.0cm}{Photo du montage double cam\'{e}ra r\'{e}el}
+
+      \vspace{0.1cm}
+      \small
+      \textbf{Calibration par cam\'{e}ra :}
+      \begin{itemize}
+        \item Intrinseques (damier OpenCV)
+        \item Plan laser ($\mathbf{n}, d$)
+        \item Extrinseques vers rep\`{e}re plateau
+      \end{itemize}
+
+      \vspace{0.1cm}
+      \textbf{Fusion :} les deux nuages dans un m\^{e}me rep\`{e}re monde avant filtrage et export.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ============================================================
+% SLIDE 7 : COMPARATIF MONO VS DOUBLE
+% ============================================================
+\begin{frame}{Comparatif : mono vs double cam\'{e}ra}{R\'{e}sultats sur pi\`{e}ce anguleuse}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \centering
+      \textbf{\textcolor{deepblue}{Mono-cam\'{e}ra}}\\[0.2cm]
+      \includegraphics[width=\linewidth,height=4.0cm,keepaspectratio]{carre_gris_stl.png}\\[0.1cm]
+      \scriptsize STL mono-cam\'{e}ra : zones manquantes, d\'{e}formations.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \textbf{\textcolor{lasergreen}{Double cam\'{e}ra}}\\[0.2cm]
+      \placeholder{4.0cm}{STL double cam\'{e}ra : r\'{e}sultat \`{a} capturer apr\`{e}s int\'{e}gration}
+      \scriptsize R\'{e}sultat attendu : couverture am\'{e}lior\'{e}e, moins de trous.
+    \end{column}
+  \end{columns}
+
+  \vspace{0.15cm}
+  \begin{center}
+    \tagbox{softblue}{Objectif}\quad Montrer le gain mesurable sur un m\^{e}me objet de r\'{e}f\'{e}rence.
+  \end{center}
+\end{frame}
+
+% ============================================================
+% SLIDE 8 : VALIDATION ET MESURES
+% ============================================================
+\begin{frame}[shrink=5]{Validation des objectifs}{Bilan final par rapport au cahier des charges}
+  \small
+  \begin{tabularx}{\linewidth}{@{}p{0.8cm}p{5.8cm}p{3.0cm}X@{}}
+    \toprule
+    \textbf{R\'{e}f.} & \textbf{Objectif} & \textbf{Cible} & \textbf{R\'{e}sultat} \\
+    \midrule
+    O1  & Num\'{e}riser objet $\leq 150^3$\,mm, automatis\'{e}  & Fonctionnel & D\'{e}montr\'{e} \\
+    O2  & Export STL ou OBJ                              & Obligatoire & Fait \\
+    O3  & Cycle de scan $\leq 10$\,min                   & $< 10$ min & $\sim$1,5 min \\
+    O4  & Prise en main $\leq 10$\,min                   & $< 10$ min & \`{A} valider \\
+    O5  & Budget $\leq 300$\,CHF                         & $\leq 300$ CHF & Respect\'{e} \\
+    O6  & S\'{e}curit\'{e} utilisateur                         & Conforme & Interlock OK \\
+    O7  & Retour visuel LED / \'{e}cran                     & Fonctionnel & Fait \\
+    O8  & Interface web, $\leq 5$ actions                & Fonctionnel & Fait \\
+    O9  & Erreur $\leq 2$\,mm, r\'{e}p\'{e}tabilit\'{e} $\leq 1$\,mm & Quantifi\'{e} & \`{A} mesurer \\
+    \bottomrule
+  \end{tabularx}
+
+  \vspace{0.15cm}
+  \validbox{La majorit\'{e} des objectifs sont atteints ou d\'{e}montr\'{e}s. La pr\'{e}cision reste \`{a} quantifier formellement.}
+\end{frame}
+
+% ============================================================
+% SLIDE 9 : CONCLUSION
+% ============================================================
+\begin{frame}{Conclusion}{Bilan du projet}
+  \vspace{0.15cm}
+  \begin{columns}[T,totalwidth=0.94\textwidth]
+    \begin{column}{0.32\textwidth}
+      \colorbox{softgreen}{%
+        \parbox[t][2.8cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
+          \scriptsize
+          \textbf{\textcolor{deepblue}{R\'{e}alis\'{e}}}\\[0.12cm]
+          Scanner complet et fonctionnel. Scan en $\sim$1,5\,min, export STL/OBJ, interface web, double cam\'{e}ra int\'{e}gr\'{e}e.
+        }%
+      }
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \colorbox{softred}{%
+        \parbox[t][2.8cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
+          \scriptsize
+          \textbf{\textcolor{heigred}{Limites}}\\[0.12cm]
+          Pr\'{e}cision absolue \`{a} quantifier. Cavit\'{e}s profondes non couvertes. Maillage STL fragile sur formes complexes.
+        }%
+      }
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \colorbox{softblue}{%
+        \parbox[t][2.8cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
+          \scriptsize
+          \textbf{\textcolor{deepblue}{Perspectives}}\\[0.12cm]
+          Am\'{e}liorer le maillage (Poisson/Open3D). Valider la pr\'{e}cision sur pi\`{e}ces \'{e}talons. Finition ergonomie et s\'{e}curit\'{e}.
+        }%
+      }
+    \end{column}
+  \end{columns}
+
+  \vspace{0.32cm}
+  \begin{center}
+    \begin{minipage}{0.78\textwidth}
+      \centering
+      \textcolor{linegray}{\rule{\linewidth}{0.5pt}}\\[0.14cm]
+      \large\textbf{\textcolor{deepblue}{Message final}}\\[0.12cm]
+      \small
+      Le scanner 3D est fonctionnel de bout en bout : de la pi\`{e}ce pos\'{e}e au fichier STL, en passant par la double cam\'{e}ra et l'interface web. Le projet est livrable et am\'{e}liorable.\\[0.14cm]
+      \textcolor{linegray}{\rule{\linewidth}{0.5pt}}
+    \end{minipage}
+  \end{center}
+\end{frame}
+
+\end{document}
