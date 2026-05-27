@@ -58,6 +58,7 @@ def run_scan(
         camera_ids,
         load_camera_model,
     )
+    from scanner.calibration.multi_camera import _load_extrinsics
     from scanner.acquisition import run_capture_sequence_multi
     from scanner.processing import extract_laser_line, triangulate
     from scanner.reconstruction import add_flat_caps_aligned, merge_profiles, filter_outliers
@@ -94,6 +95,7 @@ def run_scan(
     nb_neighbors: int = int(recon_cfg.get("outlier_nb_neighbors", 20))
     std_ratio: float = float(recon_cfg.get("outlier_std_ratio", 2.0))
     flat_caps_cfg = recon_cfg.get("flat_caps", {}) or {}
+    auto_cheat_cfg = recon_cfg.get("auto_cheat_extrinsics", {}) or {}
 
     export_cfg = config.get("export", {})
     fmt: str = export_cfg.get("default_format", "stl").lower()
@@ -151,6 +153,170 @@ def run_scan(
             "x_offset": max(0, int(sampling.get("x_offset", 0))),
             "y_offset": max(0, int(sampling.get("y_offset", 0))),
         }
+
+    def _find_cam_cfg(camera_id: str) -> dict:
+        return next(
+            (item for item in config.get("cameras", []) if str(item.get("id")) == str(camera_id)),
+            {},
+        )
+
+    def _seed_vec_from_cfg(camera_id: str) -> np.ndarray | None:
+        cam_cfg = _find_cam_cfg(camera_id)
+        extr = cam_cfg.get("extrinsics", {}) or {}
+        pos = extr.get("position_mm")
+        yaw = extr.get("angle_camera_laser_deg", extr.get("yaw_deg"))
+        elev = extr.get("angle_planxz_camera_deg", extr.get("elevation_deg", extr.get("pitch_deg")))
+        if pos is None or yaw is None or elev is None:
+            return None
+        return np.asarray([float(pos[0]), float(pos[1]), float(pos[2]), float(yaw), float(elev)], dtype=np.float64)
+
+    def _pose_from_vec(vec: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        rot, trans = _load_extrinsics(
+            {
+                "extrinsics": {
+                    "position_mm": [float(vec[0]), float(vec[1]), float(vec[2])],
+                    "angle_camera_laser_deg": float(vec[3]),
+                    "angle_planxz_camera_deg": float(vec[4]),
+                    "up_mm": [0.0, 1.0, 0.0],
+                }
+            }
+        )
+        return rot, trans
+
+    def _decimate_points(points: np.ndarray, max_points: int) -> np.ndarray:
+        if points.shape[0] <= max_points:
+            return points
+        idx = np.linspace(0, points.shape[0] - 1, max_points).astype(np.int64)
+        return points[idx]
+
+    def _build_cloud_from_extracted(
+        extracted_items: list[dict],
+        camera_matrix: np.ndarray,
+        dist_coeffs: np.ndarray,
+        laser_plane: np.ndarray,
+        cam_rot: np.ndarray,
+        cam_trans: np.ndarray,
+        max_points: int,
+    ) -> np.ndarray:
+        parts: list[np.ndarray] = []
+        per_line_limit = int(auto_cheat_cfg.get("per_line_max_points", 250))
+        for item in extracted_items:
+            line_px = item["line_pixels"]
+            if line_px.shape[0] == 0:
+                continue
+            if line_px.shape[0] > per_line_limit:
+                idx = np.linspace(0, line_px.shape[0] - 1, per_line_limit).astype(np.int64)
+                line_px = line_px[idx]
+            pts = triangulate(
+                line_px,
+                camera_matrix,
+                dist_coeffs,
+                laser_plane,
+                float(item["angle_rad"]),
+                axis_point=_axis_point,
+                camera_to_platform_rotation=cam_rot,
+                camera_to_platform_translation=cam_trans,
+            )
+            if pts.shape[0] > 0:
+                parts.append(pts)
+        if not parts:
+            return np.empty((0, 3), dtype=np.float64)
+        return _decimate_points(np.vstack(parts).astype(np.float64), max_points=max_points)
+
+    def _run_auto_cheat_extrinsics(
+        extracted_by_camera: dict[str, list[dict]],
+    ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+        if not bool(auto_cheat_cfg.get("enabled", False)):
+            return {}
+        from scipy.optimize import minimize  # type: ignore[import]
+        from scipy.spatial import cKDTree  # type: ignore[import]
+
+        cams = [cid for cid in configured_camera_ids if cid in extracted_by_camera]
+        if len(cams) < 2:
+            return {}
+        cam_a, cam_b = cams[0], cams[1]
+        seed_a = _seed_vec_from_cfg(cam_a)
+        seed_b = _seed_vec_from_cfg(cam_b)
+        if seed_a is None or seed_b is None:
+            logger.warning("auto_cheat_extrinsics: missing angle extrinsics seed in settings, skip")
+            return {}
+
+        cm_a, dc_a, lp_a, _, _ = camera_models[cam_a]
+        cm_b, dc_b, lp_b, _, _ = camera_models[cam_b]
+
+        x0 = np.hstack([seed_a, seed_b]).astype(np.float64)
+        trans_span = float(auto_cheat_cfg.get("translation_span_mm", 120.0))
+        angle_span = float(auto_cheat_cfg.get("angle_span_deg", 20.0))
+        bounds = []
+        for base in (seed_a, seed_b):
+            bounds.extend(
+                [
+                    (base[0] - trans_span, base[0] + trans_span),
+                    (base[1] - trans_span, base[1] + trans_span),
+                    (base[2] - trans_span, base[2] + trans_span),
+                    (base[3] - angle_span, base[3] + angle_span),
+                    (base[4] - angle_span, base[4] + angle_span),
+                ]
+            )
+
+        max_points = int(auto_cheat_cfg.get("max_points", 12000))
+        best_score = float("inf")
+        best_vec: np.ndarray | None = None
+
+        def _score(vec: np.ndarray) -> float:
+            nonlocal best_score, best_vec
+            for i, (low, high) in enumerate(bounds):
+                if vec[i] < low or vec[i] > high:
+                    return 1e9
+            rot_a, trans_a = _pose_from_vec(vec[:5])
+            rot_b, trans_b = _pose_from_vec(vec[5:])
+            cloud_a = _build_cloud_from_extracted(
+                extracted_by_camera[cam_a], cm_a, dc_a, lp_a, rot_a, trans_a, max_points=max_points
+            )
+            cloud_b = _build_cloud_from_extracted(
+                extracted_by_camera[cam_b], cm_b, dc_b, lp_b, rot_b, trans_b, max_points=max_points
+            )
+            if cloud_a.shape[0] < 200 or cloud_b.shape[0] < 200:
+                return 1e9
+            tree_a = cKDTree(cloud_a)
+            tree_b = cKDTree(cloud_b)
+            d_ba, _ = tree_a.query(cloud_b, k=1, workers=-1)
+            d_ab, _ = tree_b.query(cloud_a, k=1, workers=-1)
+            rms = 0.5 * (
+                float(np.sqrt(np.mean(np.square(np.clip(d_ba, 0.0, 200.0)))))
+                + float(np.sqrt(np.mean(np.square(np.clip(d_ab, 0.0, 200.0)))))
+            )
+            if rms < best_score:
+                best_score = rms
+                best_vec = vec.copy()
+            return rms
+
+        initial = _score(x0)
+        res = minimize(
+            _score,
+            x0,
+            method="Powell",
+            options={
+                "maxiter": int(auto_cheat_cfg.get("max_iter", 60)),
+                "xtol": 1e-2,
+                "ftol": 1e-2,
+                "disp": False,
+            },
+        )
+        final_vec = best_vec if best_vec is not None else np.asarray(res.x, dtype=np.float64)
+        final = _score(final_vec)
+        logger.info(
+            "auto_cheat_extrinsics: cams=(%s,%s) initial=%.3fmm final=%.3fmm iters=%s success=%s",
+            cam_a,
+            cam_b,
+            float(initial),
+            float(final),
+            int(getattr(res, "nit", 0)),
+            bool(getattr(res, "success", False)),
+        )
+        rot_a, trans_a = _pose_from_vec(final_vec[:5])
+        rot_b, trans_b = _pose_from_vec(final_vec[5:])
+        return {cam_a: (rot_a, trans_a), cam_b: (rot_b, trans_b)}
 
     # ------------------------------------------------------------------ #
     # Load calibration
@@ -210,6 +376,7 @@ def run_scan(
     profiles: list[np.ndarray] = []
     profiles_by_camera: dict[str, list[np.ndarray]] = {}
     angle_step_rad = 2.0 * math.pi / n_steps
+    extracted_by_camera: dict[str, list[dict]] = {}
 
     try:
         total_processing = max(1, sum(len(frames) for frames in frames_by_camera.values()))
@@ -229,7 +396,7 @@ def run_scan(
             threshold = int(cam_cfg.get("laser_threshold", default_threshold))
             mask_rects = cam_cfg.get("laser_mask", []) or []
             sampling = _sampling_config(cam_cfg)
-            camera_matrix, dist_coeffs, laser_plane, cam_rot, cam_trans = camera_models[camera_id]
+            _camera_matrix, _dist_coeffs, _laser_plane, _cam_rot, _cam_trans = camera_models[camera_id]
             for idx, frame in enumerate(frames):
                 angle_rad = idx * angle_step_rad
                 line_px = extract_laser_line(
@@ -242,26 +409,50 @@ def run_scan(
                     mask_rects=mask_rects,
                     **sampling,
                 )
+                extracted_by_camera.setdefault(camera_id, []).append(
+                    {"angle_rad": float(angle_rad), "line_pixels": line_px}
+                )
+                processed += 1
+                _progress(
+                    processed,
+                    total_processing,
+                    f"Extracting {camera_id} frame {idx + 1}/{len(frames)}",
+                )
+
+        tuned_poses = _run_auto_cheat_extrinsics(extracted_by_camera)
+        for camera_id, (rot, trans) in tuned_poses.items():
+            cm, dc, lp, _old_rot, _old_trans = camera_models[camera_id]
+            camera_models[camera_id] = (cm, dc, lp, rot, trans)
+
+        processed = 0
+        for camera_id, extracted_items in extracted_by_camera.items():
+            if camera_id not in camera_models:
+                continue
+            camera_matrix, dist_coeffs, laser_plane, cam_rot, cam_trans = camera_models[camera_id]
+            for idx, item in enumerate(extracted_items):
+                line_px = item["line_pixels"]
                 if line_px.shape[0] > 0:
                     pts_3d = triangulate(
                         line_px,
                         camera_matrix,
                         dist_coeffs,
                         laser_plane,
-                        angle_rad,
+                        float(item["angle_rad"]),
                         axis_point=_axis_point,
                         camera_to_platform_rotation=cam_rot,
                         camera_to_platform_translation=cam_trans,
                     )
-                    profiles.append(pts_3d)
-                    profiles_by_camera.setdefault(camera_id, []).append(pts_3d)
+                    if pts_3d.shape[0] > 0:
+                        profiles.append(pts_3d)
+                        profiles_by_camera.setdefault(camera_id, []).append(pts_3d)
                 processed += 1
                 _progress(
                     processed,
                     total_processing,
-                    f"Processing {camera_id} frame {idx + 1}/{len(frames)}",
+                    f"Triangulating {camera_id} frame {idx + 1}/{len(extracted_items)}",
                 )
 
+        for camera_id in frames_by_camera:
             camera_profiles = profiles_by_camera.get(camera_id, [])
             if camera_profiles:
                 camera_cloud = merge_profiles(camera_profiles)
