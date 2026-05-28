@@ -158,6 +158,9 @@ reconstruction:
     gap_mm: 4.0
     min_segment_points: 12
     min_overlap_points: 8
+    local_window_points: 21
+    local_poly_degree: 2
+    local_min_points: 9
 
 calibration:
   use_checkerboard: true    # true = utilise les fichiers intrinsics_path calibres par camera

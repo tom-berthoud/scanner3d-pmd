@@ -351,6 +351,41 @@ def run_scan(
         gap_mm = float(profile_fusion_cfg.get("gap_mm", 4.0))
         min_seg_points = int(profile_fusion_cfg.get("min_segment_points", 12))
         min_overlap_points = int(profile_fusion_cfg.get("min_overlap_points", 8))
+        local_window_points = int(profile_fusion_cfg.get("local_window_points", 21))
+        local_poly_degree = int(profile_fusion_cfg.get("local_poly_degree", 2))
+        local_min_points = int(profile_fusion_cfg.get("local_min_points", 9))
+
+        def _local_poly_smooth(curve_pts: np.ndarray, t_vals: np.ndarray) -> np.ndarray:
+            n = curve_pts.shape[0]
+            if n < max(local_min_points, local_poly_degree + 2):
+                return curve_pts
+            win = max(local_poly_degree + 2, local_window_points)
+            if win % 2 == 0:
+                win += 1
+            half = win // 2
+            out = curve_pts.copy()
+            for i in range(n):
+                s0 = max(0, i - half)
+                s1 = min(n, i + half + 1)
+                # Expand near borders to keep enough support.
+                if s1 - s0 < local_poly_degree + 2:
+                    if s0 == 0:
+                        s1 = min(n, s0 + local_poly_degree + 2)
+                    else:
+                        s0 = max(0, s1 - (local_poly_degree + 2))
+                tt = t_vals[s0:s1]
+                if tt.shape[0] < local_poly_degree + 2:
+                    continue
+                t0 = float(tt.mean())
+                tc = tt - t0
+                for ax in range(3):
+                    yy = curve_pts[s0:s1, ax]
+                    try:
+                        coeff = np.polyfit(tc, yy, deg=local_poly_degree)
+                        out[i, ax] = float(np.polyval(coeff, t_vals[i] - t0))
+                    except Exception:
+                        pass
+            return out
         d = np.diff(t_all)
         split_idx = np.where(d > gap_mm)[0] + 1
         bounds = np.concatenate(([0], split_idx, [pts_all.shape[0]]))
@@ -393,6 +428,7 @@ def run_scan(
             ai = np.column_stack([np.interp(t_grid, ta, a[:, k]) for k in range(3)])
             bi = np.column_stack([np.interp(t_grid, tb, b[:, k]) for k in range(3)])
             fused_overlap = 0.5 * (ai + bi)
+            fused_overlap = _local_poly_smooth(fused_overlap, t_grid)
 
             # Keep non-overlapping tails to preserve mono-camera visibility.
             tail_a = a[(ta < t0) | (ta > t1)]
