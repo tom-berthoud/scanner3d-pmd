@@ -153,6 +153,11 @@ reconstruction:
     per_line_max_points: 250
     translation_span_mm: 120.0
     angle_span_deg: 20.0
+  profile_fusion:
+    enabled: true
+    gap_mm: 4.0
+    min_segment_points: 12
+    min_overlap_points: 8
 
 calibration:
   use_checkerboard: true    # true = utilise les fichiers intrinsics_path calibres par camera

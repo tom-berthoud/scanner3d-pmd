@@ -96,6 +96,7 @@ def run_scan(
     std_ratio: float = float(recon_cfg.get("outlier_std_ratio", 2.0))
     flat_caps_cfg = recon_cfg.get("flat_caps", {}) or {}
     auto_cheat_cfg = recon_cfg.get("auto_cheat_extrinsics", {}) or {}
+    profile_fusion_cfg = recon_cfg.get("profile_fusion", {}) or {}
 
     export_cfg = config.get("export", {})
     fmt: str = export_cfg.get("default_format", "stl").lower()
@@ -318,6 +319,91 @@ def run_scan(
         rot_b, trans_b = _pose_from_vec(final_vec[5:])
         return {cam_a: (rot_a, trans_a), cam_b: (rot_b, trans_b)}
 
+    def _fuse_step_profiles(points_by_camera: dict[str, np.ndarray]) -> np.ndarray:
+        if not bool(profile_fusion_cfg.get("enabled", True)):
+            valid = [p for p in points_by_camera.values() if p.ndim == 2 and p.shape[0] > 0]
+            return np.vstack(valid).astype(np.float64) if valid else np.empty((0, 3), dtype=np.float64)
+
+        parts: list[np.ndarray] = []
+        src: list[str] = []
+        for cam_id, pts in points_by_camera.items():
+            if pts.ndim == 2 and pts.shape[0] > 0:
+                parts.append(pts.astype(np.float64))
+                src.extend([cam_id] * pts.shape[0])
+        if not parts:
+            return np.empty((0, 3), dtype=np.float64)
+        if len(parts) == 1:
+            return parts[0]
+
+        pts_all = np.vstack(parts).astype(np.float64)
+        src_arr = np.asarray(src, dtype=object)
+
+        center = pts_all.mean(axis=0)
+        cov = np.cov((pts_all - center).T)
+        evals, evecs = np.linalg.eigh(cov)
+        axis = evecs[:, int(np.argmax(evals))]
+        t_all = (pts_all - center) @ axis
+        order = np.argsort(t_all)
+        pts_all = pts_all[order]
+        src_arr = src_arr[order]
+        t_all = t_all[order]
+
+        gap_mm = float(profile_fusion_cfg.get("gap_mm", 4.0))
+        min_seg_points = int(profile_fusion_cfg.get("min_segment_points", 12))
+        min_overlap_points = int(profile_fusion_cfg.get("min_overlap_points", 8))
+        d = np.diff(t_all)
+        split_idx = np.where(d > gap_mm)[0] + 1
+        bounds = np.concatenate(([0], split_idx, [pts_all.shape[0]]))
+
+        fused_segments: list[np.ndarray] = []
+        for i in range(len(bounds) - 1):
+            s0, s1 = int(bounds[i]), int(bounds[i + 1])
+            seg_pts = pts_all[s0:s1]
+            seg_src = src_arr[s0:s1]
+            if seg_pts.shape[0] < min_seg_points:
+                fused_segments.append(seg_pts)
+                continue
+
+            cams = np.unique(seg_src).tolist()
+            if len(cams) < 2:
+                fused_segments.append(seg_pts)
+                continue
+            cam_a, cam_b = cams[0], cams[1]
+            a = seg_pts[seg_src == cam_a]
+            b = seg_pts[seg_src == cam_b]
+            if a.shape[0] < min_overlap_points or b.shape[0] < min_overlap_points:
+                fused_segments.append(seg_pts)
+                continue
+
+            ta = (a - center) @ axis
+            tb = (b - center) @ axis
+            oa = np.argsort(ta)
+            ob = np.argsort(tb)
+            a, ta = a[oa], ta[oa]
+            b, tb = b[ob], tb[ob]
+
+            t0 = max(float(ta.min()), float(tb.min()))
+            t1 = min(float(ta.max()), float(tb.max()))
+            if t1 <= t0:
+                fused_segments.append(seg_pts)
+                continue
+
+            n = max(a.shape[0], b.shape[0])
+            t_grid = np.linspace(t0, t1, n, dtype=np.float64)
+            ai = np.column_stack([np.interp(t_grid, ta, a[:, k]) for k in range(3)])
+            bi = np.column_stack([np.interp(t_grid, tb, b[:, k]) for k in range(3)])
+            fused_overlap = 0.5 * (ai + bi)
+
+            # Keep non-overlapping tails to preserve mono-camera visibility.
+            tail_a = a[(ta < t0) | (ta > t1)]
+            tail_b = b[(tb < t0) | (tb > t1)]
+            fused_seg = np.vstack([fused_overlap, tail_a, tail_b]).astype(np.float64)
+            fused_segments.append(fused_seg)
+
+        if not fused_segments:
+            return np.empty((0, 3), dtype=np.float64)
+        return np.vstack([seg for seg in fused_segments if seg.shape[0] > 0]).astype(np.float64)
+
     # ------------------------------------------------------------------ #
     # Load calibration
     # ------------------------------------------------------------------ #
@@ -425,6 +511,7 @@ def run_scan(
             camera_models[camera_id] = (cm, dc, lp, rot, trans)
 
         processed = 0
+        triangulated_by_camera: dict[str, list[np.ndarray]] = {}
         for camera_id, extracted_items in extracted_by_camera.items():
             if camera_id not in camera_models:
                 continue
@@ -443,14 +530,34 @@ def run_scan(
                         camera_to_platform_translation=cam_trans,
                     )
                     if pts_3d.shape[0] > 0:
-                        profiles.append(pts_3d)
+                        triangulated_by_camera.setdefault(camera_id, []).append(pts_3d)
                         profiles_by_camera.setdefault(camera_id, []).append(pts_3d)
+                    else:
+                        triangulated_by_camera.setdefault(camera_id, []).append(
+                            np.empty((0, 3), dtype=np.float64)
+                        )
+                else:
+                    triangulated_by_camera.setdefault(camera_id, []).append(
+                        np.empty((0, 3), dtype=np.float64)
+                    )
                 processed += 1
                 _progress(
                     processed,
                     total_processing,
                     f"Triangulating {camera_id} frame {idx + 1}/{len(extracted_items)}",
                 )
+
+        max_steps = 0
+        for arr in triangulated_by_camera.values():
+            max_steps = max(max_steps, len(arr))
+        for step_idx in range(max_steps):
+            step_map: dict[str, np.ndarray] = {}
+            for cam_id, arr in triangulated_by_camera.items():
+                if step_idx < len(arr):
+                    step_map[cam_id] = arr[step_idx]
+            fused = _fuse_step_profiles(step_map)
+            if fused.shape[0] > 0:
+                profiles.append(fused)
 
         for camera_id in frames_by_camera:
             camera_profiles = profiles_by_camera.get(camera_id, [])
