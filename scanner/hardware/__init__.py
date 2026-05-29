@@ -16,6 +16,14 @@ class HardwareError(Exception):
     """Raised when a hardware operation fails or the hardware is unavailable."""
 
 
+class DoorOpenError(HardwareError):
+    """Raised when the safety door interlock trips (door opened) during a scan.
+
+    Subclasses HardwareError so existing error-recovery paths (which turn the
+    laser off) handle it correctly.
+    """
+
+
 _ON_PI: bool = False
 try:
     import gpiozero  # noqa: F401
@@ -34,6 +42,7 @@ _motor_instance = None
 _laser_instance = None
 _led_instance = None
 _display_instance = None
+_door_instance = None
 _hardware_config: dict = {}
 
 
@@ -41,12 +50,14 @@ def init_hardware(config: dict) -> None:
     """Initialise all hardware singletons from *config*."""
     global _camera_instance, _camera_instances, _camera_configs, _failed_camera_configs
     global _motor_instance, _laser_instance, _led_instance, _display_instance, _hardware_config
+    global _door_instance
 
     from scanner.calibration import camera_configs
 
     _hardware_config = config
     logger.info("Initialising hardware (on_pi=%s)", _ON_PI)
     iface_cfg = config.get("interface", {})
+    door_cfg = config.get("safety", {}).get("door_interlock", {})
     display_type = str(iface_cfg.get("display_type", "oled")).lower()
     display_enabled = display_type not in ("none", "off", "disabled")
 
@@ -54,6 +65,7 @@ def init_hardware(config: dict) -> None:
         if _ON_PI:
             from scanner.hardware.camera import PiCamera
             from scanner.hardware.display import Display
+            from scanner.hardware.door import DoorSensor
             from scanner.hardware.laser import Laser
             from scanner.hardware.led import LED
             from scanner.hardware.motor import StepperMotor
@@ -77,8 +89,16 @@ def init_hardware(config: dict) -> None:
             _laser_instance = Laser(config.get("laser", {}))
             _led_instance = LED(iface_cfg)
             _display_instance = Display(iface_cfg) if display_enabled else None
+            _door_instance = DoorSensor(door_cfg)
         else:
-            from scanner.hardware.mock import MockCamera, MockDisplay, MockLED, MockLaser, MockMotor
+            from scanner.hardware.mock import (
+                MockCamera,
+                MockDisplay,
+                MockDoorSensor,
+                MockLED,
+                MockLaser,
+                MockMotor,
+            )
 
             _camera_configs = {
                 str(cam_cfg.get("id", "main")): cam_cfg for cam_cfg in camera_configs(config)
@@ -91,6 +111,7 @@ def init_hardware(config: dict) -> None:
             _laser_instance = MockLaser(config.get("laser", {}))
             _led_instance = MockLED(iface_cfg)
             _display_instance = MockDisplay(iface_cfg) if display_enabled else None
+            _door_instance = MockDoorSensor(door_cfg)
 
         if not _camera_instances:
             raise HardwareError("No camera could be initialised")
@@ -209,6 +230,32 @@ def laser_set(state: bool) -> None:
     _laser_instance.laser_set(state)
 
 
+def door_interlock_enabled() -> bool:
+    """Return True if the safety door interlock is active."""
+    return bool(_door_instance is not None and _door_instance.enabled)
+
+
+def door_is_open() -> bool:
+    """Return True if the door is open *and* the interlock is enabled.
+
+    Returns False when the interlock is disabled or no sensor is present, so
+    callers never block when the feature is turned off.
+    """
+    if _door_instance is None:
+        return False
+    return bool(_door_instance.is_open())
+
+
+def check_door_interlock() -> None:
+    """Raise :class:`DoorOpenError` if the door is open while the interlock is on.
+
+    No-op when the interlock is disabled. Call this before energising the
+    laser so an open door aborts the operation immediately.
+    """
+    if door_is_open():
+        raise DoorOpenError("Safety door is open — operation aborted")
+
+
 def led_set(color: str, state: bool) -> None:
     """Set an LED on or off."""
     if _led_instance is None:
@@ -239,6 +286,7 @@ def display_status(state: str) -> None:
 
 __all__ = [
     "HardwareError",
+    "DoorOpenError",
     "init_hardware",
     "camera_capture",
     "camera_capture_all",
@@ -247,6 +295,9 @@ __all__ = [
     "camera_set_exposure",
     "motor_step",
     "laser_set",
+    "door_interlock_enabled",
+    "door_is_open",
+    "check_door_interlock",
     "led_set",
     "led_blink",
     "display_text",

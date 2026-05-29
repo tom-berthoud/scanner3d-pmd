@@ -14,6 +14,7 @@ from scanner.hardware import (
     HardwareError,
     camera_capture,
     camera_capture_all,
+    check_door_interlock,
     laser_set,
     motor_step,
 )
@@ -162,6 +163,9 @@ def run_capture_sequence(
 
     try:
         for step_idx in range(n_steps):
+            # 0. Safety door interlock — abort before energising the laser
+            check_door_interlock()
+
             # 1. Advance by steps_per_photo motor steps
             motor_step(steps_per_photo, direction)
 
@@ -241,6 +245,8 @@ def run_capture_sequence_multi(
 
     try:
         for step_idx in range(n_steps):
+            # Safety door interlock — abort before energising the laser
+            check_door_interlock()
             motor_step(steps_per_photo, direction)
             laser_set(True)
             step_frames = camera_capture_all()

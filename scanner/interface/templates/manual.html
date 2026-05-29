@@ -25,6 +25,19 @@
     <div class="pnl">
       <div class="pnl-head">
         <span class="pip"></span>
+        <span>Sécurité — Porte</span>
+      </div>
+      <div class="trigger-body">
+        <div class="state-msg" id="door-state">Interlock porte : —</div>
+        <div class="err-strip" id="door-open-warn" style="display:none;">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>Porte ouverte — laser et scan bloqués
+        </div>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
         <span>Laser</span>
       </div>
       <div class="trigger-body">
@@ -258,9 +271,28 @@ async function refreshManualStatus() {
     var st = document.getElementById('manual-state');
     if (st) st.textContent = txt;
     setManualButtonsEnabled(!!d.manual_allowed);
+    updateDoorStatus(d);
   } catch (e) {
     mlog('Erreur status manuel: ' + e, 'log-err');
   }
+}
+
+function updateDoorStatus(d) {
+  var st = document.getElementById('door-state');
+  var warn = document.getElementById('door-open-warn');
+  var enabled = !!d.door_interlock_enabled;
+  var open = !!d.door_open;
+  if (st) {
+    if (!enabled) {
+      st.textContent = 'Interlock porte : désactivé';
+    } else {
+      st.textContent = 'Interlock porte : activé — porte ' + (open ? 'OUVERTE' : 'fermée');
+    }
+  }
+  if (warn) warn.style.display = (enabled && open) ? 'block' : 'none';
+  // Block laser ON while the door is open.
+  var laserOn = document.getElementById('btn-laser-on');
+  if (laserOn && enabled && open) laserOn.disabled = true;
 }
 
 async function manualPost(url, payload, okMsg) {

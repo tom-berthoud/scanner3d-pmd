@@ -108,7 +108,7 @@ cameras:
       up_mm: [0.0, 1.0, 0.0]
 
 laser:
-  gpio_pin: 2             # numéro de broche GPIO (BCM) pour le laser
+  gpio_pin: 4             # numéro de broche GPIO (BCM) pour le laser
   warmup_ms: 50             # temps de stabilisation après allumage (ms)
   # Repere plateforme: origine centre plateau, +Z laser -> centre, +X droite vue laser, +Y haut.
   position_mm: [0.0, 50.0, -400.0]
@@ -117,13 +117,21 @@ laser:
 motor:
   # Moteur : Generic 17HS3401 (NEMA 17, 1.8°/pas, 200 pas/tour, 1.5A)
   # Driver : DM320T (microstepping STEP/DIR, 20V max)
-  step_pin: 3              # broche GPIO STEP
-  dir_pin: 4              # broche GPIO DIR
-  enable_pin: 17            # broche GPIO ENABLE (actif bas sur DM320T)
+  step_pin: 17              # broche GPIO STEP
+  dir_pin: 27               # broche GPIO DIR
+  enable_pin: 22            # broche GPIO ENABLE (actif bas sur DM320T)
   steps_per_rev: 200        # pas physiques du NEMA 17 (1.8°/pas)
   microstepping: 16          # facteur de microstepping du driver DM320T
   speed_rpm: 5             # vitesse de rotation (tours/min)
   accel_steps: 100          # nombre de pas d'accélération/décélération
+
+safety:
+  door_interlock:
+    enabled: false           # true = arret immediat du scan + laser si la porte s'ouvre (toggle rapide)
+    gpio_pin: 10             # broche GPIO (BCM) du capteur de porte (interrupteur/reed vers GND)
+    pull_up: true            # pull-up interne : porte fermee = contact ferme = pin a la masse
+    closed_when_pressed: true # true = contact ferme (pin tire a l'etat actif) <=> porte fermee
+    bounce_time_s: 0.1      # anti-rebond du capteur (s)
 
 processing:
   laser_channel: green      # canal couleur à isoler : green (laser vert ~520nm)

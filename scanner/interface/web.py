@@ -971,12 +971,16 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
     @app.route("/manual/status")
     def manual_status() -> Response:
+        from scanner.hardware import door_interlock_enabled, door_is_open
+
         with _scan_lock:
             state = dict(_scan_state)
         return jsonify(
             {
                 "scan_state": state.get("state", "IDLE"),
                 "manual_allowed": _manual_allowed(),
+                "door_interlock_enabled": door_interlock_enabled(),
+                "door_open": door_is_open(),
             }
         )
 
@@ -1612,13 +1616,17 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
     @app.route("/manual/laser", methods=["POST"])
     def manual_laser() -> Response:
-        from scanner.hardware import HardwareError, laser_set
+        from scanner.hardware import HardwareError, door_is_open, laser_set
 
         if not _manual_allowed():
             return jsonify({"error": "Manual control disabled while scan is running"}), 409
 
         data = request.get_json(silent=True) or {}
         state = bool(data.get("state", False))
+
+        # Safety door interlock — never energise the laser with the door open.
+        if state and door_is_open():
+            return jsonify({"error": "Porte ouverte — laser bloqué par la sécurité"}), 409
 
         try:
             laser_set(state)
