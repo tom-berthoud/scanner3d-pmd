@@ -183,26 +183,33 @@ def _add_bottom_cap_world(
     bottom_quantile: float,
     border_pad_mm: float,
 ) -> np.ndarray:
-    """Generate a single flat bottom cap in world frame (horizontal plane)."""
-    xy = cloud[:, :2]
-    if xy.shape[0] < 3:
+    """Generate a single flat bottom cap in world frame (horizontal plane).
+
+    Project convention: +Y is vertical (turntable axis), so the cap plane is
+    constant Y. The support polygon is built in XZ.
+    """
+    xz = cloud[:, [0, 2]]
+    if xz.shape[0] < 3:
         return np.empty((0, 3), dtype=np.float64)
 
-    x0, x1, y0, y1 = _robust_xy_bounds(np.column_stack((xy, cloud[:, 2])), border_pad_mm)
+    x0, x1 = float(np.quantile(xz[:, 0], 0.01)), float(np.quantile(xz[:, 0], 0.99))
+    z0, z1 = float(np.quantile(xz[:, 1], 0.01)), float(np.quantile(xz[:, 1], 0.99))
+    x0, x1 = x0 - border_pad_mm, x1 + border_pad_mm
+    z0, z1 = z0 - border_pad_mm, z1 + border_pad_mm
     xs = np.arange(x0, x1 + grid_mm, grid_mm, dtype=np.float64)
-    ys = np.arange(y0, y1 + grid_mm, grid_mm, dtype=np.float64)
-    gx, gy = np.meshgrid(xs, ys, indexing="xy")
+    zs = np.arange(z0, z1 + grid_mm, grid_mm, dtype=np.float64)
+    gx, gz = np.meshgrid(xs, zs, indexing="xy")
 
-    hull = ConvexHull(xy)
-    poly = xy[hull.vertices]
-    mask = _points_in_polygon(gx.ravel(), gy.ravel(), poly).reshape(gx.shape)
+    hull = ConvexHull(xz)
+    poly = xz[hull.vertices]
+    mask = _points_in_polygon(gx.ravel(), gz.ravel(), poly).reshape(gx.shape)
     count = int(mask.sum())
     if count == 0:
         return np.empty((0, 3), dtype=np.float64)
 
-    z_bottom = float(np.quantile(cloud[:, 2], bottom_quantile))
+    y_bottom = float(np.quantile(cloud[:, 1], bottom_quantile))
     return np.column_stack(
-        (gx[mask], gy[mask], np.full(count, z_bottom, dtype=np.float64))
+        (gx[mask], np.full(count, y_bottom, dtype=np.float64), gz[mask])
     ).astype(np.float64)
 
 
