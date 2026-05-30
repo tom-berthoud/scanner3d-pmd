@@ -127,7 +127,7 @@ motor:
 
 safety:
   door_interlock:
-    enabled: false           # true = arret immediat du scan + laser si la porte s'ouvre (toggle rapide)
+    enabled: true            # true = arret immediat du scan + laser si la porte s'ouvre (toggle rapide)
     gpio_pin: 10             # broche GPIO (BCM) du capteur de porte (interrupteur/reed vers GND)
     pull_up: true            # pull-up interne : porte fermee = contact ferme = pin a la masse
     closed_when_pressed: true # true = contact ferme (pin tire a l'etat actif) <=> porte fermee

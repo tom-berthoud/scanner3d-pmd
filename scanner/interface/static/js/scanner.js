@@ -50,6 +50,52 @@ let _selectedArtifact = (
   ? window.SCANNER_ARTIFACT_KINDS[0]
   : 'extract_left';
 let _artifacts = {};
+const PROCESSING_STEP_ORDER = [
+  'extract', 'fit', 'triangulate', 'fuse', 'merge', 'regression', 'outliers', 'caps', 'mesh'
+];
+let _processingStep = null;
+
+function setProcessingStep(step) {
+  if (!step) return;
+  _processingStep = step;
+  var idx = PROCESSING_STEP_ORDER.indexOf(step);
+  document.querySelectorAll('#proc-steps .proc-step').forEach(function(el) {
+    var s = el.getAttribute('data-step');
+    var sidx = PROCESSING_STEP_ORDER.indexOf(s);
+    el.classList.remove('active', 'done');
+    if (sidx >= 0 && idx >= 0 && sidx < idx) el.classList.add('done');
+    if (s === step) el.classList.add('active');
+  });
+}
+
+function completeProcessingSteps() {
+  _processingStep = 'mesh';
+  document.querySelectorAll('#proc-steps .proc-step').forEach(function(el) {
+    el.classList.remove('active');
+    el.classList.add('done');
+  });
+}
+
+function resetProcessingSteps() {
+  _processingStep = null;
+  document.querySelectorAll('#proc-steps .proc-step').forEach(function(el) {
+    el.classList.remove('active', 'done');
+  });
+}
+
+function inferProcessingStep(message) {
+  var m = (message || '').toLowerCase();
+  if (m.indexOf('extracting') >= 0 || m.indexOf('extract ') >= 0) return 'extract';
+  if (m.indexOf('fitting shared camera frame') >= 0 || m.indexOf('fit') >= 0) return 'fit';
+  if (m.indexOf('triangulating') >= 0 || m.indexOf('triangulation') >= 0) return 'triangulate';
+  if (m.indexOf('fusing per-step profiles') >= 0 || m.indexOf('fuse') >= 0) return 'fuse';
+  if (m.indexOf('merging') >= 0 || m.indexOf('merge') >= 0) return 'merge';
+  if (m.indexOf('regression') >= 0 || m.indexOf('local polynomial') >= 0) return 'regression';
+  if (m.indexOf('outlier') >= 0 || m.indexOf('filtering') >= 0) return 'outliers';
+  if (m.indexOf('caps') >= 0) return 'caps';
+  if (m.indexOf('mesh') >= 0 || m.indexOf('poisson') >= 0 || m.indexOf('exporting') >= 0) return 'mesh';
+  return null;
+}
 
 function isImageArtifact(kind) {
   return kind && kind.indexOf('extract_') === 0;
@@ -208,6 +254,8 @@ function updateUI(d) {
   const dl  = document.getElementById('btn-download');
   const fl  = document.getElementById('frame-label');
   const vs  = document.getElementById('viewer-status');
+  const ds  = document.getElementById('door-state');
+  const dw  = document.getElementById('door-open-warn');
 
   if (sl && d.state) {
     sl.textContent = d.state;
@@ -223,12 +271,18 @@ function updateUI(d) {
 
   if (btn) {
     var busy = ['SCANNING','PROCESSING','EXPORTING'].includes(d.state);
-    btn.disabled   = busy;
+    var blockedByDoor = !!d.door_interlock_enabled && !!d.door_open;
+    btn.disabled   = busy || blockedByDoor;
     btn.className  = 'btn-scan' + (busy ? ' active' : '');
-    if (txt) txt.textContent = busy ? '\u2B1B  ACQUISITION...' : '\u25B6  LANCER LE SCAN';
+    if (txt) {
+      if (busy) txt.textContent = '\u2B1B  ACQUISITION...';
+      else if (blockedByDoor) txt.textContent = '\u26A0  FERMEZ LA PORTE';
+      else txt.textContent = '\u25B6  LANCER LE SCAN';
+    }
   }
 
   if (d.state === 'SCANNING') {
+    resetProcessingSteps();
     if (pb) pb.classList.add('active');
     startPolling();
   }
@@ -240,6 +294,7 @@ function updateUI(d) {
     stopPolling();
     stopArtifactPolling();
     if (d.state === 'COMPLETE') {
+      completeProcessingSteps();
       refreshArtifacts();
       if (dl) dl.classList.remove('off');
       var usbBtn = document.getElementById('btn-usb');
@@ -250,6 +305,27 @@ function updateUI(d) {
     if (d.state === 'ERROR') log(d.message || 'Erreur', 'log-err');
   }
   if (d.message) log(d.message);
+
+  if (d.state === 'PROCESSING' || d.state === 'EXPORTING') {
+    var inferred = inferProcessingStep(d.message || '');
+    if (inferred) setProcessingStep(inferred);
+  }
+  if (d.state === 'ERROR' || d.state === 'IDLE') {
+    if (!_processingStep || d.state === 'IDLE') resetProcessingSteps();
+  }
+
+  if (ds) {
+    var interlockEnabled = !!d.door_interlock_enabled;
+    var doorOpen = !!d.door_open;
+    if (!interlockEnabled) {
+      ds.textContent = 'Porte: interlock desactive';
+    } else {
+      ds.textContent = 'Porte: ' + (doorOpen ? 'OUVERTE' : 'fermee');
+    }
+  }
+  if (dw) {
+    dw.style.display = (d.door_interlock_enabled && d.door_open) ? 'block' : 'none';
+  }
 
   // Update kiosk view
   updateKiosk(d);

@@ -691,8 +691,13 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
     def _push_sse(data: dict) -> None:
         """Push a dict as an SSE event."""
+        from scanner.hardware import door_interlock_enabled, door_is_open
+
+        payload = dict(data)
+        payload.setdefault("door_interlock_enabled", door_interlock_enabled())
+        payload.setdefault("door_open", door_is_open())
         try:
-            _sse_queue.put_nowait(data)
+            _sse_queue.put_nowait(payload)
         except queue.Full:
             pass  # Drop oldest — UI will re-poll
 
@@ -713,12 +718,16 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
     @app.route("/")
     def index() -> str:
+        from scanner.hardware import door_interlock_enabled, door_is_open
+
         with _scan_lock:
             state = dict(_scan_state)
             state["artifacts"] = {
                 key: _artifact_public(value)
                 for key, value in _scan_state.get("artifacts", {}).items()
             }
+            state["door_interlock_enabled"] = door_interlock_enabled()
+            state["door_open"] = door_is_open()
         return render_template(
             "index.html",
             scan_state=state,
@@ -800,12 +809,16 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     @app.route("/scan/status")
     def scan_status() -> Response:
         """Return current scan state as JSON."""
+        from scanner.hardware import door_interlock_enabled, door_is_open
+
         with _scan_lock:
             state = dict(_scan_state)
             state["artifacts"] = {
                 key: _artifact_public(value)
                 for key, value in _scan_state.get("artifacts", {}).items()
             }
+            state["door_interlock_enabled"] = door_interlock_enabled()
+            state["door_open"] = door_is_open()
         return jsonify(state)
 
     @app.route("/scan/artifacts")

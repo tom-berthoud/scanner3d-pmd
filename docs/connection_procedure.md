@@ -1,81 +1,68 @@
-# Procédure de connexion et d'exécution du code (Windows)
+# Procedure de connexion et execution (Windows <-> Raspberry Pi)
 
-## Connexion au Raspberry Pi
+## Objectif
+Connecter un Raspberry Pi au PC Windows via cable Ethernet, garder Internet sur le Pi via le Wi-Fi du PC, puis acceder au scanner en SSH et HTTP.
 
-### Étapes pour se connecter en SSH :
-1. **Installer un client SSH (si nécessaire)** :
-   - Windows contient déjà un client SSH intégré. Sinon, installez **PuTTY** (ou tout autre client SSH).
+## Resume rapide
+- Utiliser **ICS (Internet Connection Sharing)** sur la carte Wi-Fi Windows.
+- **Ne pas** utiliser le point d'acces mobile en meme temps.
+- Le Pi et le PC doivent etre dans le **meme sous-reseau** Ethernet.
+- La route par defaut du Pi doit pointer vers l'IP Ethernet du PC.
 
-2. **Se connecter avec SSH** :
-   - Si vous utilisez l'invite de commande ou PowerShell :
-     ```cmd
-     ssh admin@192.168.55.1
-     ```
-   - Si vous utilisez PuTTY :
-     - Ouvrez PuTTY.
-     - Dans "Host Name (or IP address)", entrez : `192.168.55.1`
-     - Cliquez sur "Open".
-   - **Mot de passe** : `le mot de passe`
+## 1. Branchement
+1. Connecter le Raspberry Pi au PC avec un cable Ethernet.
+2. Verifier que le Wi-Fi du PC est connecte a Internet.
 
-3. **Accéder à l'interface HTTP** (si nécessaire) :
-   - Ouvrez votre navigateur web et accédez à l'adresse :
-     ```
-     http://192.168.55.1:5000/
-     ```
+## 2. Configuration Windows (ICS)
+1. Ouvrir `Panneau de configuration > Reseau et Internet > Connexions reseau`.
+2. Clic droit sur la carte **Wi-Fi** (celle qui a Internet) > `Proprietes`.
+3. Onglet `Partage` :
+4. Cocher `Autoriser d'autres utilisateurs du reseau a se connecter...`.
+5. Selectionner la carte Ethernet branchee au Pi (ex: `Ethernet 4`).
+6. Valider.
+7. Verifier que le **Point d'acces mobile** Windows est **desactive**.
 
-4. **Vérifier les services actifs (optionnel)** :
-   - Les services `kiosk` (navigateur) et `scanner` (code Python) sont gérés automatiquement.
+## 3. Verification des IP
+### Cote Windows
+Dans PowerShell:
+```powershell
+ipconfig
+```
+Repere l'interface Ethernet connectee au Pi (ex: `Ethernet 4`) et note son IPv4 (ex: `192.168.55.20`).
 
-## Configuration réseau
+### Cote Raspberry Pi
+En SSH ou terminal local:
+```bash
+ip a
+ip route
+```
+Attendu:
+- `eth0` a une IP du meme reseau (ex: `192.168.55.1/24`)
+- route par defaut via l'IP Ethernet du PC (ex: `default via 192.168.55.20 dev eth0`)
 
-1. **Partager la connexion Internet avec le Raspberry Pi** :
-   - Sur Windows, suivez ces étapes :
-     1. Allez dans "Paramètres" > "Réseau et Internet" > "Point d'accès mobile".
-     2. Activez "Partager ma connexion Internet avec d'autres appareils".
-     3. Choisissez "Wi-Fi" comme source de connexion partagée.
+## 4. Connexion au Raspberry Pi
+Depuis Windows:
+```powershell
+ssh admin@192.168.55.1
+```
 
-   - Ensuite, partagez la connexion avec la connexion Ethernet :
-     1. Cliquez sur "Modifier les options de carte réseau".
-     2. Faites un clic droit sur l'adaptateur réseau utilisé pour Internet (par exemple, votre Wi-Fi).
-     3. Sélectionnez "Propriétés" > "Partage".
-     4. Cochez "Autoriser les autres utilisateurs à se connecter via la connexion Internet de cet ordinateur" et sélectionnez la connexion Ethernet connectée au Raspberry Pi.
+## 5. Interface scanner
+Dans le navigateur Windows:
+```text
+http://192.168.55.1:5000/
+```
 
-2. **Configurer une IP statique sur le PC** :
-   - Ouvrez "Modifier les options de carte réseau".
-   - Trouvez l'adaptateur Ethernet utilisé pour se connecter au Raspberry Pi.
-   - Faites un clic droit, sélectionnez "Propriétés", choisissez "Protocole Internet version 4 (TCP/IPv4)", et cliquez sur "Propriétés".
-   - Entrez les informations suivantes :
-     - **Adresse IP** : `192.168.55.100`
-     - **Masque de sous-réseau** : `255.255.255.0`
+## 6. Mise a jour du code
+Sur le Raspberry Pi:
+```bash
+cd ~/scanner3d-pmd
+git pull
+```
 
-3. **Vérifiez la connexion au Raspberry Pi** :
-   - Pingez l'adresse IP du Raspberry Pi :
-     ```cmd
-     ping 192.168.55.1
-     ```
-   - Si le ping fonctionne, la connexion est configurée.
-
-## Clonage et exécution du code
-
-### Cloner le dépôt ou mettre à jour le code :
-- Le Raspberry Pi a déjà accès au dépôt Git configuré. Pour mettre à jour le code directement sur le Raspberry Pi :
-  ```bash
-  git pull
-  ```
-
-### Transférer le code depuis le PC :
-- Utilisez un logiciel comme WinSCP pour transférer des fichiers de votre PC vers le Raspberry Pi.
-  - **Hôte** : `192.168.55.1`
-  - **Nom d'utilisateur** : `admin`
-  - **Mot de passe** : `le mot de passe`
-
-### Exécution des scripts :
-1. Connectez-vous en SSH au Raspberry Pi.
-2. Naviguez vers le répertoire du projet :
-   ```bash
-   cd /chemin/vers/le/projet
-   ```
-3. Lancez le script principal :
-   ```bash
-   python3 script_principal.py
-   ```
+## 7. Checklist de debug
+1. `ipconfig` Windows: l'Ethernet vers le Pi a une IPv4.
+2. `ip a` Pi: `eth0` est `UP` et a une IPv4 du meme sous-reseau.
+3. `ip route` Pi: `default via <IP_PC_ETHERNET>`.
+4. `ping <IP_PC_ETHERNET>` depuis le Pi.
+5. `ping 8.8.8.8` depuis le Pi.
+6. Point d'acces mobile Windows desactive.

@@ -414,6 +414,34 @@ body {
   color: var(--red);
 }
 
+.proc-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.proc-step {
+  border: 1px solid var(--line);
+  background: #111722;
+  color: var(--txt-dim);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+.proc-step.active {
+  border-color: var(--amber);
+  color: var(--txt);
+  box-shadow: 0 0 0 1px rgba(255, 176, 32, 0.25) inset;
+}
+.proc-step.done {
+  border-color: #1f5c38;
+  background: #0f2018;
+  color: #99e3ba;
+}
+.proc-step.done::before {
+  content: "✓ ";
+}
+
 /* ---- Terminal log ---- */
 .log-body {
   padding: 10px 12px;

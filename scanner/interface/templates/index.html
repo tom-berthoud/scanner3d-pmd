@@ -56,6 +56,12 @@ window.SCANNER_ARTIFACT_KINDS = {{ artifact_tabs | map(attribute='kind') | list 
           </div>
         </div>
         <div class="state-msg" id="state-message">{{ scan_state.message or 'Ready' }}</div>
+        <div class="state-msg" id="door-state">
+          Porte: {% if scan_state.door_interlock_enabled %}{% if scan_state.door_open %}OUVERTE{% else %}fermee{% endif %}{% else %}interlock desactive{% endif %}
+        </div>
+        <div class="err-strip" id="door-open-warn" {% if not (scan_state.door_interlock_enabled and scan_state.door_open) %}style="display:none;"{% endif %}>
+          <i class="bi bi-exclamation-triangle me-1"></i>Porte ouverte - scan et laser bloques
+        </div>
         <div class="prog-track">
           <div class="prog-fill {% if scan_state.state == 'SCANNING' %}active{% endif %}"
                id="progress-bar"
@@ -112,6 +118,24 @@ window.SCANNER_ARTIFACT_KINDS = {{ artifact_tabs | map(attribute='kind') | list 
         <span>Telemetry</span>
       </div>
       <div class="log-body" id="log-box"></div>
+    </div>
+
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
+        <span>Processing Steps</span>
+      </div>
+      <div class="proc-steps" id="proc-steps">
+        <div class="proc-step" data-step="extract">Extract laser line</div>
+        <div class="proc-step" data-step="fit">Fit same frame</div>
+        <div class="proc-step" data-step="triangulate">Triangulation</div>
+        <div class="proc-step" data-step="fuse">Fuse profiles</div>
+        <div class="proc-step" data-step="merge">Merge cloud</div>
+        <div class="proc-step" data-step="regression">Regression profile</div>
+        <div class="proc-step" data-step="outliers">Filter outliers</div>
+        <div class="proc-step" data-step="caps">Add caps</div>
+        <div class="proc-step" data-step="mesh">Mesh export</div>
+      </div>
     </div>
   </div>
 

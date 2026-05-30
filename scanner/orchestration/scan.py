@@ -542,6 +542,7 @@ def run_scan(
                 )
 
         tuned_poses = _run_auto_cheat_extrinsics(extracted_by_camera)
+        _progress(processed, total_processing, "Fitting shared camera frame")
         for camera_id, (rot, trans) in tuned_poses.items():
             cm, dc, lp, _old_rot, _old_trans = camera_models[camera_id]
             camera_models[camera_id] = (cm, dc, lp, rot, trans)
@@ -586,6 +587,7 @@ def run_scan(
         max_steps = 0
         for arr in triangulated_by_camera.values():
             max_steps = max(max_steps, len(arr))
+        _progress(total_processing, total_processing, "Applying profile regression")
         for step_idx in range(max_steps):
             step_map: dict[str, np.ndarray] = {}
             for cam_id, arr in triangulated_by_camera.items():
@@ -595,11 +597,14 @@ def run_scan(
             if fused.shape[0] > 0:
                 profiles.append(fused)
 
+        _progress(total_processing, total_processing, "Fusing per-step profiles")
         for camera_id in frames_by_camera:
             camera_profiles = profiles_by_camera.get(camera_id, [])
             if camera_profiles:
+                _progress(total_processing, total_processing, f"Merging cloud {camera_id}")
                 camera_cloud = merge_profiles(camera_profiles)
                 if camera_cloud.shape[0] >= 20:
+                    _progress(total_processing, total_processing, f"Filtering outliers {camera_id}")
                     camera_cloud = filter_outliers(
                         camera_cloud,
                         nb_neighbors=nb_neighbors,
@@ -615,14 +620,17 @@ def run_scan(
                     points=camera_cloud.shape[0],
                 )
 
+        _progress(total_processing, total_processing, "Merging combined cloud")
         cloud = merge_profiles(profiles)
 
         if cloud.shape[0] >= 20:
+            _progress(total_processing, total_processing, "Filtering combined outliers")
             cloud = filter_outliers(cloud, nb_neighbors=nb_neighbors, std_ratio=std_ratio)
         else:
             logger.warning("Too few points (%d) for outlier filtering", cloud.shape[0])
 
         if bool(flat_caps_cfg.get("enabled", False)):
+            _progress(total_processing, total_processing, "Adding flat caps")
             cloud = add_flat_caps_aligned(
                 cloud,
                 enabled=True,
@@ -651,6 +659,7 @@ def run_scan(
         raise
 
     try:
+        _progress(n_steps, n_steps, "Exporting combined cloud")
         export_point_cloud_ply(cloud, cloud_path)
         _artifact(
             "cloud_combined",
@@ -661,7 +670,7 @@ def run_scan(
         )
         logger.info("Raw point cloud exported to %s", cloud_path)
 
-        _progress(n_steps, n_steps, "Exporting mesh…")
+        _progress(n_steps, n_steps, "Building mesh (Poisson)")
         if fmt == "obj":
             export_obj(cloud, output_path, poisson=poisson_cfg)
         else:
