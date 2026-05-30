@@ -10,11 +10,11 @@ Le système capture des profils d'un objet en rotation sous un laser ligne, reco
 
 ```
 1. L'utilisateur pose l'objet sur le plateau et lance un scan
-2. Le plateau tourne par pas (200 pas = 360°, 1.8°/pas)
+2. Le plateau tourne par pas réguliers sur 360° (nombre de photos = `scan.n_steps`, défaut 100)
 3. À chaque pas : laser allumé → photo → laser éteint
 4. Chaque image est analysée pour extraire la ligne laser verte
 5. La triangulation géométrique convertit chaque ligne en profil 3D
-6. Les 200 profils sont fusionnés en un nuage de points complet
+6. Tous les profils sont fusionnés en un nuage de points complet
 7. Export en fichier STL ou OBJ, téléchargeable via l'interface web
 ```
 
@@ -47,7 +47,10 @@ scanner3d-pmd/
 │   ├── export/            Génération STL / OBJ (Open3D Poisson)
 │   ├── orchestration/     Machine d'états, boucle de scan
 │   └── interface/         Serveur web Flask + affichage écran local
+│       ├── templates/     Pages HTML (Jinja2)
+│       └── static/        CSS, JS et assets vendorisés (vendor/ — hors-ligne)
 ├── config/                Paramètres YAML de scan et calibration
+├── scripts/               Scripts utilitaires (ex. scanner-eng.sh)
 ├── docs/                  Documentation technique et images de référence
 ├── tests/                 Tests unitaires et d'intégration
 ├── mechanics/             Fichiers CAO (FreeCAD)
@@ -57,32 +60,59 @@ scanner3d-pmd/
 ---
 
 ## Démarrage rapide
-      
+
 ### Prérequis
 
 - Python 3.11+
-- Sur Raspberry Pi : Raspberry Pi OS 64-bit, Pi Camera Module 3
+- Sur Raspberry Pi : Raspberry Pi OS 64-bit, Pi Camera Module 3 (+ caméra USB en option)
 
 ### Installation
 
 ```bash
 git clone <repo-url>
 cd scanner3d-pmd
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Lancer l'interface web
+> Les assets de l'interface (Bootstrap, polices, Three.js) sont **vendorisés**
+> dans `scanner/interface/static/vendor/` : aucune connexion internet n'est
+> requise au runtime, ni sur le PC, ni sur le Pi.
+
+### Raccourcis (Makefile)
+
+Un `Makefile` regroupe les opérations courantes. `make` (ou `make help`) liste
+tout. Le Pi cible est `admin@192.168.55.1` (surchargeable :
+`make ssh PI_HOST=…`).
+
+| Catégorie | Commande | Effet |
+|---|---|---|
+| Local | `make install` / `make test` | venv + deps / lancer les tests |
+| Local | `make run` | lancer l'UI en **mode scan seul** (= prod) + navigateur |
+| Local | `make run-full` | lancer l'UI avec **toutes les pages** (déverrouillé) + navigateur |
+| Réseau | `make ping` / `make net-check` | Pi joignable / diagnostic réseau du Pi |
+| Connexion | `make ssh` | session SSH interactive |
+| Déploiement | `make pull` / `make pi-run` | `git pull` sur le Pi / lancer l'UI sur le Pi |
+| Interfaces | `make open` | ouvrir l'UI du Pi dans le navigateur |
+| Ingénierie | `make unlock` / `make lock` / `make eng-status` | (dé)verrouiller les pages techniques **sur le Pi** (SSH) |
+
+---
+
+## Tester en local (sans Raspberry Pi — mode mock)
+
+Le module `scanner/hardware/mock.py` simule tout le hardware et s'active
+automatiquement si `gpiozero` n'est pas disponible (donc sur n'importe quel PC).
 
 ```bash
-python -m scanner.interface.web     
-# Interface disponible sur http://localhost:5000  (ou http://<ip-du-pi>:5000)
+source .venv/bin/activate
+python -m scanner.interface.web        # http://localhost:5000
 ```
 
-### Développement sans Raspberry Pi (mode mock)
+Sur une machine de dev, débloquez d'emblée les pages d'ingénierie en mettant
+`interface.engineering_force: true` dans `config/settings.yaml` (voir
+[Mode ingénierie](#mode-ingénierie--accès-aux-pages-de-configuration)).
 
-Le module `scanner/hardware/mock.py` simule tout le hardware et s'active automatiquement si les bibliothèques GPIO ne sont pas disponibles.
-
-Formes disponibles dans `config/settings.yaml` (`camera.mock_shape`) :
+**Formes simulées** (`config/settings.yaml` → `camera.mock_shape`) :
 
 | Forme | Description |
 |---|---|
@@ -92,23 +122,110 @@ Formes disponibles dans `config/settings.yaml` (`camera.mock_shape`) :
 | `duck` | Canard (corps ellipsoïde + cou + tête + bec) |
 | `mushroom` | Champignon (calotte hémisphérique r = 30 mm + pied) |
 
-Pour visualiser les images captées sans lancer un scan complet :
+Visualiser les images captées sans lancer un scan complet :
 ```
-http://localhost:5000/preview              ← slider interactif
+http://localhost:5000/preview                       ← slider interactif
 http://localhost:5000/preview/frame?angle=0
-http://localhost:5000/preview/extraction?angle=0   ← avec overlay ligne laser
+http://localhost:5000/preview/extraction?angle=0    ← overlay ligne laser
 ```
 
-### Lancer les tests
-
+**Tests :**
 ```bash
-pytest tests/                          # tests unitaires uniquement
-pytest tests/ -m integration           # inclut les tests nécessitant le vrai hardware
+pytest tests/ -v                       # tous les tests
+pytest tests/test_state_machine.py -v  # machine d'états seule (sans deps lourdes)
+pytest tests/ -m integration           # tests nécessitant le vrai hardware
 ```
 
 ---
 
+## Mise en production (Raspberry Pi)
+
+1. **Connexion** PC ↔ Pi (Ethernet + SSH/HTTP) : voir
+   [`docs/connection_procedure.md`](docs/connection_procedure.md).
+2. **Installer** le projet et les dépendances (cf. *Installation* ci-dessus). Sur
+   le Pi, `gpiozero` est présent → les vrais drivers GPIO sont utilisés
+   automatiquement.
+3. **Calibrer** la caméra et le plan laser au premier déploiement (cf.
+   [Calibration](#calibration)).
+4. **Lancer** le serveur :
+   ```bash
+   python -m scanner.interface.web     # écoute sur 0.0.0.0:5000
+   ```
+   L'interface est alors accessible depuis le PC sur `http://<ip-du-pi>:5000`.
+5. **Mode kiosk** (écran tactile sur le Pi) : ouvrir l'interface avec
+   `?mode=kiosk` → `http://localhost:5000/?mode=kiosk`. L'UI passe en plein
+   écran simplifié (gros bouton de scan, navigation réduite).
+
+### Lancer automatiquement au démarrage (exemple systemd recommandé)
+
+Le projet ne fournit pas de service ; voici un exemple à adapter
+(`/etc/systemd/system/scanner.service`) :
+
+```ini
+[Unit]
+Description=Scanner 3D web interface
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/scanner3d-pmd
+ExecStart=/home/pi/scanner3d-pmd/.venv/bin/python -m scanner.interface.web
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+```bash
+sudo systemctl enable --now scanner.service
+```
+
+> **Port web** : configurable via `interface.web_port` (défaut 5000) et
+> `interface.web_host` (défaut `0.0.0.0`) dans `config/settings.yaml`.
+
+---
+
+## Mode ingénierie — accès aux pages de configuration
+
+Pour rester léger en exploitation, **l'interface n'expose que le scan par
+défaut**. Les pages techniques (Calibration, Extrinsèque, Cam Config, Manuel)
+sont **verrouillées** : leurs onglets sont masqués et leurs routes (GET *et*
+POST, donc les actions matérielles laser/moteur/LED comprises) redirigent vers
+la page de scan. Il n'y a **aucun mot de passe web** à gérer.
+
+Un développeur, déjà connecté en SSH au Pi, les déverrouille avec le script
+fourni :
+
+```bash
+# Depuis le PC, en une commande :
+ssh pi@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh on'     # déverrouille
+ssh pi@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh off'    # reverrouille
+ssh pi@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh status' # état courant
+```
+
+- Le déverrouillage est pris en compte **immédiatement** (pas de redémarrage).
+- Le verrou repose sur un **fichier sentinelle** (`interface.engineering_unlock_file`,
+  défaut `/tmp/scanner-engineering.unlock`). Comme il vit dans `/tmp`, le Pi
+  **se reverrouille automatiquement au redémarrage** (sûr en prod).
+- Sur une machine de dev, `interface.engineering_force: true` débloque tout sans
+  script.
+
+---
+
+## Interface web — caractéristiques
+
+- **Thème clair** responsive, lisible sur PC comme sur le petit écran tactile du
+  Pi. Trois rendus selon la largeur : desktop, mobile et **kiosk** (`?mode=kiosk`).
+- **Hors-ligne** : tous les assets (Bootstrap, icônes, polices, Three.js) sont
+  servis localement depuis `static/vendor/` et mis en cache long par le
+  navigateur — démarrage rapide même sans internet.
+- **Temps réel** : progression du scan poussée par Server-Sent Events ; aperçus
+  caméra en flux JPEG à faible latence (polling auto-réamorcé pour ne pas
+  saturer le Pi, qualité d'aperçu réduite vs. captures de calibration).
+- **Viewer 3D** intégré (Three.js) pour visualiser le nuage / maillage exporté.
+
 ## Interface web — routes disponibles
+
+🔒 = nécessite le [mode ingénierie](#mode-ingénierie--accès-aux-pages-de-configuration) déverrouillé.
 
 | Route | Méthode | Description |
 |---|---|---|
@@ -118,17 +235,20 @@ pytest tests/ -m integration           # inclut les tests nécessitant le vrai h
 | `/scan/stream` | GET | Server-Sent Events pour mises à jour en temps réel |
 | `/scan/download` | GET | Télécharge le dernier fichier STL/OBJ |
 | `/scan/frame/latest` | GET | Dernière image capturée (JPEG, avec overlay) |
-| `/scan/frame/<n>` | GET | Image du pas n (0–199) |
+| `/scan/frame/<n>` | GET | Image du pas n |
 | `/preview` | GET | Visualisation interactive du mock caméra |
 | `/preview/frame?angle=<rad>` | GET | Image brute à l'angle donné |
 | `/preview/extraction?angle=<rad>` | GET | Image avec ligne laser détectée |
-| `/calibration` | GET | Page de calibration |
-| `/calibration/camera` | POST | Lance la calibration intrinsèque caméra |
-| `/calibration/laser` | POST | Lance la calibration du plan laser |
-| `/manual` | GET | Page de commande manuelle (laser, moteur, LEDs) |
-| `/manual/laser` | POST | Active/désactive le laser |
-| `/manual/motor` | POST | Fait avancer le moteur manuellement |
-| `/manual/led` | POST | Contrôle manuel des LEDs |
+| `/usb/drives`, `/usb/export` | GET/POST | Liste / copie des fichiers vers une clé USB |
+| 🔒 `/calibration` | GET | Page de calibration |
+| 🔒 `/calibration/camera` | POST | Lance la calibration intrinsèque caméra |
+| 🔒 `/calibration/laser` | POST | Lance la calibration du plan laser |
+| 🔒 `/extrinsics` | GET | Réglage de la pose caméra (extrinsèques) |
+| 🔒 `/camera-config` | GET | Configuration caméra (format, exposition…) |
+| 🔒 `/manual` | GET | Commande manuelle (laser, moteur, LEDs) |
+| 🔒 `/manual/laser` | POST | Active/désactive le laser |
+| 🔒 `/manual/motor` | POST | Fait avancer le moteur manuellement |
+| 🔒 `/manual/led` | POST | Contrôle manuel des LEDs |
 
 ---
 

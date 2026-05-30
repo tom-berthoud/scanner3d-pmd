@@ -5,8 +5,8 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three": "{{ url_for('static', filename='vendor/three/three.module.js') }}",
+    "three/addons/": "{{ url_for('static', filename='vendor/three/addons/') }}"
   }
 }
 </script>
@@ -17,18 +17,18 @@
     gap: 18px;
   }
   .extr-panel {
-    border: 1px solid #30363d;
+    border: 1px solid var(--bdr);
     border-radius: 8px;
-    background: rgba(255,255,255,0.03);
+    background: var(--surf2);
     padding: 14px;
   }
   .extr-view {
     position: relative;
     height: min(72vh, 720px);
     min-height: 460px;
-    border: 1px solid #30363d;
+    border: 1px solid var(--bdr);
     border-radius: 8px;
-    background: #000;
+    background: var(--viewer-bg);
     overflow: hidden;
   }
   .extr-view canvas {
@@ -56,12 +56,12 @@
   }
   .param-row label {
     margin: 0;
-    color: #8b949e;
+    color: var(--txt-mid);
     font-size: 0.85rem;
     font-family: monospace;
   }
   .extr-stat {
-    color: #8b949e;
+    color: var(--txt-mid);
     font-family: monospace;
     font-size: 0.8rem;
     white-space: pre-wrap;
@@ -105,7 +105,7 @@ window.EXTR_DEFAULTS = {{ defaults | tojson }};
       </div>
     </div>
 
-    <hr style="border-color:#30363d;" />
+    <hr style="border-color:var(--bdr);" />
 
     <div id="param-box">
       <div class="param-row">
@@ -150,7 +150,7 @@ window.EXTR_DEFAULTS = {{ defaults | tojson }};
       </button>
     </div>
 
-    <hr style="border-color:#30363d;" />
+    <hr style="border-color:var(--bdr);" />
     <div class="extr-stat" id="status-box">Aucune capture.</div>
   </div>
 
@@ -180,7 +180,7 @@ function ensureViewer() {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(wrap.clientWidth, wrap.clientHeight);
-  renderer.setClearColor(0x000000);
+  renderer.setClearColor(0x0f172a);
   const labelRenderer = new CSS2DRenderer();
   labelRenderer.setSize(wrap.clientWidth, wrap.clientHeight);
   labelRenderer.domElement.style.position = 'absolute';

@@ -26,6 +26,7 @@ import os
 import queue
 import threading
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -34,10 +35,12 @@ from flask import (
     Flask,
     Response,
     jsonify,
+    redirect,
     render_template,
     request,
     send_file,
     stream_with_context,
+    url_for,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +64,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     static_dir = str(Path(__file__).parent / "static")
     app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
     app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64 MB upload limit
+    # Vendored assets (Bootstrap, fonts, three.js) are immutable — let browsers
+    # cache them aggressively to cut load latency on the Pi and on PCs.
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = timedelta(days=365)
 
     # ------------------------------------------------------------------ #
     # Load settings
@@ -77,6 +83,34 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         logger.info("Settings loaded from %s", cfg_file)
     else:
         logger.warning("Settings file not found: %s — using defaults", cfg_file)
+
+    # ------------------------------------------------------------------ #
+    # Engineering mode (SSH-unlocked)
+    # ------------------------------------------------------------------ #
+    # The scan flow is always free (kiosk / production). The engineering pages
+    # (Calibration, Extrinsics, Cam Config, Manual) are locked by default and
+    # unlocked on demand by creating a sentinel file over SSH (see
+    # scripts/scanner-eng.sh). The file lives in /tmp so a reboot re-locks.
+    _iface_cfg = settings.get("interface", {})
+    _eng_unlock_file = str(
+        _iface_cfg.get("engineering_unlock_file", "/tmp/scanner-engineering.unlock")
+    )
+    _eng_force = bool(_iface_cfg.get("engineering_force", False))
+    _protected_prefixes = ("/manual", "/calibration", "/extrinsics", "/camera-config")
+
+    def _engineering_active() -> bool:
+        return _eng_force or os.path.exists(_eng_unlock_file)
+
+    @app.context_processor
+    def _inject_engineering():
+        # Drives engineering-tab visibility in templates.
+        return {"engineering": _engineering_active()}
+
+    @app.before_request
+    def _gate_engineering():
+        if request.path.startswith(_protected_prefixes) and not _engineering_active():
+            return redirect(url_for("index"))
+        return None
 
     # ------------------------------------------------------------------ #
     # Initialise hardware
@@ -946,8 +980,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         cam.set_rotation_angle(angle_rad)
         frame = cam.capture()
 
-        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-        return Response(buf.tobytes(), mimetype="image/jpeg")
+        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        resp = Response(buf.tobytes(), mimetype="image/jpeg")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.route("/preview/extraction")
     def preview_extraction() -> Response:
@@ -983,8 +1019,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             col, row = int(round(line[i, 0])), int(round(line[i, 1]))
             cv2.circle(overlay, (col, row), 1, (0, 0, 255), -1)
 
-        _, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 90])
-        return Response(buf.tobytes(), mimetype="image/jpeg")
+        _, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        resp = Response(buf.tobytes(), mimetype="image/jpeg")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     # ------------------------------------------------------------------ #
     # Routes — Manual hardware control
@@ -1525,10 +1563,13 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return Response(status=409)
         try:
             frame = camera_capture(request.args.get("camera"))
-            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            # Live preview: favour low latency over fidelity (smaller payload).
+            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
             if not ok:
                 return Response(status=500)
-            return Response(buf.tobytes(), mimetype="image/jpeg")
+            resp = Response(buf.tobytes(), mimetype="image/jpeg")
+            resp.headers["Cache-Control"] = "no-store"
+            return resp
         except HardwareError:
             return Response(status=503)
 
@@ -1605,11 +1646,12 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             col, row = int(round(line[i, 0])), int(round(line[i, 1]))
             cv2.circle(overlay, (col, row), 2, (0, 0, 255), -1)
 
-        ok, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        ok, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 80])
         if not ok:
             return Response(status=500)
 
         resp = Response(buf.tobytes(), mimetype="image/jpeg")
+        resp.headers["Cache-Control"] = "no-store"
         resp.headers["X-Detected-Columns"] = str(line.shape[0])
         resp.headers["X-GR-Max"] = str(gr_max)
         resp.headers["X-GR-Mean"] = f"{gr_mean:.2f}"
