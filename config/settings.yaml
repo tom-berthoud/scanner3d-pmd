@@ -194,5 +194,6 @@ export:
 interface:
   web_host: 0.0.0.0         # écouter sur toutes les interfaces
   web_port: 5000            # port du serveur Flask
+  led_enabled: false        # false = n'initialise pas les GPIO LEDs
   display_type: none        # type d'écran : oled / lcd / none
   display_i2c_address: 0x3C # adresse I2C de l'écran OLED (souvent 0x3C ou 0x3D)

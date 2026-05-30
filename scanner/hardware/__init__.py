@@ -58,6 +58,7 @@ def init_hardware(config: dict) -> None:
     logger.info("Initialising hardware (on_pi=%s)", _ON_PI)
     iface_cfg = config.get("interface", {})
     door_cfg = config.get("safety", {}).get("door_interlock", {})
+    led_enabled = bool(iface_cfg.get("led_enabled", True))
     display_type = str(iface_cfg.get("display_type", "oled")).lower()
     display_enabled = display_type not in ("none", "off", "disabled")
 
@@ -87,7 +88,7 @@ def init_hardware(config: dict) -> None:
                     logger.warning("Camera %s init failed: %s", cam_id, exc)
             _motor_instance = StepperMotor(config.get("motor", {}))
             _laser_instance = Laser(config.get("laser", {}))
-            _led_instance = LED(iface_cfg)
+            _led_instance = LED(iface_cfg) if led_enabled else None
             _display_instance = Display(iface_cfg) if display_enabled else None
             _door_instance = DoorSensor(door_cfg)
         else:
@@ -109,7 +110,7 @@ def init_hardware(config: dict) -> None:
             }
             _motor_instance = MockMotor(config.get("motor", {}))
             _laser_instance = MockLaser(config.get("laser", {}))
-            _led_instance = MockLED(iface_cfg)
+            _led_instance = MockLED(iface_cfg) if led_enabled else None
             _display_instance = MockDisplay(iface_cfg) if display_enabled else None
             _door_instance = MockDoorSensor(door_cfg)
 
@@ -119,6 +120,8 @@ def init_hardware(config: dict) -> None:
             _camera_instance = next(iter(_camera_instances.values()))
         if _display_instance is None:
             logger.info("Display disabled by config (interface.display_type=%s)", display_type)
+        if _led_instance is None:
+            logger.info("LEDs disabled by config (interface.led_enabled=false)")
     except HardwareError:
         raise
     except Exception as exc:
@@ -259,14 +262,16 @@ def check_door_interlock() -> None:
 def led_set(color: str, state: bool) -> None:
     """Set an LED on or off."""
     if _led_instance is None:
-        raise HardwareError("LED not initialised")
+        logger.debug("LED set ignored (LEDs disabled): %s=%s", color, state)
+        return
     _led_instance.led_set(color, state)
 
 
 def led_blink(color: str, frequency_hz: float) -> None:
     """Start blinking an LED at the given frequency."""
     if _led_instance is None:
-        raise HardwareError("LED not initialised")
+        logger.debug("LED blink ignored (LEDs disabled): %s at %.2f Hz", color, frequency_hz)
+        return
     _led_instance.led_blink(color, frequency_hz)
 
 
