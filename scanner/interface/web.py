@@ -68,6 +68,18 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     # cache them aggressively to cut load latency on the Pi and on PCs.
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = timedelta(days=365)
 
+    # Cache-busting for our own (mutable) assets: append the file mtime as a
+    # query string so the browser refetches scanner.css / scanner.js after an
+    # update, despite the 1-year max-age above. Vendored assets stay on plain
+    # url_for() since they are immutable.
+    @app.template_global()
+    def asset(filename: str) -> str:
+        try:
+            version = int(os.path.getmtime(os.path.join(static_dir, filename)))
+        except OSError:
+            version = 0
+        return f"{url_for('static', filename=filename)}?v={version}"
+
     # ------------------------------------------------------------------ #
     # Load settings
     # ------------------------------------------------------------------ #

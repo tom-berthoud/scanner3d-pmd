@@ -17,338 +17,273 @@
 window.SCANNER_ARTIFACT_KINDS = {{ artifact_tabs | map(attribute='kind') | list | tojson }};
 </script>
 
-<div class="kiosk-scan-wrap">
-  <div class="kiosk-ring-wrap">
-    <svg class="kiosk-ring" viewBox="0 0 180 180">
-      <circle class="ring-bg" cx="90" cy="90" r="88" />
-      <circle class="ring-fill" cx="90" cy="90" r="88" />
-    </svg>
-    <button class="kiosk-btn" id="kiosk-btn" onclick="startScan()">
-      <i class="bi bi-play-fill"></i>SCAN
-    </button>
-  </div>
-  <div class="kiosk-status">
-    <div class="state" id="kiosk-state">{{ scan_state.state }}</div>
-    <div class="msg" id="kiosk-msg">{{ scan_state.message or 'Ready' }}</div>
-  </div>
-  <button class="kiosk-new-scan" id="kiosk-new-scan" style="display:none;" onclick="resetKiosk()">
-    NOUVEAU SCAN
-  </button>
-</div>
+<div class="scan-page">
 
-<div class="desktop-content">
-<div class="scan-grid">
-  <div>
-    <div class="pnl">
-      <div class="pnl-head">
-        <span class="pip"></span>
-        <span>System Status</span>
-        <span class="badge-live">&#9679; LIVE</span>
-      </div>
-      <div class="status-body">
-        <div class="state-row">
-          <div class="leds">
-            <div class="led" id="led-orange"></div>
-            <div class="led" id="led-red"></div>
-          </div>
-          <div class="state-name {{ scan_state.state | lower }}" id="state-label">
-            {{ scan_state.state }}
-          </div>
-        </div>
-        <div class="state-msg" id="state-message">{{ scan_state.message or 'Ready' }}</div>
-        <div class="state-msg" id="door-state">
-          Porte: {% if scan_state.door_interlock_enabled %}{% if scan_state.door_open %}OUVERTE{% else %}fermee{% endif %}{% else %}interlock desactive{% endif %}
-        </div>
-        <div class="err-strip" id="door-open-warn" {% if not (scan_state.door_interlock_enabled and scan_state.door_open) %}style="display:none;"{% endif %}>
-          <i class="bi bi-exclamation-triangle me-1"></i>Porte ouverte - scan et laser bloques
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill {% if scan_state.state == 'SCANNING' %}active{% endif %}"
-               id="progress-bar"
-               style="width:{{ scan_state.progress }}%"></div>
-        </div>
-        <div class="prog-row">
-          <span>PROGRESS</span>
-          <span id="progress-pct">{{ scan_state.progress }}%</span>
-        </div>
-      </div>
+  <!-- ===== Stage : zone visuelle unique (aperçu extraction → modèle 3D) ===== -->
+  <div class="stage">
+    <div class="stage-tabs" id="artifact-tabs">
+      {% for tab in artifact_tabs %}
+      <button
+        class="artifact-tab {% if loop.first %}active{% endif %}"
+        data-kind="{{ tab.kind }}"
+        onclick="selectArtifact('{{ tab.kind }}')"
+      >{{ tab.label }}</button>
+      {% endfor %}
     </div>
 
-    <div class="pnl">
-      <div class="pnl-head">
-        <span class="pip"></span>
-        <span>Acquisition</span>
+    <div class="stage-view">
+      <img id="live-frame" class="stage-img" src="" alt="" />
+      <canvas id="stl-canvas"></canvas>
+      <div id="viewer-placeholder" class="stage-ph">
+        <div class="ph-icon"><i class="bi bi-box"></i></div>
+        <span id="viewer-placeholder-text">Lancez un scan pour commencer</span>
       </div>
-      <div class="trigger-body">
-        <button id="btn-scan"
-                class="btn-scan {% if scan_state.state in ['SCANNING','PROCESSING','EXPORTING'] %}active{% endif %}"
-                onclick="startScan()"
-                {% if scan_state.state in ['SCANNING','PROCESSING','EXPORTING'] %}disabled{% endif %}>
-          <span id="btn-scan-text">
-            {% if scan_state.state in ['SCANNING','PROCESSING','EXPORTING'] %}
-              &#11036;&nbsp;&nbsp;ACQUISITION...
-            {% else %}
-              &#9654;&nbsp;&nbsp;LANCER LE SCAN
-            {% endif %}
-          </span>
-        </button>
-        <a id="btn-download"
-           class="btn-dl {% if not scan_state.last_file %}off{% endif %}"
-           href="/scan/download">
-          <i class="bi bi-download"></i>
-          <span>Telecharger le maillage</span>
-        </a>
-        <button id="btn-usb"
-                class="btn-usb {% if not scan_state.last_file %}off{% endif %}"
-                onclick="if(typeof window.copyToUsb==='function')window.copyToUsb();">
-          <i class="bi bi-usb-drive"></i>
-          <span>Copier sur cle USB</span>
-        </button>
-        {% if scan_state.error %}
-        <div class="err-strip">
-          <i class="bi bi-exclamation-triangle me-1"></i>{{ scan_state.error }}
-        </div>
-        {% endif %}
-      </div>
+      <span class="stage-tag tl" id="artifact-stage">EN ATTENTE</span>
+      <span class="stage-tag br" id="cam-step">-</span>
     </div>
 
-    <div class="pnl">
-      <div class="pnl-head">
-        <span class="pip"></span>
-        <span>Telemetry</span>
+    <div class="stage-foot">
+      <span id="frame-label">EN ATTENTE</span>
+      <span id="viewer-status">&middot;</span>
+    </div>
+  </div>
+
+  <!-- ===== Hero : contrôle principal ===== -->
+  <div class="hero">
+    <div class="hero-ring-wrap">
+      <svg class="scan-ring" viewBox="0 0 180 180" aria-hidden="true">
+        <circle class="ring-bg" cx="90" cy="90" r="88" />
+        <circle class="ring-fill" cx="90" cy="90" r="88" />
+      </svg>
+      <button id="btn-scan"
+              class="scan-btn {% if scan_state.state in ['SCANNING','PROCESSING','EXPORTING'] %}scanning{% endif %}"
+              onclick="startScan()"
+              {% if scan_state.state in ['SCANNING','PROCESSING','EXPORTING'] %}disabled{% endif %}>
+        <i class="bi bi-play-fill"></i>
+        <span id="btn-scan-text">SCAN</span>
+      </button>
+    </div>
+
+    <div class="hero-state">
+      <span class="leds">
+        <span class="led" id="led-orange"></span>
+        <span class="led" id="led-red"></span>
+      </span>
+      <span class="state-name {{ scan_state.state | lower }}" id="state-label">{{ scan_state.state }}</span>
+    </div>
+    <div class="hero-msg" id="state-message">{{ scan_state.message or 'Prêt' }}</div>
+    <div class="hero-door" id="door-state">
+      Porte: {% if scan_state.door_interlock_enabled %}{% if scan_state.door_open %}OUVERTE{% else %}fermée{% endif %}{% else %}interlock désactivé{% endif %}
+    </div>
+    <div class="err-strip" id="door-open-warn"
+         {% if not (scan_state.door_interlock_enabled and scan_state.door_open) %}style="display:none;"{% endif %}>
+      <i class="bi bi-exclamation-triangle me-1"></i>Porte ouverte — scan et laser bloqués
+    </div>
+    {% if scan_state.error %}
+    <div class="err-strip"><i class="bi bi-exclamation-triangle me-1"></i>{{ scan_state.error }}</div>
+    {% endif %}
+
+    <div class="hero-actions">
+      <a id="btn-download"
+         class="btn-dl {% if not scan_state.last_file %}off{% endif %}"
+         href="/scan/download">
+        <i class="bi bi-download"></i><span>Télécharger</span>
+      </a>
+      <button id="btn-usb"
+              class="btn-usb {% if not scan_state.last_file %}off{% endif %}"
+              onclick="if(typeof window.copyToUsb==='function')window.copyToUsb();">
+        <i class="bi bi-usb-drive"></i><span>Copier USB</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== Détails techniques (repliés par défaut) ===== -->
+  <details class="details-panel">
+    <summary>
+      <i class="bi bi-chevron-right caret"></i>
+      Détails techniques
+    </summary>
+    <div class="details-body">
+      <div class="prog-track">
+        <div class="prog-fill {% if scan_state.state == 'SCANNING' %}active{% endif %}"
+             id="progress-bar" style="width:{{ scan_state.progress }}%"></div>
       </div>
+      <div class="prog-row">
+        <span>PROGRESS</span>
+        <span id="progress-pct">{{ scan_state.progress }}%</span>
+      </div>
+
+      <div class="proc-steps" id="proc-steps">
+        <div class="proc-step" data-step="extract">Extraction ligne laser</div>
+        <div class="proc-step" data-step="fit">Repère caméra commun</div>
+        <div class="proc-step" data-step="triangulate">Triangulation</div>
+        <div class="proc-step" data-step="fuse">Fusion profils</div>
+        <div class="proc-step" data-step="merge">Fusion nuage</div>
+        <div class="proc-step" data-step="regression">Régression profil</div>
+        <div class="proc-step" data-step="outliers">Filtrage outliers</div>
+        <div class="proc-step" data-step="caps">Bouchons</div>
+        <div class="proc-step" data-step="mesh">Maillage / export</div>
+      </div>
+
       <div class="log-body" id="log-box"></div>
     </div>
+  </details>
 
-    <div class="pnl">
-      <div class="pnl-head">
-        <span class="pip"></span>
-        <span>Processing Steps</span>
-      </div>
-      <div class="proc-steps" id="proc-steps">
-        <div class="proc-step" data-step="extract">Extract laser line</div>
-        <div class="proc-step" data-step="fit">Fit same frame</div>
-        <div class="proc-step" data-step="triangulate">Triangulation</div>
-        <div class="proc-step" data-step="fuse">Fuse profiles</div>
-        <div class="proc-step" data-step="merge">Merge cloud</div>
-        <div class="proc-step" data-step="regression">Regression profile</div>
-        <div class="proc-step" data-step="outliers">Filter outliers</div>
-        <div class="proc-step" data-step="caps">Add caps</div>
-        <div class="proc-step" data-step="mesh">Mesh export</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="viewer-col">
-    <div class="pnl cam-pnl show" id="frame-card">
-      <div class="pnl-head">
-        <span class="pip" style="background:var(--amber);box-shadow:0 0 5px var(--amber);"></span>
-        <span>Etapes du scan</span>
-        <span id="frame-label" style="margin-left:auto;font-size:8px;color:var(--txt-dim);">EN ATTENTE</span>
-      </div>
-      <div class="artifact-tabs" id="artifact-tabs">
-        {% for tab in artifact_tabs %}
-        <button
-          class="artifact-tab {% if loop.first %}active{% endif %}"
-          data-kind="{{ tab.kind }}"
-          onclick="selectArtifact('{{ tab.kind }}')"
-        >
-          {{ tab.label }}
-        </button>
-        {% endfor %}
-      </div>
-      <div class="cam-feed">
-        <img id="live-frame" src="" alt="" />
-        <span class="cam-tag tl" id="artifact-stage">EN ATTENTE</span>
-        <span class="cam-tag br" id="cam-step">-</span>
-      </div>
-    </div>
-
-    <div class="pnl viewer-pnl">
-      <div class="pnl-head">
-        <span class="pip"></span>
-        <span>Vue 3D</span>
-        <span id="viewer-status" style="margin-left:auto;font-size:8px;color:var(--txt-dim);">EN ATTENTE</span>
-      </div>
-      <div class="viewer-canvas-wrap">
-        <div id="viewer-placeholder">
-          <div class="ph-icon"><i class="bi bi-box"></i></div>
-          <span id="viewer-placeholder-text">Selectionnez un nuage ou le STL</span>
-        </div>
-        <canvas id="stl-canvas"></canvas>
-      </div>
-      <div class="viewer-hint">DRAG &middot; SCROLL &middot; RIGHT-CLICK &nbsp;|&nbsp; ROTATE &middot; ZOOM &middot; PAN</div>
-    </div>
-  </div>
-</div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', filename='js/usb.js') }}"></script>
+<script src="{{ asset('js/usb.js') }}"></script>
 <script>
-function resetKiosk() {
-  var kb = document.getElementById('kiosk-btn');
-  if (kb) {
-    kb.innerHTML = '<i class="bi bi-play-fill"></i>SCAN';
-    kb.classList.remove('usb-mode', 'complete', 'error', 'scanning');
-    kb.onclick = startScan;
-    kb.disabled = false;
-  }
-  var ns = document.getElementById('kiosk-new-scan');
-  if (ns) ns.style.display = 'none';
-  var kr = document.querySelector('.kiosk-ring .ring-fill');
-  if (kr) { kr.style.strokeDashoffset = 553; kr.className = 'ring-fill'; }
-}
-
 document.addEventListener('DOMContentLoaded', function() {
   applyLeds('{{ scan_state.state }}');
-  log('Systeme pret.');
+  log('Système prêt.');
   connectSSE();
   refreshArtifacts();
-  updateKiosk({
-    state: '{{ scan_state.state }}',
-    progress: {{ scan_state.progress }},
-    message: '{{ scan_state.message or "Ready" }}'
-  });
   {% if scan_state.last_file %}
   selectArtifact('mesh');
   {% endif %}
 });
 </script>
 
-<script type="module">
-import * as THREE from 'three';
-import { STLLoader } from 'three/addons/loaders/STLLoader.js';
-import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+<!-- 3D viewer : Three.js chargé à la demande (lazy) pour garder la page scan légère -->
+<script>
+(function () {
+  let _v = null;
+  let _mods = null;
 
-let _v = null;
+  // Dynamic import: three.module.js (1.27 Mo) is only fetched the first time
+  // a cloud or mesh artifact is actually displayed — never on a plain scan view.
+  async function loadModules() {
+    if (_mods) return _mods;
+    const THREE = await import('three');
+    const { STLLoader } = await import('three/addons/loaders/STLLoader.js');
+    const { PLYLoader } = await import('three/addons/loaders/PLYLoader.js');
+    const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+    _mods = { THREE, STLLoader, PLYLoader, OrbitControls };
+    return _mods;
+  }
 
-function ensureViewer() {
-  const ph = document.getElementById('viewer-placeholder');
-  const cvs = document.getElementById('stl-canvas');
-  if (!ph || !cvs) return null;
-  ph.style.display = 'none';
-  cvs.style.display = 'block';
+  function ensureViewer(THREE, OrbitControls) {
+    const ph = document.getElementById('viewer-placeholder');
+    const cvs = document.getElementById('stl-canvas');
+    if (!ph || !cvs) return null;
+    ph.style.display = 'none';
+    cvs.style.display = 'block';
 
-  const height = 420;
-  const width = cvs.parentElement ? cvs.parentElement.clientWidth : 640;
-  cvs.width = width;
-  cvs.height = height;
+    const height = cvs.parentElement ? cvs.parentElement.clientHeight : 420;
+    const width = cvs.parentElement ? cvs.parentElement.clientWidth : 640;
 
-  if (!_v) {
-    const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+    if (!_v) {
+      const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setClearColor(0x0f172a);
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
+      camera.position.set(0, 0, 300);
+
+      const ctrl = new OrbitControls(camera, cvs);
+      ctrl.enableDamping = true;
+      ctrl.dampingFactor = 0.07;
+      ctrl.autoRotate = true;
+      ctrl.autoRotateSpeed = 1.2;
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+      const sun = new THREE.DirectionalLight(0xffffff, 1.3);
+      sun.position.set(100, 200, 150);
+      scene.add(sun);
+      const fill = new THREE.DirectionalLight(0x4488ff, 0.5);
+      fill.position.set(-150, -80, -100);
+      scene.add(fill);
+      const rim = new THREE.DirectionalLight(0x00d4ff, 0.25);
+      rim.position.set(0, -200, 50);
+      scene.add(rim);
+
+      (function loop() {
+        requestAnimationFrame(loop);
+        ctrl.update();
+        renderer.render(scene, camera);
+      })();
+
+      _v = { renderer, scene, camera, ctrl };
+    }
+    return _v;
+  }
+
+  function clearScene(scene) {
+    scene.children.filter(o => o.isMesh || o.isPoints).forEach(o => {
+      scene.remove(o);
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) o.material.dispose();
+    });
+  }
+
+  function frameGeometry(THREE, geo, camera, ctrl, renderer, canvas) {
+    geo.computeBoundingBox();
+    const center = new THREE.Vector3();
+    geo.boundingBox.getCenter(center);
+    geo.translate(-center.x, -center.y, -center.z);
+    geo.computeBoundingSphere();
+    const radius = geo.boundingSphere.radius || 80;
+
+    camera.position.set(0, radius * 0.5, radius * 3.2);
+    camera.near = radius * 0.01;
+    camera.far = radius * 100;
+    camera.updateProjectionMatrix();
+    ctrl.target.set(0, 0, 0);
+
+    const width = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.width;
+    const height = canvas.parentElement ? canvas.parentElement.clientHeight : 420;
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor(0x0f172a);
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
-    camera.position.set(0, 0, 300);
-
-    const ctrl = new OrbitControls(camera, cvs);
-    ctrl.enableDamping = true;
-    ctrl.dampingFactor = 0.07;
-    ctrl.autoRotate = true;
-    ctrl.autoRotateSpeed = 1.2;
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.3);
-    sun.position.set(100, 200, 150);
-    scene.add(sun);
-    const fill = new THREE.DirectionalLight(0x4488ff, 0.5);
-    fill.position.set(-150, -80, -100);
-    scene.add(fill);
-    const rim = new THREE.DirectionalLight(0x00d4ff, 0.25);
-    rim.position.set(0, -200, 50);
-    scene.add(rim);
-
-    (function loop() {
-      requestAnimationFrame(loop);
-      ctrl.update();
-      renderer.render(scene, camera);
-    })();
-
-    _v = { renderer, scene, camera, ctrl };
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
   }
-  return _v;
-}
 
-function clearScene(scene) {
-  scene.children.filter(o => o.isMesh || o.isPoints).forEach(o => {
-    scene.remove(o);
-    if (o.geometry) o.geometry.dispose();
-    if (o.material) o.material.dispose();
-  });
-}
+  window._loadArtifact = async function (kind, mediaType) {
+    const vs = document.getElementById('viewer-status');
+    try {
+      if (vs) vs.textContent = 'TÉLÉCHARGEMENT…';
+      const resp = await fetch('/scan/artifact/' + encodeURIComponent(kind) + '?t=' + Date.now());
+      if (!resp.ok) {
+        if (vs) vs.textContent = 'INDISPONIBLE';
+        return;
+      }
+      const buf = await resp.arrayBuffer();
+      if (vs) vs.textContent = 'CHARGEMENT 3D…';
 
-function frameGeometry(geo, camera, ctrl, renderer, canvas) {
-  geo.computeBoundingBox();
-  const center = new THREE.Vector3();
-  geo.boundingBox.getCenter(center);
-  geo.translate(-center.x, -center.y, -center.z);
-  geo.computeBoundingSphere();
-  const radius = geo.boundingSphere.radius || 80;
+      const { THREE, STLLoader, PLYLoader, OrbitControls } = await loadModules();
+      const viewer = ensureViewer(THREE, OrbitControls);
+      if (!viewer) return;
+      const { renderer, scene, camera, ctrl } = viewer;
+      const canvas = document.getElementById('stl-canvas');
+      clearScene(scene);
 
-  camera.position.set(0, radius * 0.5, radius * 3.2);
-  camera.near = radius * 0.01;
-  camera.far = radius * 100;
-  camera.updateProjectionMatrix();
-  ctrl.target.set(0, 0, 0);
-
-  const width = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.width;
-  renderer.setSize(width, 420);
-  camera.aspect = width / 420;
-  camera.updateProjectionMatrix();
-}
-
-window._loadArtifact = async function(kind, mediaType) {
-  const vs = document.getElementById('viewer-status');
-  try {
-    if (vs) vs.textContent = 'TELECHARGEMENT...';
-    const resp = await fetch('/scan/artifact/' + encodeURIComponent(kind) + '?t=' + Date.now());
-    if (!resp.ok) {
-      if (vs) vs.textContent = 'INDISPONIBLE';
-      return;
+      if (mediaType === 'model/ply') {
+        const geo = new PLYLoader().parse(buf);
+        frameGeometry(THREE, geo, camera, ctrl, renderer, canvas);
+        scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
+          color: 0x0284c7, size: 1.8, sizeAttenuation: true
+        })));
+      } else {
+        const geo = new STLLoader().parse(buf);
+        geo.computeVertexNormals();
+        frameGeometry(THREE, geo, camera, ctrl, renderer, canvas);
+        scene.add(new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+          color: 0x059669, specular: 0x003311, shininess: 90, side: THREE.DoubleSide
+        })));
+      }
+      if (vs) vs.textContent = 'PRÊT';
+    } catch (err) {
+      console.error('artifact viewer:', err);
+      if (vs) vs.textContent = 'ERREUR';
     }
-    const buf = await resp.arrayBuffer();
-    if (vs) vs.textContent = 'PARSING...';
+  };
 
-    const viewer = ensureViewer();
-    if (!viewer) return;
-    const { renderer, scene, camera, ctrl } = viewer;
-    const canvas = document.getElementById('stl-canvas');
-    clearScene(scene);
-
-    if (mediaType === 'model/ply') {
-      const geo = new PLYLoader().parse(buf);
-      frameGeometry(geo, camera, ctrl, renderer, canvas);
-      scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
-        color: 0x00d4ff,
-        size: 1.8,
-        sizeAttenuation: true
-      })));
-    } else {
-      const geo = new STLLoader().parse(buf);
-      geo.computeVertexNormals();
-      frameGeometry(geo, camera, ctrl, renderer, canvas);
-      scene.add(new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
-        color: 0x00e676,
-        specular: 0x003311,
-        shininess: 90,
-        side: THREE.DoubleSide
-      })));
-    }
-    if (vs) vs.textContent = 'PRET';
-  } catch (err) {
-    console.error('artifact viewer:', err);
-    if (vs) vs.textContent = 'ERREUR';
-  }
-};
-
-window._loadModel = function() {
-  window._loadArtifact('mesh', 'model/stl');
-};
+  window._loadModel = function () {
+    window._loadArtifact('mesh', 'model/stl');
+  };
+})();
 </script>
 {% endblock %}

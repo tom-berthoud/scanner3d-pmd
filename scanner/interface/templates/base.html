@@ -11,36 +11,27 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.css') }}" />
   <!-- Fonts (vendored) -->
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fonts/fonts.css') }}" />
-  <!-- Scanner CSS -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/scanner.css') }}" />
+  <!-- Scanner CSS (cache-busted) -->
+  <link rel="stylesheet" href="{{ asset('css/scanner.css') }}" />
 
   {% block extra_head %}{% endblock %}
 </head>
-<body>
-<script>
-  // Detect kiosk mode from URL parameter
-  (function() {
-    var params = new URLSearchParams(window.location.search);
-    if (params.get('mode') === 'kiosk') {
-      document.body.setAttribute('data-mode', 'kiosk');
-    }
-  })();
-</script>
+<body{% if engineering %} class="eng-unlocked"{% endif %}>
 
 <!-- Toast container -->
 <div id="toast-container" class="toast-container"></div>
 
-<!-- ===== Desktop Navbar ===== -->
+<!-- ===== Top Navbar (minimal, responsive) ===== -->
 <div class="nav-top">
   <a class="brand" href="/">
     <i class="bi bi-broadcast-pin text-success"></i>
     Scanner 3D
   </a>
+  {% if engineering %}
   <div class="nav-links">
     <a href="/" {% if request.path == '/' %}class="active"{% endif %}>
       <i class="bi bi-play-circle me-1"></i>Scan
     </a>
-    {% if engineering %}
     <a href="/calibration" {% if request.path.startswith('/calibration') %}class="active"{% endif %}>
       <i class="bi bi-sliders me-1"></i>Calibration
     </a>
@@ -53,63 +44,9 @@
     <a href="/manual" {% if request.path.startswith('/manual') %}class="active"{% endif %}>
       <i class="bi bi-tools me-1"></i>Manuel
     </a>
-    {% endif %}
   </div>
-</div>
-
-<!-- ===== Kiosk Status Bar ===== -->
-<div class="kiosk-bar">
-  <span class="title">Scanner 3D</span>
-  <button class="kiosk-gear" onclick="toggleGearPanel()" aria-label="Settings">
-    <i class="bi bi-gear-fill"></i>
-  </button>
-</div>
-
-<!-- ===== Gear Slide Panel (kiosk/mobile) ===== -->
-<div id="gear-overlay" class="gear-panel-overlay" onclick="toggleGearPanel()"></div>
-<div id="gear-panel" class="gear-panel">
-  <button class="gear-close" onclick="toggleGearPanel()"><i class="bi bi-x-lg"></i></button>
-  <h6>Navigation</h6>
-  <a href="/"><i class="bi bi-play-circle"></i> Scan</a>
-  {% if engineering %}
-  <a href="/calibration"><i class="bi bi-sliders"></i> Calibration</a>
-  <a href="/extrinsics"><i class="bi bi-bounding-box"></i> Extrinseque</a>
-  <a href="/camera-config"><i class="bi bi-camera-video"></i> Cam Config</a>
-  <a href="/manual"><i class="bi bi-tools"></i> Manuel</a>
+  <span class="nav-eng-badge"><i class="bi bi-unlock-fill"></i> ING</span>
   {% endif %}
-  <div class="ip-info" id="ip-info">
-    Adresse : <strong id="scanner-ip">{{ request.host }}</strong>
-  </div>
-</div>
-
-<!-- ===== Mobile Bottom Tab Bar ===== -->
-<div class="tab-bar">
-  <a href="/" {% if request.path == '/' %}class="active"{% endif %}>
-    <i class="bi bi-play-circle"></i>
-    <span>Scan</span>
-  </a>
-  {% if engineering %}
-  <a href="/calibration" {% if request.path.startswith('/calibration') %}class="active"{% endif %}>
-    <i class="bi bi-sliders"></i>
-    <span>Calibration</span>
-  </a>
-  <a href="/extrinsics" {% if request.path.startswith('/extrinsics') %}class="active"{% endif %}>
-    <i class="bi bi-bounding-box"></i>
-    <span>Extr.</span>
-  </a>
-  <a href="/camera-config" {% if request.path.startswith('/camera-config') %}class="active"{% endif %}>
-    <i class="bi bi-camera-video"></i>
-    <span>Cam</span>
-  </a>
-  <a href="/manual" {% if request.path.startswith('/manual') %}class="active"{% endif %}>
-    <i class="bi bi-tools"></i>
-    <span>Manuel</span>
-  </a>
-  {% endif %}
-  <a href="#" onclick="if(typeof window.copyToUsb==='function')window.copyToUsb();return false;">
-    <i class="bi bi-usb-drive"></i>
-    <span>USB</span>
-  </a>
 </div>
 
 <main class="container py-4">
@@ -121,7 +58,7 @@
 </footer>
 
 <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
-<script src="{{ url_for('static', filename='js/scanner.js') }}"></script>
+<script src="{{ asset('js/scanner.js') }}"></script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

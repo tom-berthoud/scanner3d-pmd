@@ -1,6 +1,6 @@
 /* ============================================================
    Scanner 3D — Common JavaScript
-   LEDs, logging, SSE, frame polling, UI updates, scan trigger
+   LEDs, logging, SSE, artifact polling, UI updates, scan trigger
    ============================================================ */
 
 // ---- LED control ----
@@ -41,7 +41,7 @@ function log(msg, cls) {
   box.scrollTop = box.scrollHeight;
 }
 
-// ---- Frame polling ----
+// ---- Artifact polling (fallback when SSE is unavailable) ----
 let _poll = null;
 let _artifactPoll = null;
 let _selectedArtifact = (
@@ -50,6 +50,8 @@ let _selectedArtifact = (
   ? window.SCANNER_ARTIFACT_KINDS[0]
   : 'extract_left';
 let _artifacts = {};
+const RING_CIRCUMFERENCE = 553; // 2*PI*r, r=88
+
 const PROCESSING_STEP_ORDER = [
   'extract', 'fit', 'triangulate', 'fuse', 'merge', 'regression', 'outliers', 'caps', 'mesh'
 ];
@@ -115,17 +117,29 @@ function setArtifactTabs() {
   });
 }
 
+// ---- Stage display (3 overlapping layers: image / 3D canvas / placeholder) ----
+function showStageLayer(which) {
+  var img = document.getElementById('live-frame');
+  var canvas = document.getElementById('stl-canvas');
+  var placeholder = document.getElementById('viewer-placeholder');
+  if (img) img.style.display = (which === 'image') ? 'block' : 'none';
+  if (canvas) canvas.style.display = (which === 'canvas') ? 'block' : 'none';
+  if (placeholder) placeholder.style.display = (which === 'placeholder') ? 'flex' : 'none';
+}
+
 function showImageArtifact(kind) {
   var img = document.getElementById('live-frame');
   var stage = document.getElementById('artifact-stage');
   var label = document.getElementById('frame-label');
-  var canvas = document.getElementById('stl-canvas');
-  var placeholder = document.getElementById('viewer-placeholder');
-  if (canvas) canvas.style.display = 'none';
-  if (placeholder) placeholder.style.display = 'flex';
-  if (img) img.src = artifactUrl(kind);
   var artifact = _artifacts[kind] || {};
-  if (stage) stage.textContent = artifact.available ? 'EXTRACTION' : 'EN ATTENTE';
+  if (artifact.available) {
+    showStageLayer('image');
+    if (img) img.src = artifactUrl(kind);
+    if (stage) stage.textContent = 'EXTRACTION';
+  } else {
+    showStageLayer('placeholder');
+    if (stage) stage.textContent = 'EN ATTENTE';
+  }
   if (label) label.textContent = artifact.label || kind;
 }
 
@@ -136,15 +150,14 @@ function loadSelectedArtifact() {
     showImageArtifact(_selectedArtifact);
     return;
   }
-  var img = document.getElementById('live-frame');
   var stage = document.getElementById('artifact-stage');
   var label = document.getElementById('frame-label');
-  if (img) img.removeAttribute('src');
-  if (stage) stage.textContent = artifact && artifact.available ? 'MODELE' : 'EN ATTENTE';
   if (label) label.textContent = artifact ? artifact.label : _selectedArtifact;
+  if (stage) stage.textContent = artifact && artifact.available ? 'MODÈLE' : 'EN ATTENTE';
   if (!artifact || !artifact.available) {
+    showStageLayer('placeholder');
     var vs = document.getElementById('viewer-status');
-    if (vs) vs.textContent = 'EN ATTENTE';
+    if (vs) vs.textContent = '·';
     return;
   }
   if (typeof window._loadArtifact === 'function') {
@@ -172,12 +185,8 @@ function selectArtifact(kind) {
 }
 
 function startPolling() {
-  const fc = document.getElementById('frame-card');
-  if (fc) fc.classList.add('show');
   if (_poll) return;
-  _poll = setInterval(function() {
-    refreshArtifacts();
-  }, 600);
+  _poll = setInterval(refreshArtifacts, 800);
 }
 function stopPolling() { clearInterval(_poll); _poll = null; }
 
@@ -185,62 +194,45 @@ function startArtifactPolling() {
   if (_artifactPoll) return;
   _artifactPoll = setInterval(refreshArtifacts, 1500);
 }
+function stopArtifactPolling() { clearInterval(_artifactPoll); _artifactPoll = null; }
 
-function stopArtifactPolling() {
-  clearInterval(_artifactPoll);
-  _artifactPoll = null;
+// ---- Progress ring + scan button ----
+function updateRing(state, pct) {
+  var fill = document.querySelector('.scan-ring .ring-fill');
+  if (!fill) return;
+  var offset = RING_CIRCUMFERENCE - (RING_CIRCUMFERENCE * (pct || 0) / 100);
+  fill.style.strokeDashoffset = offset;
+  fill.className = 'ring-fill';
+  if (['SCANNING', 'PROCESSING', 'EXPORTING'].includes(state)) fill.classList.add('scanning');
+  if (state === 'COMPLETE') fill.classList.add('complete');
+  if (state === 'ERROR') fill.classList.add('error');
 }
 
-// ---- Kiosk UI update ----
-function updateKiosk(d) {
-  const kb = document.getElementById('kiosk-btn');
-  const kr = document.querySelector('.kiosk-ring .ring-fill');
-  const ks = document.querySelector('.kiosk-status .state');
-  const km = document.querySelector('.kiosk-status .msg');
-  const ns = document.getElementById('kiosk-new-scan');
+function setScanButton(state, pct, blockedByDoor) {
+  var btn = document.getElementById('btn-scan');
+  var txt = document.getElementById('btn-scan-text');
+  if (!btn) return;
+  var icon = btn.querySelector('i');
+  var busy = ['SCANNING', 'PROCESSING', 'EXPORTING'].includes(state);
+  btn.className = 'scan-btn' + (busy ? ' scanning' : (state === 'ERROR' ? ' error' : ''));
+  btn.disabled = busy || !!blockedByDoor;
 
-  if (!kb) return;
-
-  const pct = d.progress || 0;
-  const state = d.state || 'IDLE';
-
-  // Update ring progress (circumference = 2*PI*88 ≈ 553)
-  if (kr) {
-    const offset = 553 - (553 * pct / 100);
-    kr.style.strokeDashoffset = offset;
-    kr.className = 'ring-fill';
-    if (state === 'SCANNING' || state === 'PROCESSING' || state === 'EXPORTING') kr.classList.add('scanning');
-    if (state === 'COMPLETE') kr.classList.add('complete');
-  }
-
-  // Update button state
-  kb.className = 'kiosk-btn';
-  const busy = ['SCANNING', 'PROCESSING', 'EXPORTING'].includes(state);
-  kb.disabled = busy;
-
-  if (state === 'COMPLETE') {
-    kb.classList.add('usb-mode');
-    kb.innerHTML = '<i class="bi bi-usb-drive"></i>COPIER<br>USB';
-    kb.disabled = false;
-    kb.onclick = function() { if (typeof window.copyToUsb === 'function') window.copyToUsb(); };
-    if (ns) ns.style.display = '';
-  } else if (busy) {
-    kb.classList.add('scanning');
-    kb.innerHTML = '<i class="bi bi-arrow-repeat"></i>' + pct + '%';
+  if (busy) {
+    if (icon) icon.className = 'bi bi-arrow-repeat spin';
+    if (txt) txt.textContent = (pct || 0) + '%';
+  } else if (blockedByDoor) {
+    if (icon) icon.className = 'bi bi-door-open';
+    if (txt) txt.textContent = 'PORTE';
   } else if (state === 'ERROR') {
-    kb.classList.add('error');
-    kb.innerHTML = '<i class="bi bi-exclamation-triangle"></i>ERREUR';
-    kb.disabled = false;
-    kb.onclick = startScan;
-    if (ns) ns.style.display = '';
+    if (icon) icon.className = 'bi bi-arrow-clockwise';
+    if (txt) txt.textContent = 'RÉESSAYER';
+  } else if (state === 'COMPLETE') {
+    if (icon) icon.className = 'bi bi-arrow-clockwise';
+    if (txt) txt.textContent = 'NOUVEAU';
   } else {
-    kb.innerHTML = '<i class="bi bi-play-fill"></i>SCAN';
-    kb.onclick = startScan;
-    if (ns) ns.style.display = 'none';
+    if (icon) icon.className = 'bi bi-play-fill';
+    if (txt) txt.textContent = 'SCAN';
   }
-
-  if (ks) ks.textContent = state;
-  if (km) km.textContent = d.message || '';
 }
 
 // ---- Main UI update ----
@@ -249,13 +241,13 @@ function updateUI(d) {
   const sm  = document.getElementById('state-message');
   const pb  = document.getElementById('progress-bar');
   const pct = document.getElementById('progress-pct');
-  const btn = document.getElementById('btn-scan');
-  const txt = document.getElementById('btn-scan-text');
   const dl  = document.getElementById('btn-download');
-  const fl  = document.getElementById('frame-label');
-  const vs  = document.getElementById('viewer-status');
   const ds  = document.getElementById('door-state');
   const dw  = document.getElementById('door-open-warn');
+
+  var state = d.state || 'IDLE';
+  var progress = (d.progress !== undefined) ? d.progress : 0;
+  var blockedByDoor = !!d.door_interlock_enabled && !!d.door_open;
 
   if (sl && d.state) {
     sl.textContent = d.state;
@@ -263,72 +255,50 @@ function updateUI(d) {
   }
   if (sm && d.message) sm.textContent = d.message;
   if (pb && d.progress !== undefined) {
-    pb.style.width    = d.progress + '%';
-    if (pct) pct.textContent   = d.progress + '%';
-    if (fl) fl.textContent = d.progress + '%';
+    pb.style.width = progress + '%';
+    if (pct) pct.textContent = progress + '%';
   }
-  applyLeds(d.state || 'IDLE');
+  applyLeds(state);
+  updateRing(state, progress);
+  setScanButton(state, progress, blockedByDoor);
 
-  if (btn) {
-    var busy = ['SCANNING','PROCESSING','EXPORTING'].includes(d.state);
-    var blockedByDoor = !!d.door_interlock_enabled && !!d.door_open;
-    btn.disabled   = busy || blockedByDoor;
-    btn.className  = 'btn-scan' + (busy ? ' active' : '');
-    if (txt) {
-      if (busy) txt.textContent = '\u2B1B  ACQUISITION...';
-      else if (blockedByDoor) txt.textContent = '\u26A0  FERMEZ LA PORTE';
-      else txt.textContent = '\u25B6  LANCER LE SCAN';
-    }
-  }
-
-  if (d.state === 'SCANNING') {
+  if (state === 'SCANNING') {
     resetProcessingSteps();
     if (pb) pb.classList.add('active');
     startPolling();
   }
-  if (['PROCESSING','EXPORTING'].includes(d.state)) {
+  if (['PROCESSING', 'EXPORTING'].includes(state)) {
     startArtifactPolling();
   }
-  if (['COMPLETE','ERROR','IDLE'].includes(d.state)) {
+  if (['COMPLETE', 'ERROR', 'IDLE'].includes(state)) {
     if (pb) pb.classList.remove('active');
     stopPolling();
     stopArtifactPolling();
-    if (d.state === 'COMPLETE') {
+    if (state === 'COMPLETE') {
       completeProcessingSteps();
       refreshArtifacts();
       if (dl) dl.classList.remove('off');
       var usbBtn = document.getElementById('btn-usb');
       if (usbBtn) usbBtn.classList.remove('off');
-      if (vs) vs.textContent = 'CHARGEMENT...';
-      log('Scan termin\u00e9.', 'log-ok');
+      log('Scan terminé.', 'log-ok');
     }
-    if (d.state === 'ERROR') log(d.message || 'Erreur', 'log-err');
+    if (state === 'ERROR') log(d.message || 'Erreur', 'log-err');
   }
   if (d.message) log(d.message);
 
-  if (d.state === 'PROCESSING' || d.state === 'EXPORTING') {
+  if (state === 'PROCESSING' || state === 'EXPORTING') {
     var inferred = inferProcessingStep(d.message || '');
     if (inferred) setProcessingStep(inferred);
   }
-  if (d.state === 'ERROR' || d.state === 'IDLE') {
-    if (!_processingStep || d.state === 'IDLE') resetProcessingSteps();
+  if (state === 'ERROR' || state === 'IDLE') {
+    if (!_processingStep || state === 'IDLE') resetProcessingSteps();
   }
 
   if (ds) {
-    var interlockEnabled = !!d.door_interlock_enabled;
-    var doorOpen = !!d.door_open;
-    if (!interlockEnabled) {
-      ds.textContent = 'Porte: interlock desactive';
-    } else {
-      ds.textContent = 'Porte: ' + (doorOpen ? 'OUVERTE' : 'fermee');
-    }
+    if (!d.door_interlock_enabled) ds.textContent = 'Porte: interlock désactivé';
+    else ds.textContent = 'Porte: ' + (d.door_open ? 'OUVERTE' : 'fermée');
   }
-  if (dw) {
-    dw.style.display = (d.door_interlock_enabled && d.door_open) ? 'block' : 'none';
-  }
-
-  // Update kiosk view
-  updateKiosk(d);
+  if (dw) dw.style.display = blockedByDoor ? 'block' : 'none';
 }
 
 // ---- SSE ----
@@ -348,24 +318,20 @@ function connectSSE() {
 // ---- Start scan ----
 async function startScan() {
   var btn = document.getElementById('btn-scan');
-  var kb = document.getElementById('kiosk-btn');
   if (btn) btn.disabled = true;
-  if (kb) kb.disabled = true;
   try {
     var r = await fetch('/scan/start', { method:'POST' });
     var d = await r.json();
     if (!r.ok) {
       showToast(d.error || r.statusText, 'error');
       if (btn) btn.disabled = false;
-      if (kb) kb.disabled = false;
     } else {
       startPolling();
-      log('D\u00e9marrage de l\'acquisition...');
+      log('Démarrage de l\'acquisition…');
     }
   } catch(e) {
-    showToast('Erreur r\u00e9seau : ' + e, 'error');
+    showToast('Erreur réseau : ' + e, 'error');
     if (btn) btn.disabled = false;
-    if (kb) kb.disabled = false;
   }
 }
 
@@ -381,7 +347,7 @@ function showToast(msg, type) {
   setTimeout(function() { el.remove(); }, 4000);
 }
 
-// ---- Load 3D model (stub, overridden by Three.js module) ----
+// ---- Load 3D model (stub, overridden by the lazy Three.js loader) ----
 function loadModel() {
   if (typeof window._loadModel === 'function') {
     window._loadModel();
@@ -397,20 +363,3 @@ function loadModel() {
 
 window.selectArtifact = selectArtifact;
 window.refreshArtifacts = refreshArtifacts;
-
-// ---- Gear panel ----
-function toggleGearPanel() {
-  var panel = document.getElementById('gear-panel');
-  var overlay = document.getElementById('gear-overlay');
-  if (!panel) return;
-  panel.classList.toggle('open');
-  if (overlay) overlay.classList.toggle('open');
-}
-
-// ---- Mode detection ----
-function detectMode() {
-  var params = new URLSearchParams(window.location.search);
-  if (params.get('mode') === 'kiosk') {
-    document.body.setAttribute('data-mode', 'kiosk');
-  }
-}
