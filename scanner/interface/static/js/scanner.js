@@ -56,6 +56,8 @@ const PROCESSING_STEP_ORDER = [
   'extract', 'fit', 'triangulate', 'fuse', 'merge', 'regression', 'outliers', 'caps', 'mesh'
 ];
 let _processingStep = null;
+let _scanStartMs = null;
+let _currentState = 'IDLE';
 
 function setProcessingStep(step) {
   if (!step) return;
@@ -200,12 +202,40 @@ function stopArtifactPolling() { clearInterval(_artifactPoll); _artifactPoll = n
 function updateRing(state, pct) {
   var fill = document.querySelector('.scan-ring .ring-fill');
   if (!fill) return;
-  var offset = RING_CIRCUMFERENCE - (RING_CIRCUMFERENCE * (pct || 0) / 100);
-  fill.style.strokeDashoffset = offset;
   fill.className = 'ring-fill';
-  if (['SCANNING', 'PROCESSING', 'EXPORTING'].includes(state)) fill.classList.add('scanning');
-  if (state === 'COMPLETE') fill.classList.add('complete');
-  if (state === 'ERROR') fill.classList.add('error');
+  // The ring only appears DURING a scan. No ring at idle / home / complete.
+  if (state === 'PROCESSING' || state === 'EXPORTING') {
+    // Unknown duration (percentage stuck at 100 %) → spinning arc.
+    fill.style.strokeDashoffset = '';
+    fill.classList.add('scanning', 'indeterminate');
+    return;
+  }
+  if (state === 'SCANNING') {
+    // Capture → arc grows with progress.
+    fill.style.strokeDashoffset = RING_CIRCUMFERENCE - (RING_CIRCUMFERENCE * (pct || 0) / 100);
+    fill.classList.add('scanning');
+    return;
+  }
+  // IDLE / COMPLETE / ERROR → empty ring (only the thin grey track remains).
+  fill.style.strokeDashoffset = RING_CIRCUMFERENCE;
+}
+
+function updateStepCounter(d) {
+  var sc = document.getElementById('step-counter');
+  if (!sc) return;
+  var state = d.state || 'IDLE';
+  if (['COMPLETE', 'ERROR', 'IDLE'].includes(state)) {
+    sc.textContent = '';
+    sc.style.display = 'none';
+  } else if (state === 'EXPORTING') {
+    sc.textContent = 'Maillage en cours…';
+    sc.style.display = '';
+  } else if (d.total) {
+    // Keep last value on state-only pushes (which carry no current/total).
+    var label = (state === 'SCANNING') ? 'Étape' : 'Traitement';
+    sc.textContent = label + ' ' + d.current + ' / ' + d.total;
+    sc.style.display = '';
+  }
 }
 
 function setScanButton(state, pct, blockedByDoor) {
@@ -227,8 +257,8 @@ function setScanButton(state, pct, blockedByDoor) {
     if (icon) icon.className = 'bi bi-arrow-clockwise';
     if (txt) txt.textContent = 'RÉESSAYER';
   } else if (state === 'COMPLETE') {
-    if (icon) icon.className = 'bi bi-arrow-clockwise';
-    if (txt) txt.textContent = 'NOUVEAU';
+    if (icon) icon.className = 'bi bi-house-fill';
+    if (txt) txt.textContent = 'ACCUEIL';
   } else {
     if (icon) icon.className = 'bi bi-play-fill';
     if (txt) txt.textContent = 'SCAN';
@@ -246,6 +276,7 @@ function updateUI(d) {
   const dw  = document.getElementById('door-open-warn');
 
   var state = d.state || 'IDLE';
+  _currentState = state;
   var progress = (d.progress !== undefined) ? d.progress : 0;
   var blockedByDoor = !!d.door_interlock_enabled && !!d.door_open;
 
@@ -253,7 +284,12 @@ function updateUI(d) {
     sl.textContent = d.state;
     sl.className   = 'state-name ' + d.state.toLowerCase();
   }
-  if (sm && d.message) sm.textContent = d.message;
+  if (sm) {
+    // During busy states the coloured step counter is the single progress
+    // line; don't duplicate it in the message line.
+    if (['SCANNING', 'PROCESSING', 'EXPORTING'].includes(state)) sm.textContent = '';
+    else if (d.message) sm.textContent = d.message;
+  }
   if (pb && d.progress !== undefined) {
     pb.style.width = progress + '%';
     if (pct) pct.textContent = progress + '%';
@@ -261,9 +297,11 @@ function updateUI(d) {
   applyLeds(state);
   updateRing(state, progress);
   setScanButton(state, progress, blockedByDoor);
+  updateStepCounter(d);
 
   if (state === 'SCANNING') {
     resetProcessingSteps();
+    hideResultCard();
     if (pb) pb.classList.add('active');
     startPolling();
   }
@@ -281,8 +319,23 @@ function updateUI(d) {
       var usbBtn = document.getElementById('btn-usb');
       if (usbBtn) usbBtn.classList.remove('off');
       log('Scan terminé.', 'log-ok');
+      showResultCard();
     }
     if (state === 'ERROR') log(d.message || 'Erreur', 'log-err');
+    if (state === 'IDLE') {
+      // Back to the home screen → grey out the previous-scan actions and
+      // return the stage to its idle placeholder.
+      if (dl) dl.classList.add('off');
+      var usbOff = document.getElementById('btn-usb');
+      if (usbOff) usbOff.classList.add('off');
+      showStageLayer('placeholder');
+      var asg = document.getElementById('artifact-stage');
+      if (asg) asg.textContent = 'EN ATTENTE';
+      var fl2 = document.getElementById('frame-label');
+      if (fl2) fl2.textContent = 'EN ATTENTE';
+      var vs2 = document.getElementById('viewer-status');
+      if (vs2) vs2.textContent = '·';
+    }
   }
   if (d.message) log(d.message);
 
@@ -299,6 +352,10 @@ function updateUI(d) {
     else ds.textContent = 'Porte: ' + (d.door_open ? 'OUVERTE' : 'fermée');
   }
   if (dw) dw.style.display = blockedByDoor ? 'block' : 'none';
+
+  // Attract mode runs only while truly idle.
+  if (state === 'IDLE') { hideResultCard(); resetIdle(); }
+  else { clearTimeout(_idleTimer); exitAttract(); }
 }
 
 // ---- SSE ----
@@ -319,6 +376,7 @@ function connectSSE() {
 async function startScan() {
   var btn = document.getElementById('btn-scan');
   if (btn) btn.disabled = true;
+  _scanStartMs = Date.now();
   try {
     var r = await fetch('/scan/start', { method:'POST' });
     var d = await r.json();
@@ -334,6 +392,28 @@ async function startScan() {
     if (btn) btn.disabled = false;
   }
 }
+
+// ---- Primary button dispatcher: home when a scan is shown, else start ----
+function onPrimaryButton() {
+  if (_currentState === 'COMPLETE') goHome();
+  else startScan();
+}
+
+// ---- Return to the idle home screen (no scan) ----
+async function goHome() {
+  hideResultCard();
+  try {
+    await fetch('/scan/reset', { method: 'POST' });
+  } catch (e) {
+    showToast('Erreur réseau : ' + e, 'error');
+  }
+  // Reset the UI right away instead of waiting for the SSE echo (robust even
+  // if that event is delayed); the server's IDLE push then reconciles.
+  updateUI({ state: 'IDLE', progress: 0, message: 'Prêt' });
+}
+
+window.onPrimaryButton = onPrimaryButton;
+window.goHome = goHome;
 
 // ---- Toast notifications ----
 function showToast(msg, type) {
@@ -360,6 +440,85 @@ function loadModel() {
     }
   }, 50);
 }
+
+// ---- Result card ----
+function _fmtBytes(b) {
+  if (!b) return '—';
+  var u = ['o', 'Ko', 'Mo'];
+  var i = Math.min(2, Math.floor(Math.log(b) / Math.log(1024)));
+  return (b / Math.pow(1024, i)).toFixed(i ? 1 : 0) + ' ' + u[i];
+}
+function _fmtDuration(ms) {
+  if (!ms || ms < 0) return '—';
+  var s = Math.round(ms / 1000);
+  if (s < 60) return s + ' s';
+  return Math.floor(s / 60) + ' min ' + (s % 60) + ' s';
+}
+function showResultCard() {
+  var card = document.getElementById('result-card');
+  if (!card) return;
+  var pts = null;
+  var combined = _artifacts['cloud_combined'];
+  if (combined && typeof combined.points === 'number') {
+    pts = combined.points;
+  } else {
+    var sum = 0, any = false;
+    Object.keys(_artifacts).forEach(function(k) {
+      if (k.indexOf('cloud_') === 0 && typeof _artifacts[k].points === 'number') {
+        sum += _artifacts[k].points; any = true;
+      }
+    });
+    if (any) pts = sum;
+  }
+  var pe = document.getElementById('res-points');
+  if (pe) pe.textContent = (pts != null) ? pts.toLocaleString('fr') : '—';
+  var de = document.getElementById('res-duration');
+  if (de) de.textContent = _fmtDuration(_scanStartMs ? Date.now() - _scanStartMs : null);
+  card.style.display = '';
+}
+function hideResultCard() {
+  var card = document.getElementById('result-card');
+  if (card) card.style.display = 'none';
+  ['res-points', 'res-dims', 'res-duration', 'res-size'].forEach(function(id) {
+    var e = document.getElementById(id);
+    if (e) e.textContent = '—';
+  });
+}
+// Filled by the 3D viewer once the mesh is loaded (dimensions + file size).
+window.setResultGeometry = function(dims, bytes) {
+  var de = document.getElementById('res-dims');
+  if (de && dims) {
+    de.textContent = Math.round(dims[0]) + ' × ' + Math.round(dims[1]) + ' × ' + Math.round(dims[2]) + ' mm';
+  }
+  var se = document.getElementById('res-size');
+  if (se) se.textContent = _fmtBytes(bytes);
+};
+
+// ---- Attract mode (idle) ----
+var _idleTimer = null;
+var _attract = false;
+var ATTRACT_DELAY_MS = 45000;
+function enterAttract() {
+  if (_attract) return;
+  var sl = document.getElementById('state-label');
+  var st = sl ? sl.textContent : 'IDLE';
+  if (['SCANNING', 'PROCESSING', 'EXPORTING', 'COMPLETE', 'ERROR'].includes(st)) return;
+  _attract = true;
+  document.body.classList.add('attract');
+}
+function exitAttract() {
+  if (!_attract) return;
+  _attract = false;
+  document.body.classList.remove('attract');
+}
+function resetIdle() {
+  exitAttract();
+  clearTimeout(_idleTimer);
+  _idleTimer = setTimeout(enterAttract, ATTRACT_DELAY_MS);
+}
+['pointerdown', 'keydown', 'touchstart'].forEach(function(ev) {
+  document.addEventListener(ev, resetIdle, { passive: true });
+});
 
 window.selectArtifact = selectArtifact;
 window.refreshArtifacts = refreshArtifacts;

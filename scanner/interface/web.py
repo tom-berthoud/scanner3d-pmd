@@ -173,7 +173,11 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         "artifacts": {},
     }
     _scan_lock = threading.Lock()
-    _sse_queue: queue.Queue = queue.Queue(maxsize=50)
+    # One queue per connected SSE client (browser tab). Events are broadcast to
+    # every client so multiple tabs/screens stay in sync — a single shared queue
+    # would deliver each event to only one tab (round-robin), desyncing the rest.
+    _sse_clients: set[queue.Queue] = set()
+    _sse_clients_lock = threading.Lock()
     _camera_calib_lock = threading.Lock()
     _camera_calib_session: dict = {
         "sessions": {},
@@ -766,10 +770,13 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         payload = dict(data)
         payload.setdefault("door_interlock_enabled", door_interlock_enabled())
         payload.setdefault("door_open", door_is_open())
-        try:
-            _sse_queue.put_nowait(payload)
-        except queue.Full:
-            pass  # Drop oldest — UI will re-poll
+        with _sse_clients_lock:
+            clients = list(_sse_clients)
+        for client_queue in clients:
+            try:
+                client_queue.put_nowait(payload)
+            except queue.Full:
+                pass  # That client is slow — it will re-poll
 
     def _on_state_transition(
         old_state: ScannerState, new_state: ScannerState
@@ -830,7 +837,13 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 with _scan_lock:
                     _scan_state["progress"] = pct
                     _scan_state["message"] = message
-                _push_sse({"state": _scan_state["state"], "progress": pct, "message": message})
+                _push_sse({
+                    "state": _scan_state["state"],
+                    "progress": pct,
+                    "message": message,
+                    "current": int(current),
+                    "total": int(total),
+                })
                 from scanner.interface.display_local import update_display
                 update_display(_scan_state["state"], pct)
 
@@ -875,6 +888,26 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         thread = threading.Thread(target=_run, daemon=True, name="scan-worker")
         thread.start()
         return jsonify({"status": "started"}), 202
+
+    @app.route("/scan/reset", methods=["POST"])
+    def scan_reset() -> Response:
+        """Return to the idle home screen after a finished scan.
+
+        Only valid from COMPLETE/ERROR — never interrupts a running scan. This
+        does not touch the scan pipeline, only the UI/state: it brings the
+        state machine back to IDLE so the home screen (START button) shows.
+        """
+        with _scan_lock:
+            if _scan_state["state"] in ("SCANNING", "PROCESSING", "EXPORTING"):
+                return jsonify({"error": "Scan in progress"}), 409
+            if _sm.current_state.name in ("COMPLETE", "ERROR"):
+                _sm.reset()  # reset() does not notify observers — push SSE below
+            _scan_state["state"] = "IDLE"
+            _scan_state["progress"] = 0
+            _scan_state["message"] = "Prêt"
+            _scan_state["error"] = None
+        _push_sse({"state": "IDLE", "progress": 0, "message": "Prêt"})
+        return jsonify({"status": "reset"}), 200
 
     @app.route("/scan/status")
     def scan_status() -> Response:
@@ -950,13 +983,20 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         """Server-Sent Events stream for real-time scan progress."""
 
         def _generate():
-            yield "retry: 2000\n\n"
-            while True:
-                try:
-                    data = _sse_queue.get(timeout=15)
-                    yield f"data: {json.dumps(data)}\n\n"
-                except queue.Empty:
-                    yield ": keepalive\n\n"
+            client_queue: queue.Queue = queue.Queue(maxsize=50)
+            with _sse_clients_lock:
+                _sse_clients.add(client_queue)
+            try:
+                yield "retry: 2000\n\n"
+                while True:
+                    try:
+                        data = client_queue.get(timeout=15)
+                        yield f"data: {json.dumps(data)}\n\n"
+                    except queue.Empty:
+                        yield ": keepalive\n\n"
+            finally:
+                with _sse_clients_lock:
+                    _sse_clients.discard(client_queue)
 
         return Response(
             stream_with_context(_generate()),

@@ -35,8 +35,23 @@ window.SCANNER_ARTIFACT_KINDS = {{ artifact_tabs | map(attribute='kind') | list 
       <img id="live-frame" class="stage-img" src="" alt="" />
       <canvas id="stl-canvas"></canvas>
       <div id="viewer-placeholder" class="stage-ph">
-        <div class="ph-icon"><i class="bi bi-box"></i></div>
-        <span id="viewer-placeholder-text">Lancez un scan pour commencer</span>
+        <div class="ph-scanbox">
+          <div class="ph-cube"><i class="bi bi-box"></i></div>
+          <div class="ph-3d">
+            <div class="ph-cube3d">
+              <span class="cf cf-front"></span>
+              <span class="cf cf-back"></span>
+              <span class="cf cf-right"></span>
+              <span class="cf cf-left"></span>
+              <span class="cf cf-top"></span>
+              <span class="cf cf-bottom"></span>
+            </div>
+            <div class="ph-turntable"></div>
+          </div>
+          <div class="ph-laser"></div>
+        </div>
+        <span id="viewer-placeholder-text">Prêt à scanner</span>
+        <span class="ph-hint">Placez l'objet &middot; fermez la porte &middot; appuyez sur SCAN</span>
       </div>
       <span class="stage-tag tl" id="artifact-stage">EN ATTENTE</span>
       <span class="stage-tag br" id="cam-step">-</span>
@@ -57,7 +72,7 @@ window.SCANNER_ARTIFACT_KINDS = {{ artifact_tabs | map(attribute='kind') | list 
       </svg>
       <button id="btn-scan"
               class="scan-btn {% if scan_state.state in ['SCANNING','PROCESSING','EXPORTING'] %}scanning{% endif %}"
-              onclick="startScan()"
+              onclick="onPrimaryButton()"
               {% if scan_state.state in ['SCANNING','PROCESSING','EXPORTING'] %}disabled{% endif %}>
         <i class="bi bi-play-fill"></i>
         <span id="btn-scan-text">SCAN</span>
@@ -71,6 +86,7 @@ window.SCANNER_ARTIFACT_KINDS = {{ artifact_tabs | map(attribute='kind') | list 
       </span>
       <span class="state-name {{ scan_state.state | lower }}" id="state-label">{{ scan_state.state }}</span>
     </div>
+    <div class="hero-counter" id="step-counter" style="display:none;"></div>
     <div class="hero-msg" id="state-message">{{ scan_state.message or 'Prêt' }}</div>
     <div class="hero-door" id="door-state">
       Porte: {% if scan_state.door_interlock_enabled %}{% if scan_state.door_open %}OUVERTE{% else %}fermée{% endif %}{% else %}interlock désactivé{% endif %}
@@ -82,6 +98,16 @@ window.SCANNER_ARTIFACT_KINDS = {{ artifact_tabs | map(attribute='kind') | list 
     {% if scan_state.error %}
     <div class="err-strip"><i class="bi bi-exclamation-triangle me-1"></i>{{ scan_state.error }}</div>
     {% endif %}
+
+    <div class="result-card" id="result-card" style="display:none;">
+      <div class="result-head"><i class="bi bi-check-circle-fill"></i> Résultat</div>
+      <div class="result-grid">
+        <div class="result-item"><span class="rk">Points</span><span class="rv" id="res-points">—</span></div>
+        <div class="result-item"><span class="rk">Dimensions</span><span class="rv" id="res-dims">—</span></div>
+        <div class="result-item"><span class="rk">Durée</span><span class="rv" id="res-duration">—</span></div>
+        <div class="result-item"><span class="rk">Fichier</span><span class="rv" id="res-size">—</span></div>
+      </div>
+    </div>
 
     <div class="hero-actions">
       <a id="btn-download"
@@ -143,6 +169,7 @@ document.addEventListener('DOMContentLoaded', function() {
   {% if scan_state.last_file %}
   selectArtifact('mesh');
   {% endif %}
+  if (typeof resetIdle === 'function') resetIdle();
 });
 </script>
 
@@ -178,7 +205,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
       renderer.setSize(width, height);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.setClearColor(0x0f172a);
+      renderer.setClearColor(0xeaf0f6);
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
@@ -269,10 +296,16 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         const geo = new STLLoader().parse(buf);
         geo.computeVertexNormals();
+        geo.computeBoundingBox();
+        const size = new THREE.Vector3();
+        geo.boundingBox.getSize(size);
         frameGeometry(THREE, geo, camera, ctrl, renderer, canvas);
         scene.add(new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
           color: 0x059669, specular: 0x003311, shininess: 90, side: THREE.DoubleSide
         })));
+        if (kind === 'mesh' && typeof window.setResultGeometry === 'function') {
+          window.setResultGeometry([size.x, size.y, size.z], buf.byteLength);
+        }
       }
       if (vs) vs.textContent = 'PRÊT';
     } catch (err) {
