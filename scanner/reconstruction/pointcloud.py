@@ -176,6 +176,36 @@ def _add_flat_caps_local(
     return top_pts.astype(np.float64), bot_pts.astype(np.float64)
 
 
+def _add_bottom_cap_world(
+    cloud: np.ndarray,
+    *,
+    grid_mm: float,
+    bottom_quantile: float,
+    border_pad_mm: float,
+) -> np.ndarray:
+    """Generate a single flat bottom cap in world frame (horizontal plane)."""
+    xy = cloud[:, :2]
+    if xy.shape[0] < 3:
+        return np.empty((0, 3), dtype=np.float64)
+
+    x0, x1, y0, y1 = _robust_xy_bounds(np.column_stack((xy, cloud[:, 2])), border_pad_mm)
+    xs = np.arange(x0, x1 + grid_mm, grid_mm, dtype=np.float64)
+    ys = np.arange(y0, y1 + grid_mm, grid_mm, dtype=np.float64)
+    gx, gy = np.meshgrid(xs, ys, indexing="xy")
+
+    hull = ConvexHull(xy)
+    poly = xy[hull.vertices]
+    mask = _points_in_polygon(gx.ravel(), gy.ravel(), poly).reshape(gx.shape)
+    count = int(mask.sum())
+    if count == 0:
+        return np.empty((0, 3), dtype=np.float64)
+
+    z_bottom = float(np.quantile(cloud[:, 2], bottom_quantile))
+    return np.column_stack(
+        (gx[mask], gy[mask], np.full(count, z_bottom, dtype=np.float64))
+    ).astype(np.float64)
+
+
 def add_flat_caps_aligned(
     cloud: np.ndarray,
     *,
@@ -187,9 +217,10 @@ def add_flat_caps_aligned(
     bottom_quantile: float = 0.01,
     border_pad_mm: float = 1.0,
 ) -> np.ndarray:
-    """Add flat top/bottom cap points aligned to the cloud frame.
+    """Add a single flat bottom cap in world frame.
 
-    Mirrors the successful local workflow used in reconstruction experiments.
+    This deliberately avoids top-cap generation and avoids PCA axis ambiguity
+    by placing the cap on a horizontal plane (constant world Z).
     """
     if not enabled:
         return cloud
@@ -201,27 +232,19 @@ def add_flat_caps_aligned(
     if grid_mm <= 0:
         raise ValueError(f"grid_mm must be > 0, got {grid_mm}")
 
-    center, basis = _compute_local_basis(cloud, axis_mode=axis_mode, axis_index=axis_index)
-    local = (cloud - center) @ basis
-    top_l, bot_l = _add_flat_caps_local(
-        local,
+    bot_w = _add_bottom_cap_world(
+        cloud,
         grid_mm=grid_mm,
-        top_quantile=top_quantile,
         bottom_quantile=bottom_quantile,
         border_pad_mm=border_pad_mm,
     )
-    if top_l.shape[0] == 0 and bot_l.shape[0] == 0:
-        logger.warning("add_flat_caps_aligned: no cap points generated")
+    if bot_w.shape[0] == 0:
+        logger.warning("add_flat_caps_aligned: no bottom cap points generated")
         return cloud
 
-    top_w = top_l @ basis.T + center
-    bot_w = bot_l @ basis.T + center
-    merged = np.vstack((cloud, top_w, bot_w)).astype(np.float64)
+    merged = np.vstack((cloud, bot_w)).astype(np.float64)
     logger.info(
-        "add_flat_caps_aligned: added top=%d, bottom=%d points (axis_mode=%s, axis_index=%d)",
-        top_w.shape[0],
+        "add_flat_caps_aligned: added bottom=%d points (world-horizontal cap)",
         bot_w.shape[0],
-        axis_mode,
-        axis_index,
     )
     return merged
