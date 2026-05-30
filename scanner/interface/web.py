@@ -88,6 +88,30 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     except HardwareError as exc:
         logger.warning("Hardware init failed (running in degraded mode): %s", exc)
 
+    def _start_door_safety_watchdog() -> None:
+        """Continuously enforce laser shutdown when the safety door is open."""
+        from scanner.hardware import HardwareError, door_is_open, laser_set
+
+        def _loop() -> None:
+            last_open = False
+            while True:
+                try:
+                    opened = bool(door_is_open())
+                    if opened:
+                        laser_set(False)
+                        if not last_open:
+                            logger.warning("Door opened: forcing laser OFF")
+                    last_open = opened
+                except HardwareError as exc:
+                    logger.debug("Door watchdog hardware warning: %s", exc)
+                except Exception as exc:
+                    logger.debug("Door watchdog error: %s", exc)
+                time.sleep(0.1)
+
+        threading.Thread(target=_loop, daemon=True, name="door-safety-watchdog").start()
+
+    _start_door_safety_watchdog()
+
     # ------------------------------------------------------------------ #
     # Shared scan state
     # ------------------------------------------------------------------ #

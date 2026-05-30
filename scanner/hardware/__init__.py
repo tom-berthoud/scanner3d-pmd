@@ -1,4 +1,4 @@
-"""scanner.hardware - Hardware abstraction layer.
+﻿"""scanner.hardware - Hardware abstraction layer.
 
 The public API remains compatible with the original single-camera code while
 also exposing camera-id aware helpers for the two-camera scanner layout.
@@ -256,7 +256,12 @@ def check_door_interlock() -> None:
     laser so an open door aborts the operation immediately.
     """
     if door_is_open():
-        raise DoorOpenError("Safety door is open — operation aborted")
+        try:
+            if _laser_instance is not None:
+                _laser_instance.laser_set(False)
+        except Exception as exc:
+            logger.error("Door interlock emergency laser off failed: %s", exc)
+        raise DoorOpenError("Safety door is open - operation aborted")
 
 
 def led_set(color: str, state: bool) -> None:
@@ -308,3 +313,5 @@ __all__ = [
     "display_text",
     "display_status",
 ]
+
+

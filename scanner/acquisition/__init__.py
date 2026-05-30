@@ -1,7 +1,7 @@
-"""scanner.acquisition — Image capture pipeline.
+﻿"""scanner.acquisition â€” Image capture pipeline.
 
 Exposes run_capture_sequence which drives the motor, laser and camera
-to acquire one frame per step over a full 360° rotation.
+to acquire one frame per step over a full 360Â° rotation.
 """
 
 import logging
@@ -122,14 +122,14 @@ def run_capture_sequence(
     The laser is always left OFF at the end of the sequence, even on error.
 
     Args:
-        n_steps: Total number of rotational steps (e.g. 200 for 360°).
+        n_steps: Total number of rotational steps (e.g. 200 for 360Â°).
         config: Full settings dict loaded from settings.yaml.
         progress_callback: Optional callable(current_step, total_steps)
             called after each captured frame.
         save_frames: If True, save each frame as JPEG to /tmp/scan_frames/.
 
     Returns:
-        List of *n_steps* BGR images (numpy arrays, shape H×W×3, dtype uint8).
+        List of *n_steps* BGR images (numpy arrays, shape HÃ—WÃ—3, dtype uint8).
 
     Raises:
         HardwareError: if any hardware operation fails.
@@ -163,7 +163,7 @@ def run_capture_sequence(
 
     try:
         for step_idx in range(n_steps):
-            # 0. Safety door interlock — abort before energising the laser
+            # 0. Safety door interlock â€” abort before energising the laser
             check_door_interlock()
 
             # 1. Advance by steps_per_photo motor steps
@@ -171,6 +171,7 @@ def run_capture_sequence(
 
             # 2. Laser on
             laser_set(True)
+            check_door_interlock()
 
             # 3. Capture
             frame = camera_capture()
@@ -245,10 +246,11 @@ def run_capture_sequence_multi(
 
     try:
         for step_idx in range(n_steps):
-            # Safety door interlock — abort before energising the laser
+            # Safety door interlock â€” abort before energising the laser
             check_door_interlock()
             motor_step(steps_per_photo, direction)
             laser_set(True)
+            check_door_interlock()
             step_frames = camera_capture_all()
             laser_set(False)
 
@@ -278,3 +280,5 @@ def run_capture_sequence_multi(
         {camera_id: len(frames) for camera_id, frames in frames_by_camera.items()},
     )
     return frames_by_camera
+
+
