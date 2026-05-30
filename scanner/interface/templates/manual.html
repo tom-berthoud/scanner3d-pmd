@@ -25,6 +25,19 @@
     <div class="pnl">
       <div class="pnl-head">
         <span class="pip"></span>
+        <span>Sécurité — Porte</span>
+      </div>
+      <div class="trigger-body">
+        <div class="state-msg" id="door-state">Interlock porte : —</div>
+        <div class="err-strip" id="door-open-warn" style="display:none;">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>Porte ouverte — laser et scan bloqués
+        </div>
+      </div>
+    </div>
+
+    <div class="pnl">
+      <div class="pnl-head">
+        <span class="pip"></span>
         <span>Laser</span>
       </div>
       <div class="trigger-body">
@@ -63,10 +76,26 @@
     <div class="pnl">
       <div class="pnl-head">
         <span class="pip"></span>
-        <span>Retour Camera</span>
+        <span>Retours Cameras</span>
       </div>
       <div class="trigger-body">
-        <img id="manual-camera-img" src="" alt="Retour camera" class="img-fluid rounded" style="background:#000;min-height:220px;object-fit:contain;" />
+        <div class="row g-2">
+          {% for camera in cameras %}
+          <div class="col-12 col-xl-6">
+            <div class="cam-feed" style="border:1px solid #30363d;">
+              <img
+                class="manual-camera-img"
+                data-camera="{{ camera.id }}"
+                src=""
+                alt="Retour camera {{ camera.label }}"
+                style="background:#000;min-height:220px;object-fit:contain;"
+              />
+              <span class="cam-tag tl">{{ camera.label }}</span>
+              <span class="cam-tag br">{{ camera.id }}</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
         <div class="d-flex gap-2">
           <button class="btn btn-outline-secondary" id="btn-camera-refresh" onclick="refreshCameraFrame()">
             <i class="bi bi-camera me-1"></i>Actualiser
@@ -81,39 +110,98 @@
     <div class="pnl">
       <div class="pnl-head">
         <span class="pip"></span>
-        <span>Tuning Laser (live)</span>
+        <span>Test Processing</span>
       </div>
       <div class="trigger-body">
         <div class="err-strip" style="display:block;">
-          Regle le seuil jusqu'a voir des points rouges sur toute la ligne laser verte. Puis reporte les valeurs dans config/settings.yaml.
+          Tester le seuil et les masques par camera. Appliquer met a jour les valeurs en memoire du serveur.
         </div>
-        <img id="tuning-img" src="" alt="Tuning detection" class="img-fluid rounded" style="background:#000;min-height:220px;object-fit:contain;" />
+        <div class="row g-2">
+          {% for camera in cameras %}
+          <div class="col-12 col-xl-6">
+            <div class="pnl">
+              <div class="pnl-head">
+                <span class="pip"></span>
+                <span>{{ camera.label }} Processing</span>
+              </div>
+              <div class="trigger-body">
+                <div class="cam-feed" style="border:1px solid #30363d;">
+                  <img id="proc-img-{{ camera.id }}" src="" alt="Processing {{ camera.label }}" style="background:#000;min-height:220px;object-fit:contain;" />
+                  <canvas
+                    class="mask-canvas"
+                    id="proc-mask-canvas-{{ camera.id }}"
+                    data-camera="{{ camera.id }}"
+                    data-masks='{{ camera.laser_mask|tojson }}'
+                    aria-label="Masque {{ camera.label }}"
+                  ></canvas>
+                  <span class="cam-tag tl">{{ camera.label }}</span>
+                  <span class="cam-tag br" id="proc-shape-{{ camera.id }}">-</span>
+                </div>
 
-        <div style="margin-top:8px;">
-          <label for="tuning-threshold" class="form-label mb-1">
-            Seuil canal vert : <span id="tuning-threshold-val">60</span>
-          </label>
-          <input id="tuning-threshold" type="range" min="0" max="255" value="60" class="form-range" oninput="document.getElementById('tuning-threshold-val').textContent=this.value;" />
-        </div>
+                <label for="proc-threshold-{{ camera.id }}" class="form-label mb-1">
+                  Threshold : <span id="proc-threshold-val-{{ camera.id }}">{{ camera.laser_threshold }}</span>
+                </label>
+                <input
+                  id="proc-threshold-{{ camera.id }}"
+                  type="range"
+                  min="0"
+                  max="255"
+                  value="{{ camera.laser_threshold }}"
+                  class="form-range"
+                  oninput="document.getElementById('proc-threshold-val-{{ camera.id }}').textContent=this.value;"
+                />
 
-        <div>
-          <label for="tuning-minpx" class="form-label mb-1">
-            min_line_pixels : <span id="tuning-minpx-val">15</span>
-          </label>
-          <input id="tuning-minpx" type="range" min="1" max="100" value="15" class="form-range" oninput="document.getElementById('tuning-minpx-val').textContent=this.value;" />
-        </div>
+                <label for="proc-minpx-{{ camera.id }}" class="form-label mb-1">
+                  min_line_pixels : <span id="proc-minpx-val-{{ camera.id }}">15</span>
+                </label>
+                <input
+                  id="proc-minpx-{{ camera.id }}"
+                  type="range"
+                  min="1"
+                  max="200"
+                  value="15"
+                  class="form-range"
+                  oninput="document.getElementById('proc-minpx-val-{{ camera.id }}').textContent=this.value;"
+                />
 
-        <div id="tuning-stats" class="state-msg" style="font-family:monospace;font-size:0.85em;">
-          En attente...
-        </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <div class="form-check m-0">
+                    <input id="proc-mask-enabled-{{ camera.id }}" class="form-check-input" type="checkbox" {% if camera.laser_mask %}checked{% endif %} onchange="drawMaskOverlay('{{ camera.id }}'); refreshProcessingFrame('{{ camera.id }}');" />
+                    <label class="form-check-label" for="proc-mask-enabled-{{ camera.id }}">Masque actif</label>
+                  </div>
+                  <select id="proc-mask-mode-{{ camera.id }}" class="form-select form-select-sm mask-mode" onchange="cancelMaskDraft('{{ camera.id }}')">
+                    <option value="rect">Rectangle</option>
+                    <option value="trapezoid">Trapeze</option>
+                  </select>
+                  <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearProcessingMasks('{{ camera.id }}')">
+                    <i class="bi bi-eraser me-1"></i>Tout effacer
+                  </button>
+                </div>
+                <div class="state-msg" style="font-size:0.82em;">
+                  Rectangle: cliquer-glisser. Trapeze: placer 4 points. Les zones bleues sont ignorees.
+                </div>
+                <div class="mask-list" id="proc-mask-list-{{ camera.id }}"></div>
+                <div id="proc-mask-hint-{{ camera.id }}" class="state-msg" style="font-size:0.82em;"></div>
 
-        <div class="d-flex gap-2">
-          <button class="btn btn-outline-secondary" id="btn-tuning-refresh" onclick="refreshTuningFrame()">
-            <i class="bi bi-arrow-repeat me-1"></i>Capturer
-          </button>
-          <button class="btn btn-outline-secondary" id="btn-tuning-toggle" onclick="toggleTuningAuto()">
-            <i class="bi bi-play-circle me-1"></i>Auto
-          </button>
+                <div id="proc-stats-{{ camera.id }}" class="state-msg" style="font-family:monospace;font-size:0.85em;">
+                  En attente...
+                </div>
+
+                <div class="d-flex gap-2 flex-wrap">
+                  <button class="btn btn-outline-secondary" onclick="refreshProcessingFrame('{{ camera.id }}')">
+                    <i class="bi bi-arrow-repeat me-1"></i>Tester
+                  </button>
+                  <button class="btn btn-outline-info" onclick="applyProcessingConfig('{{ camera.id }}')">
+                    <i class="bi bi-check2-circle me-1"></i>Appliquer
+                  </button>
+                  <button class="btn btn-outline-secondary" id="btn-proc-auto-{{ camera.id }}" onclick="toggleProcessingAuto('{{ camera.id }}')">
+                    <i class="bi bi-play-circle me-1"></i>Auto
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
         </div>
       </div>
     </div>
@@ -183,9 +271,28 @@ async function refreshManualStatus() {
     var st = document.getElementById('manual-state');
     if (st) st.textContent = txt;
     setManualButtonsEnabled(!!d.manual_allowed);
+    updateDoorStatus(d);
   } catch (e) {
     mlog('Erreur status manuel: ' + e, 'log-err');
   }
+}
+
+function updateDoorStatus(d) {
+  var st = document.getElementById('door-state');
+  var warn = document.getElementById('door-open-warn');
+  var enabled = !!d.door_interlock_enabled;
+  var open = !!d.door_open;
+  if (st) {
+    if (!enabled) {
+      st.textContent = 'Interlock porte : désactivé';
+    } else {
+      st.textContent = 'Interlock porte : activé — porte ' + (open ? 'OUVERTE' : 'fermée');
+    }
+  }
+  if (warn) warn.style.display = (enabled && open) ? 'block' : 'none';
+  // Block laser ON while the door is open.
+  var laserOn = document.getElementById('btn-laser-on');
+  if (laserOn && enabled && open) laserOn.disabled = true;
 }
 
 async function manualPost(url, payload, okMsg) {
@@ -232,9 +339,10 @@ async function manualSafeOff() {
 let _camTimer = null;
 
 function refreshCameraFrame() {
-  var img = document.getElementById('manual-camera-img');
-  if (!img) return;
-  img.src = '/manual/camera/frame?t=' + Date.now();
+  document.querySelectorAll('.manual-camera-img').forEach(function(img) {
+    var camera = img.getAttribute('data-camera') || '';
+    img.src = '/manual/camera/frame?camera=' + encodeURIComponent(camera) + '&t=' + Date.now();
+  });
 }
 
 function toggleCameraAuto() {
@@ -258,8 +366,14 @@ async function refreshTuningFrame() {
   if (!img) return;
   var th = document.getElementById('tuning-threshold').value;
   var mp = document.getElementById('tuning-minpx').value;
+  var cam = (document.getElementById('tuning-camera') || {}).value || '';
   try {
-    var r = await fetch('/manual/camera/tuning?threshold=' + th + '&min_pixels=' + mp + '&t=' + Date.now());
+    var r = await fetch(
+      '/manual/camera/tuning?camera=' + encodeURIComponent(cam) +
+      '&threshold=' + th +
+      '&min_pixels=' + mp +
+      '&t=' + Date.now()
+    );
     if (!r.ok) {
       if (stats) stats.textContent = 'Erreur ' + r.status + ' — scan en cours ?';
       return;
@@ -290,10 +404,447 @@ function toggleTuningAuto() {
   if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Stop';
 }
 
+let _processingTimers = {};
+let _maskDrag = {};
+let _maskState = {};
+
+function cloneMaskShape(shape) {
+  return JSON.parse(JSON.stringify(shape));
+}
+
+function edgeTolerance(size) {
+  return Math.max(3, Math.min(8, Math.round(size * 0.01)));
+}
+
+function snapAxis(value, maxValue) {
+  var tol = edgeTolerance(maxValue);
+  if (value <= tol) return 0;
+  if (value >= maxValue - tol) return maxValue;
+  return Math.round(value);
+}
+
+function snapPointToImage(point, img) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) {
+    return [Math.round(point[0]), Math.round(point[1])];
+  }
+  return [
+    snapAxis(point[0], img.naturalWidth),
+    snapAxis(point[1], img.naturalHeight)
+  ];
+}
+
+function snapShapeToImage(camera, shape) {
+  var img = document.getElementById('proc-img-' + camera);
+  if (!img || !img.naturalWidth || !img.naturalHeight) return cloneMaskShape(shape);
+  if (isRectMask(shape)) {
+    return [
+      snapAxis(shape[0], img.naturalWidth),
+      snapAxis(shape[1], img.naturalHeight),
+      snapAxis(shape[2], img.naturalWidth),
+      snapAxis(shape[3], img.naturalHeight)
+    ];
+  }
+  return shape.map(function(pt) { return snapPointToImage(pt, img); });
+}
+
+function isRectMask(shape) {
+  return Array.isArray(shape) && shape.length === 4 && shape.every(function(v) { return typeof v === 'number'; });
+}
+
+function normalizeMaskShape(shape) {
+  if (isRectMask(shape)) {
+    var x0 = Math.min(shape[0], shape[2]);
+    var y0 = Math.min(shape[1], shape[3]);
+    var x1 = Math.max(shape[0], shape[2]);
+    var y1 = Math.max(shape[1], shape[3]);
+    if (x1 <= x0 || y1 <= y0) return null;
+    return [Math.round(x0), Math.round(y0), Math.round(x1), Math.round(y1)];
+  }
+  if (!Array.isArray(shape)) return null;
+  var pts = shape.map(function(pt) {
+    if (!Array.isArray(pt) || pt.length !== 2) return null;
+    return [Math.round(Number(pt[0]) || 0), Math.round(Number(pt[1]) || 0)];
+  }).filter(Boolean);
+  return pts.length >= 3 ? pts : null;
+}
+
+function ensureMaskState(camera) {
+  if (_maskState[camera]) return _maskState[camera];
+  var canvas = document.getElementById('proc-mask-canvas-' + camera);
+  var masks = [];
+  if (canvas && canvas.dataset.masks) {
+    try {
+      masks = JSON.parse(canvas.dataset.masks).map(normalizeMaskShape).filter(Boolean);
+    } catch (e) {
+      masks = [];
+    }
+  }
+  _maskState[camera] = { masks: masks, draft: [] };
+  return _maskState[camera];
+}
+
+function maskMode(camera) {
+  var mode = document.getElementById('proc-mask-mode-' + camera);
+  return mode ? mode.value : 'rect';
+}
+
+function imageContentRect(img) {
+  var rect = img.getBoundingClientRect();
+  var nw = img.naturalWidth || rect.width || 1;
+  var nh = img.naturalHeight || rect.height || 1;
+  var imageRatio = nw / nh;
+  var boxRatio = rect.width / Math.max(rect.height, 1);
+  var width = rect.width;
+  var height = rect.height;
+  var left = rect.left;
+  var top = rect.top;
+  if (boxRatio > imageRatio) {
+    width = rect.height * imageRatio;
+    left = rect.left + (rect.width - width) / 2;
+  } else if (boxRatio < imageRatio) {
+    height = rect.width / imageRatio;
+    top = rect.top + (rect.height - height) / 2;
+  }
+  return { left: left, top: top, width: width, height: height, naturalWidth: nw, naturalHeight: nh };
+}
+
+function pointerToImagePoint(ev, camera) {
+  var img = document.getElementById('proc-img-' + camera);
+  if (!img) return null;
+  var r = imageContentRect(img);
+  var cx = Math.max(r.left, Math.min(r.left + r.width, ev.clientX));
+  var cy = Math.max(r.top, Math.min(r.top + r.height, ev.clientY));
+  return {
+    x: Math.round((cx - r.left) * r.naturalWidth / Math.max(r.width, 1)),
+    y: Math.round((cy - r.top) * r.naturalHeight / Math.max(r.height, 1))
+  };
+}
+
+function setMaskEnabled(camera, enabled) {
+  var active = document.getElementById('proc-mask-enabled-' + camera);
+  if (active) active.checked = !!enabled;
+}
+
+function maskLabel(shape, index) {
+  if (isRectMask(shape)) {
+    return (index + 1) + '. rectangle [' + shape.join(', ') + ']';
+  }
+  return (index + 1) + '. trapeze ' + shape.map(function(pt) {
+    return '[' + pt[0] + ',' + pt[1] + ']';
+  }).join(' ');
+}
+
+function updateMaskList(camera) {
+  var box = document.getElementById('proc-mask-list-' + camera);
+  var hint = document.getElementById('proc-mask-hint-' + camera);
+  if (!box) return;
+  var state = ensureMaskState(camera);
+  box.innerHTML = '';
+  state.masks.forEach(function(shape, index) {
+    var row = document.createElement('div');
+    row.className = 'mask-item';
+    var label = document.createElement('span');
+    label.textContent = maskLabel(shape, index);
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-outline-secondary btn-sm';
+    btn.innerHTML = '<i class="bi bi-x-lg"></i>';
+    btn.onclick = function() { removeMask(camera, index); };
+    row.appendChild(label);
+    row.appendChild(btn);
+    box.appendChild(row);
+  });
+  if (hint) {
+    if (maskMode(camera) === 'trapezoid' && state.draft.length > 0) {
+      hint.textContent = 'Trapeze: ' + state.draft.length + '/4 points places.';
+    } else {
+      hint.textContent = state.masks.length + ' masque(s) actif(s).';
+    }
+  }
+}
+
+function snapStoredMasks(camera) {
+  var img = document.getElementById('proc-img-' + camera);
+  if (!img || !img.naturalWidth || !img.naturalHeight) return;
+  var state = ensureMaskState(camera);
+  var snapped = state.masks.map(function(shape) {
+    return normalizeMaskShape(snapShapeToImage(camera, shape));
+  }).filter(Boolean);
+  if (JSON.stringify(snapped) !== JSON.stringify(state.masks)) {
+    state.masks = snapped;
+    updateMaskList(camera);
+  }
+}
+
+function removeMask(camera, index) {
+  var state = ensureMaskState(camera);
+  state.masks.splice(index, 1);
+  if (!state.masks.length) setMaskEnabled(camera, false);
+  updateMaskList(camera);
+  drawMaskOverlay(camera);
+  refreshProcessingFrame(camera);
+}
+
+function addMask(camera, shape) {
+  var normalized = normalizeMaskShape(snapShapeToImage(camera, shape));
+  if (!normalized) return;
+  var state = ensureMaskState(camera);
+  state.masks.push(normalized);
+  setMaskEnabled(camera, true);
+  state.draft = [];
+  updateMaskList(camera);
+  drawMaskOverlay(camera);
+  refreshProcessingFrame(camera);
+}
+
+function drawMaskOverlay(camera) {
+  var canvas = document.getElementById('proc-mask-canvas-' + camera);
+  var img = document.getElementById('proc-img-' + camera);
+  if (!canvas || !img) return;
+  snapStoredMasks(camera);
+  var feed = canvas.parentElement;
+  var feedRect = feed.getBoundingClientRect();
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(feedRect.width * dpr));
+  canvas.height = Math.max(1, Math.round(feedRect.height * dpr));
+  canvas.style.width = feedRect.width + 'px';
+  canvas.style.height = feedRect.height + 'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, feedRect.width, feedRect.height);
+
+  if (!img.naturalWidth) return;
+
+  var r = imageContentRect(img);
+  function toCanvasPoint(pt) {
+    return [
+      r.left - feedRect.left + pt[0] * r.width / r.naturalWidth,
+      r.top - feedRect.top + pt[1] * r.height / r.naturalHeight
+    ];
+  }
+  function drawPolygon(points, draft) {
+    if (!points.length) return;
+    ctx.beginPath();
+    var first = toCanvasPoint(points[0]);
+    ctx.moveTo(first[0], first[1]);
+    points.slice(1).forEach(function(pt) {
+      var p = toCanvasPoint(pt);
+      ctx.lineTo(p[0], p[1]);
+    });
+    if (!draft) ctx.closePath();
+    ctx.fillStyle = draft ? 'rgba(250, 204, 21, 0.16)' : 'rgba(59, 130, 246, 0.28)';
+    ctx.strokeStyle = draft ? '#facc15' : '#60a5fa';
+    ctx.lineWidth = 2;
+    if (!draft) ctx.fill();
+    ctx.stroke();
+    points.forEach(function(pt) {
+      var p = toCanvasPoint(pt);
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], 4, 0, Math.PI * 2);
+      ctx.fillStyle = draft ? '#facc15' : '#60a5fa';
+      ctx.fill();
+    });
+  }
+
+  var active = document.getElementById('proc-mask-enabled-' + camera);
+  var state = ensureMaskState(camera);
+  if (active && active.checked) {
+    state.masks.forEach(function(shape) {
+      shape = snapShapeToImage(camera, shape);
+      if (isRectMask(shape)) {
+        drawPolygon([[shape[0], shape[1]], [shape[2], shape[1]], [shape[2], shape[3]], [shape[0], shape[3]]], false);
+      } else {
+        drawPolygon(shape, false);
+      }
+    });
+  }
+  if (state.draft.length) drawPolygon(state.draft, true);
+}
+
+function clearProcessingMasks(camera) {
+  var state = ensureMaskState(camera);
+  state.masks = [];
+  state.draft = [];
+  setMaskEnabled(camera, false);
+  updateMaskList(camera);
+  drawMaskOverlay(camera);
+  refreshProcessingFrame(camera);
+}
+
+function cancelMaskDraft(camera) {
+  var state = ensureMaskState(camera);
+  state.draft = [];
+  updateMaskList(camera);
+  drawMaskOverlay(camera);
+}
+
+function beginMaskDrag(ev) {
+  var canvas = ev.currentTarget;
+  var camera = canvas.getAttribute('data-camera');
+  var pt = pointerToImagePoint(ev, camera);
+  if (!pt) return;
+  if (maskMode(camera) === 'trapezoid') {
+    var state = ensureMaskState(camera);
+    state.draft.push([pt.x, pt.y]);
+    if (state.draft.length >= 4) {
+      addMask(camera, cloneMaskShape(state.draft));
+    } else {
+      updateMaskList(camera);
+      drawMaskOverlay(camera);
+    }
+    return;
+  }
+  _maskDrag[camera] = { start: pt, current: pt, pointerId: ev.pointerId };
+  canvas.setPointerCapture(ev.pointerId);
+  drawMaskOverlay(camera);
+}
+
+function updateMaskDrag(ev) {
+  var canvas = ev.currentTarget;
+  var camera = canvas.getAttribute('data-camera');
+  var drag = _maskDrag[camera];
+  if (!drag || drag.pointerId !== ev.pointerId) return;
+  var pt = pointerToImagePoint(ev, camera);
+  if (!pt) return;
+  drag.current = pt;
+  drawMaskOverlay(camera);
+  var state = ensureMaskState(camera);
+  var draftRect = [
+    Math.min(drag.start.x, drag.current.x),
+    Math.min(drag.start.y, drag.current.y),
+    Math.max(drag.start.x, drag.current.x),
+    Math.max(drag.start.y, drag.current.y)
+  ];
+  var r = imageContentRect(document.getElementById('proc-img-' + camera));
+  var feedRect = canvas.parentElement.getBoundingClientRect();
+  var ctx = canvas.getContext('2d');
+  var x = r.left - feedRect.left + draftRect[0] * r.width / r.naturalWidth;
+  var y = r.top - feedRect.top + draftRect[1] * r.height / r.naturalHeight;
+  var w = (draftRect[2] - draftRect[0]) * r.width / r.naturalWidth;
+  var h = (draftRect[3] - draftRect[1]) * r.height / r.naturalHeight;
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.28)';
+  ctx.strokeStyle = '#60a5fa';
+  ctx.lineWidth = 2;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeRect(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, h - 2));
+  state.draft = [];
+}
+
+function endMaskDrag(ev) {
+  var canvas = ev.currentTarget;
+  var camera = canvas.getAttribute('data-camera');
+  var drag = _maskDrag[camera];
+  if (!drag || drag.pointerId !== ev.pointerId) return;
+  delete _maskDrag[camera];
+  addMask(camera, [
+    Math.min(drag.start.x, drag.current.x),
+    Math.min(drag.start.y, drag.current.y),
+    Math.max(drag.start.x, drag.current.x),
+    Math.max(drag.start.y, drag.current.y)
+  ]);
+}
+
+function processingMask(camera) {
+  var enabled = document.getElementById('proc-mask-enabled-' + camera);
+  if (!enabled || !enabled.checked) return [];
+  return ensureMaskState(camera).masks.map(function(shape) {
+    return normalizeMaskShape(snapShapeToImage(camera, shape));
+  }).filter(Boolean);
+}
+
+async function refreshProcessingFrame(camera) {
+  var img = document.getElementById('proc-img-' + camera);
+  var stats = document.getElementById('proc-stats-' + camera);
+  var shape = document.getElementById('proc-shape-' + camera);
+  if (!img) return;
+  var th = document.getElementById('proc-threshold-' + camera).value;
+  var mp = document.getElementById('proc-minpx-' + camera).value;
+  var mask = JSON.stringify(processingMask(camera));
+  try {
+    var r = await fetch(
+      '/manual/camera/tuning?camera=' + encodeURIComponent(camera) +
+      '&threshold=' + th +
+      '&min_pixels=' + mp +
+      '&mask=' + encodeURIComponent(mask) +
+      '&t=' + Date.now()
+    );
+    if (!r.ok) {
+      if (stats) stats.textContent = 'Erreur ' + r.status + ' - scan en cours ?';
+      return;
+    }
+    var detected = r.headers.get('X-Detected-Columns') || '?';
+    var grMax = r.headers.get('X-GR-Max') || '?';
+    var grMean = r.headers.get('X-GR-Mean') || '?';
+    var masks = r.headers.get('X-Mask-Rects') || '0';
+    img.onload = function() {
+      snapStoredMasks(camera);
+      drawMaskOverlay(camera);
+    };
+    var blob = await r.blob();
+    img.src = URL.createObjectURL(blob);
+    if (shape) shape.textContent = detected + ' pts';
+    if (stats) {
+      stats.textContent = 'Points: ' + detected + ' | G max=' + grMax + ' mean=' + grMean + ' | threshold=' + th + ' min_px=' + mp + ' | masks=' + masks;
+    }
+  } catch (e) {
+    if (stats) stats.textContent = 'Erreur: ' + e;
+  }
+}
+
+async function applyProcessingConfig(camera) {
+  var th = parseInt((document.getElementById('proc-threshold-' + camera) || {}).value || '0', 10);
+  var r = await fetch('/manual/processing/apply', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({camera: camera, threshold: th, mask: processingMask(camera)})
+  });
+  var data = await r.json();
+  if (!r.ok) {
+    mlog(data.error || 'Erreur processing', 'log-err');
+    if (typeof showToast === 'function') showToast(data.error || 'Erreur processing', 'error');
+    return;
+  }
+  mlog('Processing applique ' + camera + ': ' + JSON.stringify(data), 'log-ok');
+  if (typeof showToast === 'function') showToast('Processing applique: ' + camera, 'success');
+  refreshProcessingFrame(camera);
+}
+
+function toggleProcessingAuto(camera) {
+  var btn = document.getElementById('btn-proc-auto-' + camera);
+  if (_processingTimers[camera]) {
+    clearInterval(_processingTimers[camera]);
+    delete _processingTimers[camera];
+    if (btn) btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Auto';
+    return;
+  }
+  refreshProcessingFrame(camera);
+  _processingTimers[camera] = setInterval(function() { refreshProcessingFrame(camera); }, 900);
+  if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Stop';
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   refreshManualStatus();
   setInterval(refreshManualStatus, 2000);
   refreshCameraFrame();
+  document.querySelectorAll('[id^="proc-img-"]').forEach(function(img) {
+    refreshProcessingFrame(img.id.replace('proc-img-', ''));
+  });
+  document.querySelectorAll('.mask-canvas').forEach(function(canvas) {
+    canvas.addEventListener('pointerdown', beginMaskDrag);
+    canvas.addEventListener('pointermove', updateMaskDrag);
+    canvas.addEventListener('pointerup', endMaskDrag);
+    canvas.addEventListener('pointercancel', endMaskDrag);
+    var camera = canvas.getAttribute('data-camera');
+    ensureMaskState(camera);
+    snapStoredMasks(camera);
+    updateMaskList(camera);
+    drawMaskOverlay(camera);
+  });
+  window.addEventListener('resize', function() {
+    document.querySelectorAll('.mask-canvas').forEach(function(canvas) {
+      drawMaskOverlay(canvas.getAttribute('data-camera'));
+    });
+  });
   mlog('Mode manuel pret.');
 });
 </script>

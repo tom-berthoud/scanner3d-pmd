@@ -1,7 +1,8 @@
 """scanner.hardware.mock — Synthetic hardware for development without a Raspberry Pi.
 
-Provides MockCamera, MockMotor, MockLaser, MockLED and MockDisplay that mimic
-the real hardware API without requiring any GPIO or camera hardware.
+Provides MockCamera, MockMotor, MockLaser, MockLED, MockDisplay and
+MockDoorSensor that mimic the real hardware API without requiring any GPIO or
+camera hardware.
 """
 
 import logging
@@ -161,6 +162,36 @@ class MockCamera:
         if gain is not None:
             self._gain = float(gain)
         logger.debug("MockCamera exposure set to %d us, gain=%.2f", self._exposure_us, self._gain)
+
+    def set_controls(self, controls: dict) -> dict:
+        """Store runtime camera controls for API parity with real drivers."""
+        if controls.get("width") is not None and controls.get("height") is not None:
+            self._width = int(controls["width"])
+            self._height = int(controls["height"])
+        if controls.get("exposure_us") is not None:
+            self._exposure_us = int(controls["exposure_us"])
+        if controls.get("gain") is not None:
+            self._gain = float(controls["gain"])
+        return self.get_info()
+
+    def get_info(self) -> dict:
+        """Return requested mock camera settings."""
+        return {
+            "driver": "MockCamera",
+            "requested": {
+                "width": self._width,
+                "height": self._height,
+                "exposure_us": self._exposure_us,
+                "gain": self._gain,
+                "mock_shape": self._shape,
+            },
+            "actual": {
+                "width": self._width,
+                "height": self._height,
+                "exposure_us": self._exposure_us,
+                "gain": self._gain,
+            },
+        }
 
     def capture(self) -> np.ndarray:
         """Generate a synthetic BGR image with a geometrically correct laser line.
@@ -566,3 +597,40 @@ class MockDisplay:
             state: State string, e.g. 'IDLE', 'SCANNING'.
         """
         self.display_text(f"State: {state}", line=0)
+
+
+class MockDoorSensor:
+    """Simulated safety door interlock.
+
+    Mirrors :class:`scanner.hardware.door.DoorSensor` without any GPIO. The
+    simulated door defaults to *closed*; tests (or a dev UI) can flip it with
+    :meth:`set_open`. When the interlock is disabled via config, :meth:`is_open`
+    always returns False.
+
+    Args:
+        config: ``safety.door_interlock`` configuration dict (only ``enabled``
+            is honoured here).
+    """
+
+    def __init__(self, config: dict) -> None:
+        config = config or {}
+        self._enabled: bool = bool(config.get("enabled", False))
+        self._open: bool = False
+        logger.debug("MockDoorSensor initialised (enabled=%s, state=closed)", self._enabled)
+
+    @property
+    def enabled(self) -> bool:
+        """True when the interlock is active."""
+        return self._enabled
+
+    def is_open(self) -> bool:
+        """Return True when the door is open and the interlock is enabled."""
+        return self._enabled and self._open
+
+    def set_open(self, is_open: bool) -> None:
+        """Simulate the door opening or closing (development/testing helper)."""
+        self._open = bool(is_open)
+        logger.debug("MockDoorSensor → %s", "OPEN" if self._open else "CLOSED")
+
+    def close(self) -> None:
+        """No-op for API symmetry with the real driver."""

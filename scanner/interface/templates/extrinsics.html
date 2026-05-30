@@ -1,0 +1,505 @@
+{% extends "base.html" %}
+{% block title %}Scanner 3D - Extrinseque{% endblock %}
+
+{% block extra_head %}
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  .extr-grid {
+    display: grid;
+    grid-template-columns: 340px minmax(0, 1fr);
+    gap: 18px;
+  }
+  .extr-panel {
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    padding: 14px;
+  }
+  .extr-view {
+    position: relative;
+    height: min(72vh, 720px);
+    min-height: 460px;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    background: #000;
+    overflow: hidden;
+  }
+  .extr-view canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .axis-label {
+    color: #d7e8ff;
+    font: 11px/1.1 monospace;
+    text-shadow: 0 0 4px #000, 0 0 8px #000;
+    pointer-events: none;
+    user-select: none;
+  }
+  .axis-label.axis-x { color: #ff6b57; }
+  .axis-label.axis-y { color: #5dff8a; }
+  .axis-label.axis-z { color: #66a3ff; }
+  .axis-label.grid-step { color: #aeb8c4; }
+  .param-row {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 92px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 9px;
+  }
+  .param-row label {
+    margin: 0;
+    color: #8b949e;
+    font-size: 0.85rem;
+    font-family: monospace;
+  }
+  .extr-stat {
+    color: #8b949e;
+    font-family: monospace;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+  }
+  @media (max-width: 992px) {
+    .extr-grid { grid-template-columns: 1fr; }
+    .extr-view { height: 520px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<script>
+window.EXTR_CAMERAS = {{ cameras | tojson }};
+window.EXTR_DEFAULTS = {{ defaults | tojson }};
+</script>
+
+<div class="extr-grid">
+  <div class="extr-panel">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <i class="bi bi-bounding-box text-info"></i>
+      <strong>Extrinseque</strong>
+    </div>
+
+    <label class="form-label">Camera</label>
+    <select class="form-select mb-3" id="camera-select" onchange="selectCamera(this.value)">
+      {% for cam in cameras %}
+      <option value="{{ cam.id }}">{{ cam.label }} - {{ cam.id }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="row g-2 mb-3">
+      <div class="col-7">
+        <label class="form-label form-label-sm">Photos</label>
+        <input class="form-control form-control-sm" id="capture-steps" type="number" value="80" min="8" max="400" step="1" />
+      </div>
+      <div class="col-5 d-flex align-items-end">
+        <button class="btn btn-info w-100" id="capture-btn" onclick="captureProfiles()">
+          <i class="bi bi-record-circle me-1"></i>Scan
+        </button>
+      </div>
+    </div>
+
+    <hr style="border-color:#30363d;" />
+
+    <div id="param-box">
+      <div class="param-row">
+        <label>X</label>
+        <input type="range" id="x-range" min="-450" max="450" step="1" oninput="syncParam('x', this.value, true)" />
+        <input class="form-control form-control-sm" type="number" id="x-num" step="0.5" oninput="syncParam('x', this.value, true)" />
+      </div>
+      <div class="param-row">
+        <label>Y</label>
+        <input type="range" id="y-range" min="-250" max="250" step="1" oninput="syncParam('y', this.value, true)" />
+        <input class="form-control form-control-sm" type="number" id="y-num" step="0.5" oninput="syncParam('y', this.value, true)" />
+      </div>
+      <div class="param-row">
+        <label>Z</label>
+        <input type="range" id="z-range" min="-500" max="500" step="1" oninput="syncParam('z', this.value, true)" />
+        <input class="form-control form-control-sm" type="number" id="z-num" step="0.5" oninput="syncParam('z', this.value, true)" />
+      </div>
+      <div class="param-row">
+        <label>Yaw</label>
+        <input type="range" id="yaw-range" min="-80" max="80" step="0.1" oninput="syncParam('yaw', this.value, true)" />
+        <input class="form-control form-control-sm" type="number" id="yaw-num" step="0.1" oninput="syncParam('yaw', this.value, true)" />
+      </div>
+      <div class="param-row">
+        <label>Elev</label>
+        <input type="range" id="elev-range" min="-60" max="60" step="0.1" oninput="syncParam('elev', this.value, true)" />
+        <input class="form-control form-control-sm" type="number" id="elev-num" step="0.1" oninput="syncParam('elev', this.value, true)" />
+      </div>
+    </div>
+
+    <div class="d-grid gap-2 mt-3">
+      <button class="btn btn-warning" id="cheat-btn" onclick="cheatMode()">
+        <i class="bi bi-magic me-1"></i>Cheat mode (fit auto)
+      </button>
+      <button class="btn btn-outline-info" onclick="recomputeCloud()">
+        <i class="bi bi-arrow-repeat me-1"></i>Recalculer
+      </button>
+      <button class="btn btn-outline-primary" onclick="applyExtrinsics(false)">
+        <i class="bi bi-lightning me-1"></i>Appliquer en memoire
+      </button>
+      <button class="btn btn-primary" onclick="applyExtrinsics(true)">
+        <i class="bi bi-save me-1"></i>Sauvegarder settings.yaml
+      </button>
+    </div>
+
+    <hr style="border-color:#30363d;" />
+    <div class="extr-stat" id="status-box">Aucune capture.</div>
+  </div>
+
+  <div class="extr-panel p-0">
+    <div class="extr-view">
+      <canvas id="extr-canvas"></canvas>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+let viewer = null;
+let pointsObj = null;
+let selectedCamera = (window.EXTR_CAMERAS[0] || {}).id || '';
+let debounce = null;
+
+function ensureViewer() {
+  if (viewer) return viewer;
+  const canvas = document.getElementById('extr-canvas');
+  const wrap = canvas.parentElement;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+  renderer.setClearColor(0x000000);
+  const labelRenderer = new CSS2DRenderer();
+  labelRenderer.setSize(wrap.clientWidth, wrap.clientHeight);
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.left = '0';
+  labelRenderer.domElement.style.top = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  wrap.appendChild(labelRenderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, wrap.clientWidth / wrap.clientHeight, 0.1, 5000);
+  camera.position.set(260, 220, 420);
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(0, 0, 0);
+
+  addVolumeReference(scene);
+
+  const light = new THREE.AmbientLight(0xffffff, 1.0);
+  scene.add(light);
+
+  function loop() {
+    requestAnimationFrame(loop);
+    controls.update();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+  }
+  loop();
+
+  window.addEventListener('resize', () => {
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    labelRenderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    camera.aspect = wrap.clientWidth / wrap.clientHeight;
+    camera.updateProjectionMatrix();
+  });
+  viewer = { renderer, labelRenderer, scene, camera, controls };
+  return viewer;
+}
+
+function addVolumeReference(scene) {
+  const step = 10;
+  const major = 50;
+  const minX = -250;
+  const maxX = 250;
+  const minY = -150;
+  const maxY = 250;
+  const minZ = -250;
+  const maxZ = 250;
+  const minor = [];
+  const majorLines = [];
+
+  function pushLine(list, a, b) {
+    list.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+  }
+
+  for (let x = minX; x <= maxX; x += step) {
+    for (let y = minY; y <= maxY; y += step) {
+      pushLine((x % major === 0 || y % major === 0) ? majorLines : minor, [x, y, minZ], [x, y, maxZ]);
+    }
+    for (let z = minZ; z <= maxZ; z += step) {
+      pushLine((x % major === 0 || z % major === 0) ? majorLines : minor, [x, minY, z], [x, maxY, z]);
+    }
+  }
+  for (let y = minY; y <= maxY; y += step) {
+    for (let z = minZ; z <= maxZ; z += step) {
+      pushLine((y % major === 0 || z % major === 0) ? majorLines : minor, [minX, y, z], [maxX, y, z]);
+    }
+  }
+
+  scene.add(lineSegments(minor, 0x16202a, 0.26));
+  scene.add(lineSegments(majorLines, 0x2e3f52, 0.52));
+
+  const axisLength = 300;
+  scene.add(lineSegments([0,0,0, axisLength,0,0], 0xff4f3a, 1.0));
+  scene.add(lineSegments([0,0,0, 0,axisLength,0], 0x50ff78, 1.0));
+  scene.add(lineSegments([0,0,0, 0,0,axisLength], 0x4f8cff, 1.0));
+
+  scene.add(textLabel('X', [axisLength + 16, 0, 0], 'axis-label axis-x'));
+  scene.add(textLabel('Y', [0, axisLength + 16, 0], 'axis-label axis-y'));
+  scene.add(textLabel('Z', [0, 0, axisLength + 16], 'axis-label axis-z'));
+  scene.add(textLabel('grille 10 mm', [minX, maxY + 18, minZ], 'axis-label grid-step'));
+
+  for (let v = -250; v <= 250; v += major) {
+    if (v !== 0) {
+      scene.add(textLabel(String(v), [v, -8, 0], 'axis-label axis-x'));
+      scene.add(textLabel(String(v), [0, -8, v], 'axis-label axis-z'));
+    }
+  }
+  for (let v = -150; v <= 250; v += major) {
+    if (v !== 0) scene.add(textLabel(String(v), [-10, v, 0], 'axis-label axis-y'));
+  }
+  scene.add(textLabel('0', [-12, -12, 0], 'axis-label'));
+}
+
+function lineSegments(values, color, opacity) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(values, 3));
+  const mat = new THREE.LineBasicMaterial({
+    color,
+    transparent: opacity < 1,
+    opacity,
+    depthWrite: false
+  });
+  return new THREE.LineSegments(geo, mat);
+}
+
+function textLabel(text, position, className) {
+  const div = document.createElement('div');
+  div.className = className;
+  div.textContent = text;
+  const label = new CSS2DObject(div);
+  label.position.set(position[0], position[1], position[2]);
+  return label;
+}
+
+function params() {
+  return {
+    camera: selectedCamera,
+    x_mm: parseFloat(document.getElementById('x-num').value || '0'),
+    y_mm: parseFloat(document.getElementById('y-num').value || '0'),
+    z_mm: parseFloat(document.getElementById('z-num').value || '0'),
+    angle_camera_laser_deg: parseFloat(document.getElementById('yaw-num').value || '0'),
+    angle_planxz_camera_deg: parseFloat(document.getElementById('elev-num').value || '0'),
+    max_points: 60000
+  };
+}
+
+window.selectCamera = function(cameraId) {
+  selectedCamera = cameraId;
+  const d = window.EXTR_DEFAULTS[cameraId] || {};
+  const p = d.position_mm || [0, 0, 0];
+  setParam('x', p[0]);
+  setParam('y', p[1]);
+  setParam('z', p[2]);
+  setParam('yaw', d.angle_camera_laser_deg || 0);
+  setParam('elev', d.angle_planxz_camera_deg || 0);
+  window.recomputeCloud();
+};
+
+function setParam(name, value) {
+  document.getElementById(name + '-range').value = value;
+  document.getElementById(name + '-num').value = Number(value).toFixed(name === 'yaw' || name === 'elev' ? 1 : 1);
+}
+
+window.syncParam = function(name, value, live) {
+  document.getElementById(name + '-range').value = value;
+  document.getElementById(name + '-num').value = value;
+  if (live) {
+    clearTimeout(debounce);
+    debounce = setTimeout(window.recomputeCloud, 120);
+  }
+};
+
+window.captureProfiles = async function() {
+  const btn = document.getElementById('capture-btn');
+  const box = document.getElementById('status-box');
+  btn.disabled = true;
+  box.textContent = 'Capture en cours...';
+  try {
+    const resp = await fetch('/extrinsics/capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        camera: selectedCamera,
+        n_steps: parseInt(document.getElementById('capture-steps').value || '80', 10)
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'capture failed');
+    box.textContent = JSON.stringify(data.captures, null, 2);
+    await window.recomputeCloud();
+  } catch (err) {
+    box.textContent = 'Erreur capture: ' + err;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+window.recomputeCloud = async function() {
+  if (!selectedCamera) return;
+  const box = document.getElementById('status-box');
+  try {
+    const resp = await fetch('/extrinsics/cloud', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params())
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      box.textContent = data.error || 'Aucune capture.';
+      return;
+    }
+    renderPoints(data.points);
+    box.textContent =
+      selectedCamera + '\\n' +
+      'points: ' + data.count + '\\n' +
+      'position: ' + JSON.stringify(data.translation_mm.map(v => Number(v).toFixed(1))) + '\\n' +
+      'bounds: ' + JSON.stringify(data.bounds, null, 2);
+  } catch (err) {
+    box.textContent = 'Erreur recalcul: ' + err;
+  }
+};
+
+function renderPoints(points) {
+  const v = ensureViewer();
+  if (pointsObj) {
+    v.scene.remove(pointsObj);
+    pointsObj.geometry.dispose();
+    pointsObj.material.dispose();
+  }
+  const arr = new Float32Array(points.length * 3);
+  for (let i = 0; i < points.length; i++) {
+    arr[i * 3] = points[i][0];
+    arr[i * 3 + 1] = points[i][1];
+    arr[i * 3 + 2] = points[i][2];
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  pointsObj = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: selectedCamera === 'right' ? 0x00d4ff : 0xffc857,
+    size: 1.8,
+    sizeAttenuation: true
+  }));
+  v.scene.add(pointsObj);
+}
+
+window.applyExtrinsics = async function(save) {
+  const box = document.getElementById('status-box');
+  try {
+    const payload = params();
+    payload.save = !!save;
+    const resp = await fetch('/extrinsics/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'apply failed');
+    box.textContent = (save ? 'Sauvegarde OK' : 'Application memoire OK') + '\\n' + JSON.stringify(payload, null, 2);
+  } catch (err) {
+    box.textContent = 'Erreur apply: ' + err;
+  }
+};
+
+window.cheatMode = async function() {
+  const box = document.getElementById('status-box');
+  const btn = document.getElementById('cheat-btn');
+  btn.disabled = true;
+  box.textContent = 'Cheat mode: optimisation en cours...';
+  try {
+    const payload = {
+      camera_a: 'right',
+      camera_b: 'left',
+      max_points: 14000,
+      max_iter: 90
+    };
+    const resp = await fetch('/extrinsics/cheat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'cheat mode failed');
+
+    // Apply both optimized camera parameter sets in memory.
+    const cams = [data.camera_a, data.camera_b];
+    for (const camId of cams) {
+      const rec = data.recommended[camId];
+      if (!rec) continue;
+      await fetch('/extrinsics/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          camera: camId,
+          x_mm: rec.x_mm,
+          y_mm: rec.y_mm,
+          z_mm: rec.z_mm,
+          angle_camera_laser_deg: rec.angle_camera_laser_deg,
+          angle_planxz_camera_deg: rec.angle_planxz_camera_deg,
+          save: false
+        })
+      });
+      if (window.EXTR_DEFAULTS[camId]) {
+        window.EXTR_DEFAULTS[camId].position_mm = [rec.x_mm, rec.y_mm, rec.z_mm];
+        window.EXTR_DEFAULTS[camId].angle_camera_laser_deg = rec.angle_camera_laser_deg;
+        window.EXTR_DEFAULTS[camId].angle_planxz_camera_deg = rec.angle_planxz_camera_deg;
+      }
+    }
+
+    const selectedRec = data.recommended[selectedCamera];
+    if (selectedRec) {
+      setParam('x', selectedRec.x_mm);
+      setParam('y', selectedRec.y_mm);
+      setParam('z', selectedRec.z_mm);
+      setParam('yaw', selectedRec.angle_camera_laser_deg);
+      setParam('elev', selectedRec.angle_planxz_camera_deg);
+    }
+    const selectedCloud = (data.clouds && data.clouds[selectedCamera]) ? data.clouds[selectedCamera].points : [];
+    renderPoints(selectedCloud || []);
+
+    box.textContent =
+      'Cheat mode termine\\n' +
+      'camera A: ' + data.camera_a + '\\n' +
+      'camera B: ' + data.camera_b + '\\n' +
+      'erreur init (mm): ' + Number(data.initial_error_mm || 0).toFixed(3) + '\\n' +
+      'erreur finale (mm): ' + Number(data.final_error_mm || 0).toFixed(3) + '\\n' +
+      'gain (mm): ' + Number(data.improvement_mm || 0).toFixed(3) + '\\n' +
+      'iters: ' + data.iterations + '\\n' +
+      'msg: ' + data.message;
+  } catch (err) {
+    box.textContent = 'Erreur cheat mode: ' + err;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  ensureViewer();
+  window.selectCamera(selectedCamera);
+});
+</script>
+{% endblock %}

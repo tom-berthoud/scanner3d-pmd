@@ -1,0 +1,236 @@
+================================================================================
+REVIEW BRANCHE double-camera (HEAD origin/double-camera = 3aa0ba0)
+Analyse : signe rotation extrinseque + tour complet du pipeline
+================================================================================
+
+VERDICT
+-------
+Corriger uniquement le bug de signe NE SUFFIT PAS. Il y a plusieurs autres
+problemes a differents niveaux (geometrie, configuration, runtime, tests).
+La fonction "scale_xyz" ajoutee sur la branche best-result est une rustine
+qui compense des erreurs systematiques dont la cause racine reste presente.
+
+
+A. BUGS DE GEOMETRIE (priorite haute)
+======================================
+
+A1. Bug de signe sur "right" dans la rotation camera->plateforme
+----------------------------------------------------------------
+  Fichier : scanner/calibration/multi_camera.py:86 et :133
+  Code    : right = np.cross(forward, up)
+
+  Pour le cas canonique camera a l'origine, forward=+Z, up=+Y :
+    cross((0,0,1),(0,1,0)) = (-1, 0, 0)
+  Convention OpenCV : image right = camera +X = monde +X => attendu +1, pas -1.
+  Resultat : det(R) = -1 (matrice non-pure rotation, chiralite inversee).
+
+  Consequence prevue : les nuages "left" et "right" sont miroirs l'un de
+  l'autre selon une direction qui depend de la pose. C'est tres
+  probablement la cause des decalages que best-result essaie de compenser
+  avec scale_xyz + estimate_cube_scale.py.
+
+  Fix : right = np.cross(up, forward) aux deux endroits.
+  Ajouter assertion det(R) > 0 dans les tests.
+
+
+A2. Les deux cameras ne regardent pas le meme volume
+----------------------------------------------------
+  Avec les extrinseques configurees :
+    Camera droite (+173.5, +140, -300.5), yaw -25.5, elev -20
+      -> axe optique croise le plan X=0 a y ~ -4 mm (au ras du plateau)
+    Camera gauche (-146, -20, -266), yaw +32.5, elev +20
+      -> axe optique croise le plan X=0 a y ~ +79 mm (haut)
+
+  Les deux cameras visent des hauteurs tres differentes. L'overlap n'existe
+  que dans une bande centrale. Pour un objet de 150 mm :
+    - la moitie haute n'est vue que par "left"
+    - la moitie basse n'est vue que par "right"
+
+  C'est peut-etre voulu, mais ca explique aussi pourquoi la calibration
+  croisee (cube_scale) a du compenser avec des facteurs.
+
+  A reprendre : aligner les angles d'elevation pour cibler la meme bande
+  de hauteur (par ex. y ~ +30 mm, centre objet).
+
+
+A3. Le mock NE reproduit PAS la geometrie configuree
+----------------------------------------------------
+  Fichier : scanner/hardware/mock.py:113-117
+    _LASER_A = 0.5;  _LASER_C = 0.866;  _LASER_D = -259.8
+    _TURNTABLE_Z = 300.0
+
+  -> Plan laser a 30 degres dans le repere CAMERA, turntable a z=300 mm
+     dans le repere CAMERA.
+  Configuration runtime : plan laser X=0 dans le repere PLATEFORME, avec
+  deux cameras placees a des positions extrinseques connues.
+
+  Aucun lien entre les deux. Un scan en mock teste l'extraction de ligne
+  mais PAS la triangulation. Les tests passent avec le mock alors que le
+  passage camera -> plateforme n'est jamais valide.
+
+
+A4. load_laser_plane ignore le champ "frame"
+--------------------------------------------
+  Fichier : scanner/calibration/laser_plane.py:463-501
+  Le YAML de plan laser contient maintenant un champ frame ("platform"
+  ou "camera") mais load_laser_plane ne le verifie pas. Si quelqu'un
+  pointe global_laser_plane_path vers laser_plane_left.yaml (frame camera),
+  la triangulation se fait silencieusement avec un plan dans le mauvais
+  repere.
+
+  Fix : lever une erreur si frame != "platform" cote runtime.
+
+
+A5. Convention de rotation plateau vs scan.direction non testee
+---------------------------------------------------------------
+  Fichier : scanner/processing/triangulation.py:91-99
+  Applique Ry(+idx*angle_step) (rotation positive autour de +Y) pour
+  defaire la rotation du plateau. Aucun lien explicite avec
+  scan.direction: clockwise. Si la convention motor "clockwise" ne
+  correspond pas a -angle autour de +Y vue d'en haut, le nuage est tourne
+  dans le mauvais sens et les profils ne se rabattent pas. Aucun test ne
+  verrouille cette convention.
+
+
+B. PROBLEMES DE CONFIGURATION / COHERENCE
+==========================================
+
+B1. Fichiers laser_plane_{left,right}.yaml orphelins
+----------------------------------------------------
+  Presents avec des valeurs en repere CAMERA, mais load_camera_model ne
+  charge que global_laser_plane_path (plan platform). Ces fichiers ne
+  sont jamais utilises par le pipeline. Soit les supprimer, soit
+  supprimer la calibration par-camera qui les remplit.
+
+B2. extrinsics_path pointe vers des fichiers absents
+----------------------------------------------------
+  Settings : extrinsics_path: config/camera_extrinsics_{left,right}.yaml
+  Ces fichiers n'existent pas -> fallback silencieux sur le bloc inline.
+  Si quelqu'un appelle save_camera_extrinsics, le fichier ecrit prendra
+  silencieusement le pas sur l'edition manuelle via l'UI.
+
+B3. Conflit GPIO laser/I2C (latent)
+-----------------------------------
+  laser.gpio_pin: 2 (= SDA), motor.step_pin: 3 (= SCL). OK tant que
+  interface.display_type: none. Casse des qu'un ecran OLED I2C est
+  active.
+
+B4. Elevation gauche +20 deg avec position Y=-20 mm
+---------------------------------------------------
+  La doc dit "camera gauche : position basse, inclinee vers le haut".
+  Avec y=-20 mm la camera est presque au niveau du plateau, pas
+  vraiment basse. Le +20 d'elevation pointe l'axe optique a y~79.
+  Incoherence entre intention documentee et valeurs reelles.
+
+
+C. PIPELINE RUNTIME
+====================
+
+C1. extract_laser_line ignore le parametre mode
+-----------------------------------------------
+  Fichier : scanner/processing/laser_line.py:236
+  Fait "del subpixel, mode". Les parametres processing.subpixel et
+  processing.extraction_mode dans settings.yaml sont morts. Confusant
+  pour qui essaie de tuner.
+
+C2. Pas de garde-fou sur l'alignement des deux nuages
+-----------------------------------------------------
+  scan.py exporte un PLY par camera + un PLY combine + lance Poisson
+  sur le combine. Aucune metrique de desalignement (RMS, hausdorff)
+  entre les deux nuages. La doc approche_deux_cameras.md en fait
+  pourtant un critere de validation explicite. Si une camera derive,
+  Poisson lisse sans rien dire.
+
+C3. _save_frame ecrase latest.jpg plusieurs fois par step
+---------------------------------------------------------
+  scanner/acquisition/__init__.py:99-103. latest.jpg contient la
+  derniere camera capturee selon l'ordre d'iteration du dict. Pas un
+  bug d'exactitude mais l'UI affiche un melange aleatoire.
+
+C4. _ensure_camera retente l'init a chaque capture
+--------------------------------------------------
+  scanner/hardware/__init__.py:108-130. Si une camera echoue a l'init,
+  chaque camera_capture retente d'ouvrir le device : jusqu'a
+  device_wait_s + open_retries*open_retry_delay_s ~ 6.5 s. Pendant ce
+  temps le LASER EST ON (boucle run_capture_sequence_multi). Mauvais
+  pour la securite oeil + la coherence (le moteur a deja tourne avant
+  la capture).
+
+C5. laser_set(True) bloque 50 ms par step
+-----------------------------------------
+  scanner/hardware/laser.py:75-78 sleep de warmup_ms. 100 steps * 50 ms
+  = 5 s de surcout par scan, et surtout 50 ms par step ou le laser est
+  ON sans utilite. warmup_ms: 0 serait probablement OK pour une diode
+  laser line generator standard.
+
+C6. init_hardware ne leve pas si toutes les cameras echouent
+------------------------------------------------------------
+  Warning + crash ulterieur avec message generique
+  "Camera not initialised". Diagnostic plus long que necessaire.
+
+
+D. TESTS INSUFFISANTS
+======================
+
+D1. test_measured_pose_extrinsics... ne detecte pas A1
+------------------------------------------------------
+  Verifie uniquement la colonne forward et R.T @ R == I. Une matrice
+  avec det(R) = -1 passe ces deux checks. Manque :
+    assert np.linalg.det(rotation) > 0
+
+D2. Pas de test bout-en-bout deux cameras
+-----------------------------------------
+  tests/test_multi_camera.py ne fait que des assertions sur la config
+  et les extrinseques isolees. Pas de test qui simule deux cameras
+  observant un meme point synthetique et verifie que les deux
+  triangulations convergent au meme endroit dans le repere plateforme.
+
+D3. Le mock incoherent avec la calibration (A3) rend impossible un test
+    pipeline complet sur PC.
+
+
+E. HYGIENE / DEBT
+==================
+
+- Les fichiers debug_*.py a la racine ne sont plus sur la branche, mais
+  test_debug/estimate_cube_scale.py sur best-result reste un
+  patch-au-symptome.
+- scanner/interface/web.py fait 2271 lignes (calibration + extrinseques
+  + manual + camera-config). A eclater en blueprints.
+- _settings_update_manual_extrinsics (web.py:309-378) edite settings.yaml
+  par parsing ligne-a-ligne au lieu d'un round-trip YAML qui preserve
+  les commentaires (ex. ruamel.yaml). Tombe en panne silencieusement
+  si l'indentation diverge.
+
+
+ORDRE D'ATTAQUE RECOMMANDE
+===========================
+
+1. A1 : right = cross(up, forward) + test det(R) > 0.
+
+2. A3 : refondre le mock pour qu'il prenne ses constantes laser dans
+   config/laser_plane.yaml et qu'il rende des images coherentes avec
+   les extrinseques configurees. Seul moyen d'avoir des tests
+   end-to-end fiables sur PC.
+
+3. Re-scanner un cube etalon SANS scale_xyz. Mesurer l'ecart RMS /
+   hausdorff entre les nuages left et right (ajouter un utilitaire).
+   Si l'ecart est sub-millimetrique apres A1, supprimer les scale_xyz
+   et estimate_cube_scale.py de best-result.
+
+4. A4 : refus de charger un plan laser dont frame != "platform" cote
+   runtime.
+
+5. A2 : aligner les angles d'elevation pour viser la meme bande de
+   hauteur, refaire la mire de calibration extrinseque si necessaire.
+
+6. Nettoyages : C1-C6, B1-B4, D, E (a tete reposee).
+
+
+NOTE BRANCHE LOCALE
+====================
+Au depart de l'analyse, la branche locale "double-camera" pointait sur
+17dca7e (PCB schema uniquement), pas sur le code double-camera.
+Le code reel est sur origin/double-camera (3aa0ba0), avec d'autres
+correctifs sur origin/best-result (62f0ac9). Penser a sync :
+  git fetch && git reset --hard origin/double-camera

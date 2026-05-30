@@ -20,10 +20,8 @@ Run with:
 """
 
 import base64
-import io
 import json
 import logging
-import math
 import os
 import queue
 import threading
@@ -90,6 +88,30 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     except HardwareError as exc:
         logger.warning("Hardware init failed (running in degraded mode): %s", exc)
 
+    def _start_door_safety_watchdog() -> None:
+        """Continuously enforce laser shutdown when the safety door is open."""
+        from scanner.hardware import HardwareError, door_is_open, laser_set
+
+        def _loop() -> None:
+            last_open = False
+            while True:
+                try:
+                    opened = bool(door_is_open())
+                    if opened:
+                        laser_set(False)
+                        if not last_open:
+                            logger.warning("Door opened: forcing laser OFF")
+                    last_open = opened
+                except HardwareError as exc:
+                    logger.debug("Door watchdog hardware warning: %s", exc)
+                except Exception as exc:
+                    logger.debug("Door watchdog error: %s", exc)
+                time.sleep(0.1)
+
+        threading.Thread(target=_loop, daemon=True, name="door-safety-watchdog").start()
+
+    _start_door_safety_watchdog()
+
     # ------------------------------------------------------------------ #
     # Shared scan state
     # ------------------------------------------------------------------ #
@@ -102,56 +124,112 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         "message": "Ready",
         "last_file": None,
         "error": None,
+        "artifacts": {},
     }
     _scan_lock = threading.Lock()
     _sse_queue: queue.Queue = queue.Queue(maxsize=50)
     _camera_calib_lock = threading.Lock()
     _camera_calib_session: dict = {
-        "images": [],
+        "sessions": {},
+    }
+    _laser_calib_lock = threading.Lock()
+    _laser_calib_session: dict = {
         "captures": [],
-        "last_report": None,
+        "last_result": None,
+    }
+    _extrinsics_debug_lock = threading.Lock()
+    _extrinsics_debug_session: dict = {
+        "captures": {},
+        "last_cloud": {},
+        "last_error": None,
     }
 
-    def _load_background_filter_config() -> dict:
-        try:
-            from scanner.calibration import load_background_filter
-
-            return load_background_filter()
-        except Exception as exc:
-            logger.warning("Background filter config unreadable: %s", exc)
-            return {
-                "enabled": False,
-                "crop_left_of_col": None,
-                "background_line_max_col": None,
-                "margin_px": 0,
-                "threshold": None,
-                "min_pixels": None,
-                "extraction_mode": None,
-                "captured_at": None,
-            }
-
-    def _background_crop_left_col() -> float | None:
-        data = _load_background_filter_config()
-        if not data.get("enabled"):
+    def _project_path(path: str | None) -> str | None:
+        if not path:
             return None
-        value = data.get("crop_left_of_col")
-        return None if value is None else float(value)
+        if os.path.isabs(path):
+            return path
+        return str(Path(__file__).resolve().parent.parent.parent / path)
 
-    def _camera_calib_summary() -> dict:
+    def _selected_camera_id(default: str | None = None) -> str:
+        from scanner.calibration import camera_configs, default_camera_id
+
+        camera_id = str(request.values.get("camera") or request.values.get("camera_id") or default or "")
+        valid_ids = {str(cam_cfg.get("id")) for cam_cfg in camera_configs(settings)}
+        if not camera_id:
+            camera_id = default_camera_id(settings)
+        if camera_id not in valid_ids:
+            raise ValueError(f"Unknown camera id: {camera_id}")
+        return camera_id
+
+    def _calibration_camera_config(camera_id: str) -> dict:
+        from scanner.calibration import camera_config_by_id
+
+        try:
+            return camera_config_by_id(settings, camera_id)
+        except KeyError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def _camera_calib_state(camera_id: str) -> dict:
+        sessions = _camera_calib_session.setdefault("sessions", {})
+        if camera_id not in sessions:
+            sessions[camera_id] = {"images": [], "captures": [], "last_report": None}
+        return sessions[camera_id]
+
+    def _camera_calib_summary(camera_id: str | None = None) -> dict:
+        try:
+            selected_id = camera_id or _selected_camera_id()
+            cam_cfg = _calibration_camera_config(selected_id)
+        except ValueError:
+            from scanner.calibration import default_camera_id
+
+            selected_id = default_camera_id(settings)
+            cam_cfg = _calibration_camera_config(selected_id)
+
         with _camera_calib_lock:
-            captures = list(_camera_calib_session["captures"])
-            report = _camera_calib_session.get("last_report")
+            state = _camera_calib_state(selected_id)
+            captures = list(state["captures"])
+            report = state.get("last_report")
+        intrinsics_path = _project_path(cam_cfg.get("intrinsics_path"))
+        extrinsics_path = _project_path(cam_cfg.get("extrinsics_path"))
         return {
+            "camera_id": selected_id,
+            "camera_label": _camera_label(selected_id),
             "count": len(captures),
             "recommended_min": 12,
             "recommended_max": 20,
             "captures": captures,
             "last_report": report,
+            "intrinsics_path": intrinsics_path,
+            "intrinsics_exists": bool(intrinsics_path and os.path.exists(intrinsics_path)),
+            "extrinsics_path": extrinsics_path,
+            "extrinsics_exists": bool(extrinsics_path and os.path.exists(extrinsics_path)),
         }
 
-    def _parse_camera_board_payload() -> tuple[tuple[int, int], float, bool]:
+    def _laser_calib_summary() -> dict:
+        with _laser_calib_lock:
+            captures = [
+                {
+                    "index": idx + 1,
+                    "z_mm": item["z_mm"],
+                    "previews": item.get("previews", {}),
+                    "metrics": item.get("metrics", {}),
+                }
+                for idx, item in enumerate(_laser_calib_session["captures"])
+            ]
+            last_result = _laser_calib_session.get("last_result")
+        return {
+            "count": len(captures),
+            "recommended_min": 4,
+            "captures": captures,
+            "last_result": last_result,
+        }
+
+    def _parse_camera_board_payload() -> tuple[str, tuple[int, int], float, bool, int | None, float | None]:
         payload = request.get_json(silent=True) or {}
         source = payload if payload else request.values
+        camera_id = str(source.get("camera") or source.get("camera_id") or _selected_camera_id())
+        _calibration_camera_config(camera_id)
         board_size = (
             int(source.get("board_cols", 9)),
             int(source.get("board_rows", 6)),
@@ -163,7 +241,197 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             "yes",
             "on",
         )
-        return board_size, square_mm, auto_bracket
+        exposure_raw = source.get("calibration_exposure_us", "")
+        gain_raw = source.get("calibration_gain", "")
+        calibration_exposure_us = int(exposure_raw) if str(exposure_raw).strip() else None
+        calibration_gain = float(gain_raw) if str(gain_raw).strip() else None
+        return (
+            camera_id,
+            board_size,
+            square_mm,
+            auto_bracket,
+            calibration_exposure_us,
+            calibration_gain,
+        )
+
+    def _parse_vector3(source, prefix: str, default: tuple[float, float, float]) -> list[float]:
+        values = []
+        for axis, fallback in zip(("x", "y", "z"), default):
+            raw = source.get(f"{prefix}_{axis}", fallback)
+            values.append(float(raw))
+        return values
+
+    def _platform_axis_point():
+        import numpy as np
+
+        platform_path = Path(__file__).resolve().parent.parent.parent / "config" / "platform.yaml"
+        if not platform_path.exists():
+            return None
+        try:
+            with open(platform_path, "r", encoding="utf-8") as fh:
+                data = yaml.safe_load(fh) or {}
+            axis = data.get("rotation_axis_point_mm")
+            if axis is None:
+                return None
+            return np.asarray(axis, dtype=np.float64).reshape(3)
+        except Exception:
+            return None
+
+    def _manual_extrinsics_from_payload(payload: dict) -> tuple:
+        import numpy as np
+        from scanner.calibration.multi_camera import _load_extrinsics
+
+        position = [
+            float(payload.get("x_mm", 0.0)),
+            float(payload.get("y_mm", 0.0)),
+            float(payload.get("z_mm", 0.0)),
+        ]
+        yaw = float(payload.get("angle_camera_laser_deg", 0.0))
+        elevation = float(payload.get("angle_planxz_camera_deg", 0.0))
+        rotation, translation = _load_extrinsics(
+            {
+                "extrinsics": {
+                    "position_mm": position,
+                    "angle_camera_laser_deg": yaw,
+                    "angle_planxz_camera_deg": elevation,
+                    "up_mm": [0.0, 1.0, 0.0],
+                }
+            }
+        )
+        return np.asarray(rotation, dtype=np.float64), np.asarray(translation, dtype=np.float64)
+
+    def _extrinsics_debug_defaults() -> dict:
+        result = {}
+        from scanner.calibration import camera_configs
+
+        for cam_cfg in camera_configs(settings):
+            camera_id = str(cam_cfg.get("id", "main"))
+            extr = cam_cfg.get("extrinsics", {}) or {}
+            pos = list(extr.get("position_mm", [0.0, 0.0, 0.0]))
+            result[camera_id] = {
+                "camera_id": camera_id,
+                "label": _camera_label(camera_id),
+                "position_mm": [float(pos[0]), float(pos[1]), float(pos[2])],
+                "angle_camera_laser_deg": float(extr.get("angle_camera_laser_deg", extr.get("yaw_deg", 0.0))),
+                "angle_planxz_camera_deg": float(
+                    extr.get(
+                        "angle_planxz_camera_deg",
+                        extr.get("elevation_deg", extr.get("pitch_deg", 0.0)),
+                    )
+                ),
+            }
+        return result
+
+    def _decimate_points(points, max_points: int = 60000):
+        import numpy as np
+
+        if points.shape[0] <= max_points:
+            return points
+        idx = np.linspace(0, points.shape[0] - 1, max_points).astype(np.int64)
+        return points[idx]
+
+    def _build_cloud_from_cached_capture(
+        session: dict,
+        cam_rot,
+        cam_trans,
+        max_points: int = 20000,
+    ):
+        import numpy as np
+        from scanner.processing import triangulate
+
+        axis_point = _platform_axis_point()
+        points_parts = []
+        for item in session.get("profiles", []):
+            line_px = item.get("line_pixels")
+            if line_px is None or line_px.shape[0] == 0:
+                continue
+            pts = triangulate(
+                line_px,
+                session["camera_matrix"],
+                session["dist_coeffs"],
+                session["laser_plane"],
+                float(item["angle_rad"]),
+                axis_point=axis_point,
+                camera_to_platform_rotation=cam_rot,
+                camera_to_platform_translation=cam_trans,
+            )
+            if pts.shape[0] > 0:
+                points_parts.append(pts)
+        if points_parts:
+            cloud = np.vstack(points_parts).astype(np.float64)
+        else:
+            cloud = np.empty((0, 3), dtype=np.float64)
+        return _decimate_points(cloud, max_points=max_points)
+
+    def _settings_update_manual_extrinsics(camera_id: str, payload: dict) -> None:
+        """Update only one camera manual extrinsics block in config/settings.yaml."""
+        lines = Path(cfg_file).read_text(encoding="utf-8").splitlines()
+        in_camera = False
+        in_extrinsics = False
+        camera_indent = ""
+        extr_indent = ""
+        found_camera = False
+        replaced = {"position": False, "yaw": False, "elevation": False}
+        pos = [float(payload["x_mm"]), float(payload["y_mm"]), float(payload["z_mm"])]
+        yaw = float(payload["angle_camera_laser_deg"])
+        elevation = float(payload["angle_planxz_camera_deg"])
+        out: list[str] = []
+
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("- id:"):
+                current_id = stripped.split(":", 1)[1].strip()
+                in_camera = current_id == str(camera_id)
+                found_camera = found_camera or in_camera
+                in_extrinsics = False
+                camera_indent = line[: len(line) - len(line.lstrip())]
+            elif in_camera and line.startswith(camera_indent + "- ") and not stripped.startswith("- id:"):
+                in_camera = False
+                in_extrinsics = False
+
+            if in_camera and stripped == "extrinsics:":
+                in_extrinsics = True
+                extr_indent = line[: len(line) - len(line.lstrip())] + "  "
+                out.append(line)
+                continue
+
+            if in_extrinsics:
+                current_indent_len = len(line) - len(line.lstrip())
+                if stripped and current_indent_len <= len(extr_indent) - 2:
+                    in_extrinsics = False
+                elif stripped.startswith("position_mm:"):
+                    out.append(
+                        f"{extr_indent}position_mm: "
+                        f"[{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]"
+                    )
+                    replaced["position"] = True
+                    continue
+                elif stripped.startswith("angle_camera_laser_deg:"):
+                    out.append(f"{extr_indent}angle_camera_laser_deg: {yaw:.3f}")
+                    replaced["yaw"] = True
+                    continue
+                elif stripped.startswith("angle_planxz_camera_deg:"):
+                    out.append(f"{extr_indent}angle_planxz_camera_deg: {elevation:.3f}")
+                    replaced["elevation"] = True
+                    continue
+
+            out.append(line)
+
+        if not found_camera:
+            raise ValueError(f"Unknown camera id: {camera_id}")
+        if not all(replaced.values()):
+            raise ValueError(f"Could not find complete extrinsics block for {camera_id}")
+
+        Path(cfg_file).write_text("\n".join(out) + "\n", encoding="utf-8")
+
+        for cam_cfg in settings.get("cameras", []):
+            if str(cam_cfg.get("id")) == str(camera_id):
+                extr = cam_cfg.setdefault("extrinsics", {})
+                extr["position_mm"] = pos
+                extr["angle_camera_laser_deg"] = yaw
+                extr["angle_planxz_camera_deg"] = elevation
+                break
+
 
     def _encode_jpeg_base64(frame, quality: int = 85) -> str:
         import cv2
@@ -173,38 +441,251 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             raise RuntimeError("Could not encode JPEG")
         return base64.b64encode(buf.tobytes()).decode("ascii")
 
+    def _camera_label(camera_id: str) -> str:
+        from scanner.calibration import camera_configs
+
+        for cam_cfg in camera_configs(settings):
+            if str(cam_cfg.get("id")) != str(camera_id):
+                continue
+            display_name = cam_cfg.get("display_name")
+            if display_name:
+                return str(display_name)
+            cam_type = str(cam_cfg.get("type", "")).lower()
+            if cam_type == "usb":
+                return "USB"
+            if cam_type in ("pi", "picamera", "csi"):
+                return "Nape"
+        return str(camera_id).upper()
+
+    def _camera_view_configs() -> list[dict]:
+        from scanner.calibration import camera_configs
+
+        return [
+            {
+                "id": str(cam_cfg.get("id", "main")),
+                "label": _camera_label(str(cam_cfg.get("id", "main"))),
+                "type": str(cam_cfg.get("type", "pi")),
+                "resolution": cam_cfg.get("resolution", settings.get("camera", {}).get("resolution", [640, 480])),
+                "exposure_us": int(cam_cfg.get("exposure_us", settings.get("camera", {}).get("exposure_us", 1000))),
+                "gain": float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0))),
+                "calibration_exposure_us": int(
+                    cam_cfg.get(
+                        "calibration_exposure_us",
+                        max(
+                            5000,
+                            int(
+                                cam_cfg.get(
+                                    "exposure_us",
+                                    settings.get("camera", {}).get("exposure_us", 1000),
+                                )
+                            )
+                            * 6,
+                        ),
+                    )
+                ),
+                "calibration_gain": float(
+                    cam_cfg.get(
+                        "calibration_gain",
+                        cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0)),
+                    )
+                ),
+                "lens_position": cam_cfg.get("lens_position"),
+                "focus_absolute": cam_cfg.get("focus_absolute"),
+                "pixel_format": cam_cfg.get("pixel_format", ""),
+                "device_path": cam_cfg.get("device_path"),
+                "laser_threshold": int(
+                    cam_cfg.get(
+                        "laser_threshold",
+                        settings.get("processing", {}).get("laser_threshold", 180),
+                    )
+                ),
+                "laser_mask": cam_cfg.get("laser_mask", []) or [],
+                "laser_sampling": cam_cfg.get("laser_sampling", {}) or {},
+            }
+            for cam_cfg in camera_configs(settings)
+        ]
+
+    def _parse_mask_rects(raw) -> list:
+        if raw in (None, "", []):
+            return []
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+        if isinstance(raw, dict) and raw.get("enabled"):
+            raw = [[raw.get("x0", 0), raw.get("y0", 0), raw.get("x1", 0), raw.get("y1", 0)]]
+        if not isinstance(raw, list):
+            return []
+
+        masks = []
+        for item in raw:
+            if isinstance(item, dict):
+                if item.get("points"):
+                    item = item.get("points")
+                else:
+                    item = [
+                        item.get("x0", 0),
+                        item.get("y0", 0),
+                        item.get("x1", 0),
+                        item.get("y1", 0),
+                    ]
+            if not isinstance(item, list | tuple):
+                continue
+            if len(item) == 4 and all(isinstance(value, int | float | str) for value in item):
+                masks.append([int(float(value)) for value in item])
+                continue
+
+            points = []
+            for point in item:
+                if not isinstance(point, list | tuple) or len(point) != 2:
+                    points = []
+                    break
+                points.append([int(float(point[0])), int(float(point[1]))])
+            if len(points) >= 3:
+                masks.append(points)
+        return masks
+
+    def _sampling_config(cam_cfg: dict | None = None) -> dict[str, int]:
+        sampling = (cam_cfg or {}).get("laser_sampling", {}) or {}
+        return {
+            "x_stride": max(1, int(sampling.get("x_stride", 1))),
+            "y_stride": max(1, int(sampling.get("y_stride", 1))),
+            "x_offset": max(0, int(sampling.get("x_offset", 0))),
+            "y_offset": max(0, int(sampling.get("y_offset", 0))),
+        }
+
+    def _camera_processing_config(
+        camera_id: str | None = None,
+    ) -> tuple[int, list, dict[str, int]]:
+        proc_cfg = settings.get("processing", {})
+        threshold = int(proc_cfg.get("laser_threshold", 180))
+        mask = []
+        sampling = _sampling_config()
+        if camera_id:
+            from scanner.calibration import camera_configs
+
+            for cam_cfg in camera_configs(settings):
+                if str(cam_cfg.get("id")) == str(camera_id):
+                    threshold = int(cam_cfg.get("laser_threshold", threshold))
+                    mask = cam_cfg.get("laser_mask", []) or []
+                    sampling = _sampling_config(cam_cfg)
+                    break
+        return threshold, mask, sampling
+
+    def _artifact_tabs() -> list[dict]:
+        tabs: list[dict] = []
+        for cam in _camera_view_configs():
+            tabs.append(
+                {
+                    "kind": f"extract_{cam['id']}",
+                    "label": f"Extraction {cam['label']}",
+                }
+            )
+        for cam in _camera_view_configs():
+            tabs.append(
+                {
+                    "kind": f"cloud_{cam['id']}",
+                    "label": f"Nuage {cam['label']}",
+                }
+            )
+        tabs.extend(
+            [
+                {"kind": "cloud_combined", "label": "Nuage combine"},
+                {"kind": "mesh", "label": "STL"},
+            ]
+        )
+        return tabs
+
+    def _artifact_public(item: dict) -> dict:
+        path = item.get("path")
+        result = dict(item)
+        result["available"] = bool(path and os.path.exists(path))
+        result.pop("path", None)
+        return result
+
+    def _initial_artifacts() -> dict:
+        artifacts: dict = {}
+        for cam_cfg in settings.get("cameras", []):
+            camera_id = str(cam_cfg.get("id", "main"))
+            label = _camera_label(camera_id)
+            artifacts[f"extract_{camera_id}"] = {
+                "kind": f"extract_{camera_id}",
+                "path": os.path.join("/tmp/scan_frames", f"latest_{camera_id}.jpg"),
+                "label": f"Extraction {label}",
+                "media_type": "image/jpeg",
+                "stage": "extraction",
+            }
+            artifacts[f"cloud_{camera_id}"] = {
+                "kind": f"cloud_{camera_id}",
+                "path": None,
+                "label": f"Nuage {label}",
+                "media_type": "model/ply",
+                "stage": "cloud",
+            }
+        artifacts["cloud_combined"] = {
+            "kind": "cloud_combined",
+            "path": None,
+            "label": "Nuage combine",
+            "media_type": "model/ply",
+            "stage": "cloud",
+        }
+        artifacts["mesh"] = {
+            "kind": "mesh",
+            "path": None,
+            "label": "STL final",
+            "media_type": "model/stl",
+            "stage": "mesh",
+        }
+        return artifacts
+
+    def _public_artifacts() -> dict:
+        with _scan_lock:
+            artifacts = dict(_scan_state.get("artifacts", {}))
+        return {key: _artifact_public(value) for key, value in artifacts.items()}
+
     def _capture_checkerboard_candidate(
+        camera_id: str,
         board_size: tuple[int, int],
         auto_bracket: bool,
+        calibration_exposure_us: int | None,
+        calibration_gain: float | None,
     ) -> tuple:
         from scanner.calibration import checkerboard_capture_quality, draw_checkerboard_overlay
         from scanner.hardware import HardwareError, camera_capture, camera_set_exposure, laser_set
 
-        cam_cfg = settings.get("camera", {})
-        scan_exposure = int(cam_cfg.get("exposure_us", 1000))
-        base_exposure = int(cam_cfg.get("calibration_exposure_us", max(5000, scan_exposure * 6)))
-        gain = float(cam_cfg.get("gain", 1.0))
+        cam_cfg = _calibration_camera_config(camera_id)
+        scan_exposure = int(cam_cfg.get("exposure_us", settings.get("camera", {}).get("exposure_us", 1000)))
+        scan_gain = float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0)))
+        base_exposure = int(
+            calibration_exposure_us
+            if calibration_exposure_us is not None
+            else cam_cfg.get("calibration_exposure_us", max(5000, scan_exposure * 6))
+        )
+        gain = float(
+            calibration_gain
+            if calibration_gain is not None
+            else cam_cfg.get("calibration_gain", scan_gain)
+        )
         exposures = [base_exposure]
         exposure_note = None
         if auto_bracket:
             exposures = [max(100, int(base_exposure * factor)) for factor in (0.5, 1.0, 2.0, 4.0)]
 
         with _camera_calib_lock:
-            previous_poses = [c["pose"] for c in _camera_calib_session["captures"] if c.get("pose")]
+            state = _camera_calib_state(camera_id)
+            previous_poses = [c["pose"] for c in state["captures"] if c.get("pose")]
 
         best = None
         try:
             laser_set(False)
             for exposure in exposures:
                 try:
-                    camera_set_exposure(exposure, gain)
+                    camera_set_exposure(exposure, gain, camera_id=camera_id)
                     time.sleep(0.08)
                 except HardwareError as exc:
                     exposure_note = f"reglage exposition indisponible: {exc}"
                     if auto_bracket:
                         logger.warning("Calibration exposure bracketing unavailable: %s", exc)
                     exposures = [base_exposure]
-                frame = camera_capture()
+                frame = camera_capture(camera_id)
                 quality = checkerboard_capture_quality(frame, board_size, previous_poses=previous_poses)
                 candidate = (quality.get("score", 0.0), exposure, frame, quality)
                 if best is None or candidate[0] > best[0]:
@@ -217,7 +698,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             except Exception:
                 pass
             try:
-                camera_set_exposure(scan_exposure, gain)
+                camera_set_exposure(scan_exposure, scan_gain, camera_id=camera_id)
             except Exception:
                 pass
 
@@ -234,8 +715,13 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
     def _push_sse(data: dict) -> None:
         """Push a dict as an SSE event."""
+        from scanner.hardware import door_interlock_enabled, door_is_open
+
+        payload = dict(data)
+        payload.setdefault("door_interlock_enabled", door_interlock_enabled())
+        payload.setdefault("door_open", door_is_open())
         try:
-            _sse_queue.put_nowait(data)
+            _sse_queue.put_nowait(payload)
         except queue.Full:
             pass  # Drop oldest — UI will re-poll
 
@@ -256,9 +742,21 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
     @app.route("/")
     def index() -> str:
+        from scanner.hardware import door_interlock_enabled, door_is_open
+
         with _scan_lock:
             state = dict(_scan_state)
-        return render_template("index.html", scan_state=state)
+            state["artifacts"] = {
+                key: _artifact_public(value)
+                for key, value in _scan_state.get("artifacts", {}).items()
+            }
+            state["door_interlock_enabled"] = door_interlock_enabled()
+            state["door_open"] = door_is_open()
+        return render_template(
+            "index.html",
+            scan_state=state,
+            artifact_tabs=_artifact_tabs(),
+        )
 
     # ------------------------------------------------------------------ #
     # Routes — Scan control
@@ -276,6 +774,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             _scan_state["state"] = "IDLE"
             _scan_state["progress"] = 0
             _scan_state["error"] = None
+            _scan_state["artifacts"] = _initial_artifacts()
 
         def _run() -> None:
             from scanner.orchestration.scan import run_scan
@@ -289,8 +788,36 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 from scanner.interface.display_local import update_display
                 update_display(_scan_state["state"], pct)
 
+            def _artifact_cb(artifact: dict) -> None:
+                kind = str(artifact.get("kind", ""))
+                if not kind:
+                    return
+                with _scan_lock:
+                    current = dict(_scan_state.get("artifacts", {}).get(kind, {}))
+                    current.update(artifact)
+                    if kind.startswith("extract_"):
+                        camera_id = kind.removeprefix("extract_")
+                        current["label"] = f"Extraction {_camera_label(camera_id)}"
+                        current["stage"] = "extraction"
+                    elif kind.startswith("cloud_") and kind not in ("cloud_combined",):
+                        camera_id = kind.removeprefix("cloud_")
+                        current["label"] = f"Nuage {_camera_label(camera_id)}"
+                        current["stage"] = "cloud"
+                    elif kind == "cloud_combined":
+                        current["stage"] = "cloud"
+                    elif kind == "mesh":
+                        current["stage"] = "mesh"
+                    _scan_state.setdefault("artifacts", {})[kind] = current
+                    public = _artifact_public(current)
+                _push_sse({"artifact": public, "artifacts": _public_artifacts()})
+
             try:
-                path = run_scan(settings, progress_callback=_cb, state_machine=_sm)
+                path = run_scan(
+                    settings,
+                    progress_callback=_cb,
+                    artifact_callback=_artifact_cb,
+                    state_machine=_sm,
+                )
                 with _scan_lock:
                     _scan_state["last_file"] = path
                     _scan_state["error"] = None
@@ -306,9 +833,38 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     @app.route("/scan/status")
     def scan_status() -> Response:
         """Return current scan state as JSON."""
+        from scanner.hardware import door_interlock_enabled, door_is_open
+
         with _scan_lock:
             state = dict(_scan_state)
+            state["artifacts"] = {
+                key: _artifact_public(value)
+                for key, value in _scan_state.get("artifacts", {}).items()
+            }
+            state["door_interlock_enabled"] = door_interlock_enabled()
+            state["door_open"] = door_is_open()
         return jsonify(state)
+
+    @app.route("/scan/artifacts")
+    def scan_artifacts() -> Response:
+        """Return scan intermediate artifacts and availability."""
+        return jsonify(_public_artifacts())
+
+    @app.route("/scan/artifact/<kind>")
+    def scan_artifact(kind: str) -> Response:
+        """Serve one scan artifact by stable key."""
+        with _scan_lock:
+            artifact = dict(_scan_state.get("artifacts", {}).get(kind, {}))
+        path = artifact.get("path")
+        if not path or not os.path.exists(path):
+            return jsonify({"error": f"Artifact unavailable: {kind}"}), 404
+        media_type = str(artifact.get("media_type") or "application/octet-stream")
+        return send_file(
+            path,
+            mimetype=media_type,
+            as_attachment=False,
+            download_name=os.path.basename(path),
+        )
 
     @app.route("/scan/download")
     def scan_download() -> Response:
@@ -326,7 +882,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     @app.route("/scan/frame/latest")
     def scan_frame_latest() -> Response:
         """Return the most recently saved scan frame as JPEG."""
-        path = "/tmp/scan_frames/latest.jpg"
+        camera_id = request.args.get("camera")
+        name = "latest.jpg" if not camera_id else f"latest_{camera_id}.jpg"
+        path = os.path.join("/tmp/scan_frames", name)
         if not os.path.exists(path):
             return Response(status=404)
         return send_file(path, mimetype="image/jpeg")
@@ -334,7 +892,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     @app.route("/scan/frame/<int:step>")
     def scan_frame_step(step: int) -> Response:
         """Return the JPEG frame captured at the given step index."""
-        path = f"/tmp/scan_frames/frame_{step:03d}.jpg"
+        camera_id = request.args.get("camera")
+        suffix = "" if not camera_id else f"_{camera_id}"
+        path = f"/tmp/scan_frames/frame_{step:03d}{suffix}.jpg"
         if not os.path.exists(path):
             return Response(status=404)
         return send_file(path, mimetype="image/jpeg")
@@ -378,7 +938,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     def preview_frame() -> Response:
         """Return a mock camera frame as JPEG for the given rotation angle."""
         import cv2
-        import numpy as np
         from scanner.hardware.mock import MockCamera
 
         angle_rad = float(request.args.get("angle", 0.0))
@@ -394,9 +953,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     def preview_extraction() -> Response:
         """Return a frame with laser line detection overlay as JPEG."""
         import cv2
-        import numpy as np
         from scanner.hardware.mock import MockCamera
-        from scanner.processing import crop_laser_line, extract_laser_line
+        from scanner.processing import extract_laser_line
 
         angle_rad = float(request.args.get("angle", 0.0))
         cam_cfg = settings.get("camera", {"resolution": [640, 480]})
@@ -405,10 +963,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         frame = cam.capture()
 
         proc_cfg = settings.get("processing", {})
-        threshold = int(proc_cfg.get("laser_threshold", 180))
+        threshold, mask_rects, sampling = _camera_processing_config()
         min_px = int(proc_cfg.get("min_line_pixels", 10))
         subpixel = bool(proc_cfg.get("subpixel", True))
-        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
 
         line = extract_laser_line(
             frame,
@@ -416,13 +974,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels=min_px,
             subpixel=subpixel,
             mode=extraction_mode,
+            mask_rects=mask_rects,
+            **sampling,
         )
-        line = crop_laser_line(
-            line,
-            crop_left_of_col=_background_crop_left_col(),
-            min_points=min_px,
-        )
-
         # Draw detected pixels as red dots on the frame
         overlay = frame.copy()
         for i in range(line.shape[0]):
@@ -446,18 +1000,520 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     def manual_page() -> str:
         with _scan_lock:
             state = dict(_scan_state)
-        return render_template("manual.html", scan_state=state)
+        return render_template(
+            "manual.html",
+            scan_state=state,
+            cameras=_camera_view_configs(),
+        )
 
     @app.route("/manual/status")
     def manual_status() -> Response:
+        from scanner.hardware import door_interlock_enabled, door_is_open
+
         with _scan_lock:
             state = dict(_scan_state)
         return jsonify(
             {
                 "scan_state": state.get("state", "IDLE"),
                 "manual_allowed": _manual_allowed(),
+                "door_interlock_enabled": door_interlock_enabled(),
+                "door_open": door_is_open(),
             }
         )
+
+    @app.route("/camera-config")
+    def camera_config_page() -> str:
+        with _scan_lock:
+            state = dict(_scan_state)
+        return render_template(
+            "camera_config.html",
+            scan_state=state,
+            cameras=_camera_view_configs(),
+        )
+
+    @app.route("/camera-config/status")
+    def camera_config_status() -> Response:
+        from scanner.hardware import HardwareError, camera_get_info
+
+        result = {}
+        for cam in _camera_view_configs():
+            camera_id = cam["id"]
+            try:
+                result[camera_id] = {
+                    "label": cam["label"],
+                    "type": cam["type"],
+                    "info": camera_get_info(camera_id),
+                }
+            except HardwareError as exc:
+                result[camera_id] = {"label": cam["label"], "type": cam["type"], "error": str(exc)}
+        return jsonify(result)
+
+    @app.route("/extrinsics")
+    def extrinsics_page() -> str:
+        return render_template(
+            "extrinsics.html",
+            cameras=_camera_view_configs(),
+            defaults=_extrinsics_debug_defaults(),
+        )
+
+    @app.route("/extrinsics/status")
+    def extrinsics_status() -> Response:
+        with _extrinsics_debug_lock:
+            captures = {
+                camera_id: {
+                    "profiles": len(data.get("profiles", [])),
+                    "raw_points": int(sum(item["line_pixels"].shape[0] for item in data.get("profiles", []))),
+                }
+                for camera_id, data in _extrinsics_debug_session.get("captures", {}).items()
+            }
+            last_cloud = dict(_extrinsics_debug_session.get("last_cloud", {}))
+            last_error = _extrinsics_debug_session.get("last_error")
+        return jsonify(
+            {
+                "defaults": _extrinsics_debug_defaults(),
+                "captures": captures,
+                "last_cloud": last_cloud,
+                "last_error": last_error,
+            }
+        )
+
+    @app.route("/extrinsics/capture", methods=["POST"])
+    def extrinsics_capture() -> Response:
+        """Capture laser profiles once and keep extracted pixels for fast retuning."""
+        from scanner.acquisition import run_capture_sequence_multi
+        from scanner.calibration import CalibrationError, camera_config_by_id, load_camera_model
+        from scanner.hardware import HardwareError, camera_capture, laser_set, motor_step
+        from scanner.processing import extract_laser_line
+
+        if not _manual_allowed():
+            return jsonify({"error": "Extrinsics tuning disabled while scan is running"}), 409
+
+        payload = request.get_json(silent=True) or {}
+        selected_camera = str(payload.get("camera", ""))
+        n_steps = max(4, min(400, int(payload.get("n_steps", settings.get("scan", {}).get("n_steps", 200)))))
+        proc_cfg = settings.get("processing", {})
+        default_threshold = int(proc_cfg.get("laser_threshold", 180))
+        min_pixels = int(payload.get("min_pixels", proc_cfg.get("min_line_pixels", 1)))
+        subpixel = bool(proc_cfg.get("subpixel", True))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
+        angle_step_rad = 2.0 * 3.141592653589793 / float(n_steps)
+
+        try:
+            camera_models = {}
+            for cam in _camera_view_configs():
+                camera_id = cam["id"]
+                if selected_camera and camera_id != selected_camera:
+                    continue
+                camera_models[camera_id] = load_camera_model(settings, camera_id)
+            if selected_camera:
+                direction = str(settings.get("scan", {}).get("direction", "clockwise"))
+                motor_cfg = settings.get("motor", {})
+                total_motor_steps = int(motor_cfg.get("steps_per_rev", 200)) * int(
+                    motor_cfg.get("microstepping", 1)
+                )
+                steps_per_photo = max(1, total_motor_steps // n_steps)
+                frames = []
+                logger.info(
+                    "Starting extrinsics capture for camera %s: %d photos, %d motor steps/photo",
+                    selected_camera,
+                    n_steps,
+                    steps_per_photo,
+                )
+                for step_idx in range(n_steps):
+                    motor_step(steps_per_photo, direction)
+                    laser_set(True)
+                    try:
+                        frames.append(camera_capture(selected_camera))
+                    finally:
+                        laser_set(False)
+                frames_by_camera = {selected_camera: frames}
+            else:
+                frames_by_camera = run_capture_sequence_multi(n_steps, settings, save_frames=False)
+        except (HardwareError, CalibrationError, ValueError) as exc:
+            try:
+                laser_set(False)
+            except HardwareError:
+                logger.exception("Could not turn off laser after extrinsics capture error")
+            return jsonify({"error": str(exc)}), 422
+        except Exception as exc:
+            try:
+                laser_set(False)
+            except HardwareError:
+                logger.exception("Could not turn off laser after extrinsics capture error")
+            logger.exception("Extrinsics debug capture failed")
+            return jsonify({"error": str(exc)}), 500
+
+        captures: dict = {}
+        summary: dict = {}
+        for camera_id, frames in frames_by_camera.items():
+            if selected_camera and camera_id != selected_camera:
+                continue
+            try:
+                cam_cfg = camera_config_by_id(settings, camera_id)
+            except KeyError:
+                cam_cfg = {}
+            threshold = int(cam_cfg.get("laser_threshold", default_threshold))
+            mask_rects = cam_cfg.get("laser_mask", []) or []
+            sampling = _sampling_config(cam_cfg)
+            camera_matrix, dist_coeffs, laser_plane, _rot, _trans = camera_models[camera_id]
+            profiles = []
+            detected = 0
+            for idx, frame in enumerate(frames):
+                line_px = extract_laser_line(
+                    frame,
+                    threshold=threshold,
+                    min_pixels=min_pixels,
+                    subpixel=subpixel,
+                    mode=extraction_mode,
+                    camera_id=camera_id,
+                    mask_rects=mask_rects,
+                    **sampling,
+                )
+                detected += int(line_px.shape[0])
+                profiles.append(
+                    {
+                        "angle_rad": float(idx * angle_step_rad),
+                        "line_pixels": line_px,
+                    }
+                )
+            captures[camera_id] = {
+                "camera_matrix": camera_matrix,
+                "dist_coeffs": dist_coeffs,
+                "laser_plane": laser_plane,
+                "profiles": profiles,
+            }
+            summary[camera_id] = {"profiles": len(profiles), "raw_points": detected}
+
+        with _extrinsics_debug_lock:
+            if selected_camera:
+                if selected_camera not in captures:
+                    return jsonify({"error": f"No capture produced for camera {selected_camera}"}), 422
+                current = dict(_extrinsics_debug_session.get("captures", {}))
+                current[selected_camera] = captures[selected_camera]
+                _extrinsics_debug_session["captures"] = current
+            else:
+                _extrinsics_debug_session["captures"] = captures
+            _extrinsics_debug_session["last_cloud"] = {}
+            _extrinsics_debug_session["last_error"] = None
+        return jsonify({"status": "ok", "n_steps": n_steps, "captures": summary})
+
+    @app.route("/extrinsics/cloud", methods=["POST"])
+    def extrinsics_cloud() -> Response:
+        """Recompute one camera cloud from cached profile pixels and proposed extrinsics."""
+        import numpy as np
+        from scanner.processing import triangulate
+
+        payload = request.get_json(silent=True) or {}
+        camera_id = str(payload.get("camera", ""))
+        if not camera_id:
+            return jsonify({"error": "camera is required"}), 400
+
+        with _extrinsics_debug_lock:
+            session = _extrinsics_debug_session.get("captures", {}).get(camera_id)
+        if not session:
+            return jsonify({"error": f"No cached capture for camera {camera_id}. Capture first."}), 409
+
+        try:
+            cam_rot, cam_trans = _manual_extrinsics_from_payload(payload)
+            points_parts = []
+            axis_point = _platform_axis_point()
+            for item in session["profiles"]:
+                line_px = item["line_pixels"]
+                if line_px.shape[0] == 0:
+                    continue
+                pts = triangulate(
+                    line_px,
+                    session["camera_matrix"],
+                    session["dist_coeffs"],
+                    session["laser_plane"],
+                    float(item["angle_rad"]),
+                    axis_point=axis_point,
+                    camera_to_platform_rotation=cam_rot,
+                    camera_to_platform_translation=cam_trans,
+                )
+                if pts.shape[0] > 0:
+                    points_parts.append(pts)
+            if points_parts:
+                cloud = np.vstack(points_parts).astype(np.float64)
+            else:
+                cloud = np.empty((0, 3), dtype=np.float64)
+            cloud = _decimate_points(cloud, int(payload.get("max_points", 60000)))
+            bounds = None
+            if cloud.shape[0] > 0:
+                bounds = {
+                    "min": cloud.min(axis=0).tolist(),
+                    "max": cloud.max(axis=0).tolist(),
+                }
+            result = {
+                "status": "ok",
+                "camera": camera_id,
+                "points": cloud.tolist(),
+                "count": int(cloud.shape[0]),
+                "bounds": bounds,
+                "rotation_matrix": cam_rot.tolist(),
+                "translation_mm": cam_trans.tolist(),
+            }
+            with _extrinsics_debug_lock:
+                _extrinsics_debug_session.setdefault("last_cloud", {})[camera_id] = {
+                    "count": result["count"],
+                    "bounds": bounds,
+                }
+                _extrinsics_debug_session["last_error"] = None
+            return jsonify(result)
+        except Exception as exc:
+            logger.exception("Extrinsics cloud recompute failed")
+            with _extrinsics_debug_lock:
+                _extrinsics_debug_session["last_error"] = str(exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/extrinsics/apply", methods=["POST"])
+    def extrinsics_apply() -> Response:
+        """Apply proposed manual extrinsics to memory and optionally settings.yaml."""
+        payload = request.get_json(silent=True) or {}
+        camera_id = str(payload.get("camera", ""))
+        if not camera_id:
+            return jsonify({"error": "camera is required"}), 400
+        save = bool(payload.get("save", False))
+        try:
+            _manual_extrinsics_from_payload(payload)
+            for cam_cfg in settings.get("cameras", []):
+                if str(cam_cfg.get("id")) == camera_id:
+                    extr = cam_cfg.setdefault("extrinsics", {})
+                    extr["position_mm"] = [
+                        float(payload["x_mm"]),
+                        float(payload["y_mm"]),
+                        float(payload["z_mm"]),
+                    ]
+                    extr["angle_camera_laser_deg"] = float(payload["angle_camera_laser_deg"])
+                    extr["angle_planxz_camera_deg"] = float(payload["angle_planxz_camera_deg"])
+                    break
+            else:
+                return jsonify({"error": f"Unknown camera id: {camera_id}"}), 404
+            if save:
+                _settings_update_manual_extrinsics(camera_id, payload)
+            return jsonify({"status": "ok", "camera": camera_id, "saved": save})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/extrinsics/cheat", methods=["POST"])
+    def extrinsics_cheat() -> Response:
+        """Auto-fit two cameras extrinsics jointly from cached extracted points."""
+        import numpy as np
+        from scipy.optimize import minimize
+        from scipy.spatial import cKDTree
+
+        payload = request.get_json(silent=True) or {}
+        camera_a = str(payload.get("camera_a", "right"))
+        camera_b = str(payload.get("camera_b", "left"))
+        max_points = max(2000, min(40000, int(payload.get("max_points", 14000))))
+        max_iter = max(20, min(300, int(payload.get("max_iter", 90))))
+
+        if camera_a == camera_b:
+            return jsonify({"error": "camera_a and camera_b must differ"}), 400
+
+        with _extrinsics_debug_lock:
+            session_a = _extrinsics_debug_session.get("captures", {}).get(camera_a)
+            session_b = _extrinsics_debug_session.get("captures", {}).get(camera_b)
+        if not session_a or not session_b:
+            return jsonify(
+                {
+                    "error": (
+                        f"Missing cached captures for {camera_a}/{camera_b}. "
+                        "Run capture first."
+                    )
+                }
+            ), 409
+
+        defaults = _extrinsics_debug_defaults()
+        default_a = defaults.get(camera_a)
+        default_b = defaults.get(camera_b)
+        if not default_a or not default_b:
+            return jsonify({"error": "Missing camera defaults for cheat mode"}), 422
+
+        def _state_from_default(dct: dict) -> np.ndarray:
+            return np.asarray(
+                [
+                    float(dct["position_mm"][0]),
+                    float(dct["position_mm"][1]),
+                    float(dct["position_mm"][2]),
+                    float(dct["angle_camera_laser_deg"]),
+                    float(dct["angle_planxz_camera_deg"]),
+                ],
+                dtype=np.float64,
+            )
+
+        x0_a = _state_from_default(default_a)
+        x0_b = _state_from_default(default_b)
+        x0 = np.hstack([x0_a, x0_b]).astype(np.float64)
+
+        bounds = [
+            (x0_a[0] - 120.0, x0_a[0] + 120.0),
+            (x0_a[1] - 120.0, x0_a[1] + 120.0),
+            (x0_a[2] - 120.0, x0_a[2] + 120.0),
+            (x0_a[3] - 20.0, x0_a[3] + 20.0),
+            (x0_a[4] - 20.0, x0_a[4] + 20.0),
+            (x0_b[0] - 120.0, x0_b[0] + 120.0),
+            (x0_b[1] - 120.0, x0_b[1] + 120.0),
+            (x0_b[2] - 120.0, x0_b[2] + 120.0),
+            (x0_b[3] - 20.0, x0_b[3] + 20.0),
+            (x0_b[4] - 20.0, x0_b[4] + 20.0),
+        ]
+
+        best_cloud_a = None
+        best_cloud_b = None
+        best_vec = None
+        best_score = float("inf")
+
+        def _vec_to_payload(cam_vec):
+            return {
+                "x_mm": float(cam_vec[0]),
+                "y_mm": float(cam_vec[1]),
+                "z_mm": float(cam_vec[2]),
+                "angle_camera_laser_deg": float(cam_vec[3]),
+                "angle_planxz_camera_deg": float(cam_vec[4]),
+            }
+
+        def _clouds_and_score(vec):
+            nonlocal best_cloud_a, best_cloud_b, best_score, best_vec
+            vec_a = np.asarray(vec[:5], dtype=np.float64)
+            vec_b = np.asarray(vec[5:], dtype=np.float64)
+            rot_a, trans_a = _manual_extrinsics_from_payload(_vec_to_payload(vec_a))
+            rot_b, trans_b = _manual_extrinsics_from_payload(_vec_to_payload(vec_b))
+            cloud_a = _build_cloud_from_cached_capture(session_a, rot_a, trans_a, max_points=max_points)
+            cloud_b = _build_cloud_from_cached_capture(session_b, rot_b, trans_b, max_points=max_points)
+            if cloud_a.shape[0] < 200 or cloud_b.shape[0] < 200:
+                return cloud_a, cloud_b, 1e9
+            tree_a = cKDTree(cloud_a)
+            tree_b = cKDTree(cloud_b)
+            d_ba, _ = tree_a.query(cloud_b, k=1, workers=-1)
+            d_ab, _ = tree_b.query(cloud_a, k=1, workers=-1)
+            if d_ba.size == 0 or d_ab.size == 0:
+                return cloud_a, cloud_b, 1e9
+            rms_ba = float(np.sqrt(np.mean(np.square(np.clip(d_ba, 0.0, 200.0)))))
+            rms_ab = float(np.sqrt(np.mean(np.square(np.clip(d_ab, 0.0, 200.0)))))
+            score = 0.5 * (rms_ba + rms_ab)
+            if score < best_score:
+                best_score = score
+                best_cloud_a = cloud_a
+                best_cloud_b = cloud_b
+                best_vec = np.asarray(vec, dtype=np.float64).copy()
+            return cloud_a, cloud_b, score
+
+        def objective(vec):
+            for idx, (low, high) in enumerate(bounds):
+                if vec[idx] < low or vec[idx] > high:
+                    return 1e9
+            _, _, score = _clouds_and_score(vec)
+            return score
+
+        _, _, initial_score = _clouds_and_score(x0)
+        result = minimize(
+            objective,
+            x0,
+            method="Powell",
+            options={"maxiter": max_iter, "xtol": 1e-2, "ftol": 1e-2, "disp": False},
+        )
+        final_vec = np.asarray(result.x, dtype=np.float64)
+        final_cloud_a, final_cloud_b, final_score = _clouds_and_score(final_vec)
+        if (
+            best_cloud_a is not None
+            and best_cloud_b is not None
+            and best_vec is not None
+            and best_score < final_score
+        ):
+            final_cloud_a = best_cloud_a
+            final_cloud_b = best_cloud_b
+            final_score = best_score
+            final_vec = best_vec
+
+        rec_a = _vec_to_payload(final_vec[:5])
+        rec_b = _vec_to_payload(final_vec[5:])
+
+        output = {
+            "status": "ok",
+            "camera_a": camera_a,
+            "camera_b": camera_b,
+            "initial_error_mm": float(initial_score),
+            "final_error_mm": float(final_score),
+            "improvement_mm": float(initial_score - final_score),
+            "iterations": int(getattr(result, "nit", 0)),
+            "success": bool(result.success),
+            "message": str(result.message),
+            "recommended": {
+                camera_a: rec_a,
+                camera_b: rec_b,
+            },
+            "clouds": {
+                camera_a: {
+                    "count": int(final_cloud_a.shape[0]),
+                    "points": final_cloud_a.tolist(),
+                },
+                camera_b: {
+                    "count": int(final_cloud_b.shape[0]),
+                    "points": final_cloud_b.tolist(),
+                },
+            },
+        }
+        with _extrinsics_debug_lock:
+            _extrinsics_debug_session["last_error"] = None
+        return jsonify(output)
+
+    @app.route("/camera-config/apply", methods=["POST"])
+    def camera_config_apply() -> Response:
+        from scanner.hardware import HardwareError, camera_set_controls
+
+        if not _manual_allowed():
+            return jsonify({"error": "Camera config disabled while scan is running"}), 409
+
+        data = request.get_json(silent=True) or {}
+        camera_id = str(data.get("camera", ""))
+        if not camera_id:
+            return jsonify({"error": "camera is required"}), 400
+
+        controls = {}
+        for key in ("width", "height", "exposure_us"):
+            if data.get(key) not in (None, ""):
+                controls[key] = int(data[key])
+        for key in ("gain", "lens_position"):
+            if data.get(key) not in (None, ""):
+                controls[key] = float(data[key])
+        if data.get("focus_absolute") not in (None, ""):
+            controls["focus_absolute"] = int(float(data["focus_absolute"]))
+        if data.get("pixel_format"):
+            controls["pixel_format"] = str(data["pixel_format"]).strip()
+
+        try:
+            return jsonify({"status": "ok", "camera": camera_id, "info": camera_set_controls(camera_id, controls)})
+        except (HardwareError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/camera-config/formats")
+    def camera_config_formats() -> Response:
+        import shutil
+        import subprocess
+
+        camera_id = str(request.args.get("camera", ""))
+        cam = next((item for item in _camera_view_configs() if item["id"] == camera_id), None)
+        if not cam:
+            return jsonify({"error": f"Unknown camera: {camera_id}"}), 404
+        device_path = cam.get("device_path")
+        if not device_path:
+            return jsonify({"error": "No V4L2 device path configured for this camera"}), 400
+        if not shutil.which("v4l2-ctl"):
+            return jsonify({"error": "v4l2-ctl is not installed"}), 400
+        try:
+            proc = subprocess.run(
+                ["v4l2-ctl", "--list-formats-ext", "-d", str(device_path)],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=3.0,
+            )
+            return jsonify({"camera": camera_id, "device_path": device_path, "formats": proc.stdout})
+        except subprocess.CalledProcessError as exc:
+            return jsonify({"error": exc.stderr or str(exc)}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     @app.route("/manual/camera/frame")
     def manual_camera_frame() -> Response:
@@ -468,7 +1524,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not _manual_allowed():
             return Response(status=409)
         try:
-            frame = camera_capture()
+            frame = camera_capture(request.args.get("camera"))
             ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
             if not ok:
                 return Response(status=500)
@@ -487,15 +1543,16 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         import cv2
         import numpy as np
         from scanner.hardware import HardwareError, camera_capture
-        from scanner.processing import crop_laser_line, extract_laser_line
+        from scanner.processing import extract_laser_line
 
         if not _manual_allowed():
             return Response(status=409)
 
         proc_cfg = settings.get("processing", {})
-        default_threshold = int(proc_cfg.get("laser_threshold", 60))
+        camera_id = request.args.get("camera")
+        default_threshold, mask_rects, sampling = _camera_processing_config(camera_id)
         default_min_px = int(proc_cfg.get("min_line_pixels", 15))
-        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
 
         try:
             threshold = int(request.args.get("threshold", default_threshold))
@@ -507,9 +1564,14 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_px = default_min_px
         threshold = max(0, min(255, threshold))
         min_px = max(1, min(640, min_px))
+        if "mask" in request.args:
+            try:
+                mask_rects = _parse_mask_rects(request.args.get("mask"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                pass
 
         try:
-            frame = camera_capture()
+            frame = camera_capture(camera_id)
         except HardwareError:
             return Response(status=503)
 
@@ -519,11 +1581,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels=min_px,
             subpixel=True,
             mode=extraction_mode,
-        )
-        line = crop_laser_line(
-            line,
-            crop_left_of_col=_background_crop_left_col(),
-            min_points=min_px,
+            camera_id=camera_id,
+            mask_rects=mask_rects,
+            **sampling,
         )
 
         signal = frame[:, :, 1]  # green channel only
@@ -531,6 +1591,16 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         gr_mean = float(signal.mean())
 
         overlay = frame.copy()
+        for mask in mask_rects:
+            if len(mask) == 4 and all(isinstance(value, int | float) for value in mask):
+                x0, y0, x1, y1 = [int(v) for v in mask]
+                cv2.rectangle(overlay, (x0, y0), (x1, y1), (255, 255, 0), 2)
+                continue
+            try:
+                pts = np.asarray(mask, dtype=np.int32).reshape(-1, 1, 2)
+                cv2.polylines(overlay, [pts], isClosed=True, color=(255, 255, 0), thickness=2)
+            except Exception:
+                continue
         for i in range(line.shape[0]):
             col, row = int(round(line[i, 0])), int(round(line[i, 1]))
             cv2.circle(overlay, (col, row), 2, (0, 0, 255), -1)
@@ -545,20 +1615,55 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         resp.headers["X-GR-Mean"] = f"{gr_mean:.2f}"
         resp.headers["X-Threshold"] = str(threshold)
         resp.headers["X-Min-Pixels"] = str(min_px)
+        resp.headers["X-Mask-Rects"] = str(len(mask_rects))
         resp.headers["Access-Control-Expose-Headers"] = (
-            "X-Detected-Columns,X-GR-Max,X-GR-Mean,X-Threshold,X-Min-Pixels"
+            "X-Detected-Columns,X-GR-Max,X-GR-Mean,X-Threshold,X-Min-Pixels,X-Mask-Rects"
         )
         return resp
 
+    @app.route("/manual/processing/apply", methods=["POST"])
+    def manual_processing_apply() -> Response:
+        if not _manual_allowed():
+            return jsonify({"error": "Manual control disabled while scan is running"}), 409
+
+        data = request.get_json(silent=True) or {}
+        camera_id = str(data.get("camera", ""))
+        if not camera_id:
+            return jsonify({"error": "camera is required"}), 400
+
+        try:
+            threshold = max(0, min(255, int(data.get("threshold"))))
+            mask_rects = _parse_mask_rects(data.get("mask"))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            return jsonify({"error": f"Invalid processing config: {exc}"}), 400
+
+        for cam_cfg in settings.get("cameras", []):
+            if str(cam_cfg.get("id")) == camera_id:
+                cam_cfg["laser_threshold"] = threshold
+                cam_cfg["laser_mask"] = mask_rects
+                return jsonify(
+                    {
+                        "status": "ok",
+                        "camera": camera_id,
+                        "laser_threshold": threshold,
+                        "laser_mask": mask_rects,
+                    }
+                )
+        return jsonify({"error": f"Unknown camera: {camera_id}"}), 404
+
     @app.route("/manual/laser", methods=["POST"])
     def manual_laser() -> Response:
-        from scanner.hardware import HardwareError, laser_set
+        from scanner.hardware import HardwareError, door_is_open, laser_set
 
         if not _manual_allowed():
             return jsonify({"error": "Manual control disabled while scan is running"}), 409
 
         data = request.get_json(silent=True) or {}
         state = bool(data.get("state", False))
+
+        # Safety door interlock — never energise the laser with the door open.
+        if state and door_is_open():
+            return jsonify({"error": "Porte ouverte — laser bloqué par la sécurité"}), 409
 
         try:
             laser_set(state)
@@ -649,26 +1754,38 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     @app.route("/calibration")
     def calibration_page() -> str:
         use_checkerboard = bool(settings.get("calibration", {}).get("use_checkerboard", True))
+        camera_views = _camera_view_configs()
+        selected_camera = str(request.args.get("camera") or camera_views[0]["id"])
         return render_template(
             "calibration.html",
             use_checkerboard=use_checkerboard,
-            background_filter=_load_background_filter_config(),
-            camera_calib=_camera_calib_summary(),
+            cameras=camera_views,
+            selected_camera=selected_camera,
+            camera_calib=_camera_calib_summary(selected_camera),
         )
 
     @app.route("/calibration/camera/session")
     def calibration_camera_session() -> Response:
         """Return current in-memory checkerboard capture session."""
-        return jsonify(_camera_calib_summary())
+        try:
+            camera_id = _selected_camera_id()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(_camera_calib_summary(camera_id))
 
     @app.route("/calibration/camera/reset", methods=["POST"])
     def calibration_camera_reset() -> Response:
         """Clear captured checkerboard images."""
+        try:
+            camera_id = _selected_camera_id()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         with _camera_calib_lock:
-            _camera_calib_session["images"] = []
-            _camera_calib_session["captures"] = []
-            _camera_calib_session["last_report"] = None
-        return jsonify(_camera_calib_summary())
+            state = _camera_calib_state(camera_id)
+            state["images"] = []
+            state["captures"] = []
+            state["last_report"] = None
+        return jsonify(_camera_calib_summary(camera_id))
 
     @app.route("/calibration/camera/frame")
     def calibration_camera_frame() -> Response:
@@ -680,13 +1797,53 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not _manual_allowed():
             return Response(status=409)
         try:
-            board_size, _square_mm, _auto_bracket = _parse_camera_board_payload()
+            (
+                camera_id,
+                board_size,
+                _square_mm,
+                _auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
+            ) = _parse_camera_board_payload()
         except (TypeError, ValueError):
+            from scanner.calibration import default_camera_id
+
+            camera_id = default_camera_id(settings)
             board_size = (9, 6)
+            calibration_exposure_us = None
+            calibration_gain = None
 
         try:
             laser_set(False)
-            frame = camera_capture()
+            try:
+                from scanner.hardware import camera_set_exposure
+
+                cam_cfg = _calibration_camera_config(camera_id)
+                scan_exposure = int(
+                    cam_cfg.get("exposure_us", settings.get("camera", {}).get("exposure_us", 1000))
+                )
+                scan_gain = float(
+                    cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0))
+                )
+                exposure = int(
+                    calibration_exposure_us
+                    if calibration_exposure_us is not None
+                    else cam_cfg.get("calibration_exposure_us", max(5000, scan_exposure * 6))
+                )
+                gain = float(
+                    calibration_gain
+                    if calibration_gain is not None
+                    else cam_cfg.get("calibration_gain", scan_gain)
+                )
+                camera_set_exposure(
+                    exposure,
+                    gain,
+                    camera_id=camera_id,
+                )
+                time.sleep(0.08)
+            except Exception:
+                pass
+            frame = camera_capture(camera_id)
         except HardwareError:
             return Response(status=503)
         finally:
@@ -694,9 +1851,26 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 laser_set(False)
             except Exception:
                 pass
+            try:
+                from scanner.hardware import camera_set_exposure
+
+                cam_cfg = _calibration_camera_config(camera_id)
+                camera_set_exposure(
+                    int(
+                        cam_cfg.get(
+                            "exposure_us",
+                            settings.get("camera", {}).get("exposure_us", 1000),
+                        )
+                    ),
+                    float(cam_cfg.get("gain", settings.get("camera", {}).get("gain", 1.0))),
+                    camera_id=camera_id,
+                )
+            except Exception:
+                pass
 
         with _camera_calib_lock:
-            previous_poses = [c["pose"] for c in _camera_calib_session["captures"] if c.get("pose")]
+            state = _camera_calib_state(camera_id)
+            previous_poses = [c["pose"] for c in state["captures"] if c.get("pose")]
         quality = checkerboard_capture_quality(frame, board_size, previous_poses=previous_poses)
         overlay = draw_checkerboard_overlay(frame, board_size, quality)
         ok, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -726,8 +1900,21 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not _manual_allowed():
             return jsonify({"error": "Calibration disabled while scan is running"}), 409
         try:
-            board_size, _square_mm, auto_bracket = _parse_camera_board_payload()
-            frame, overlay, quality = _capture_checkerboard_candidate(board_size, auto_bracket)
+            (
+                camera_id,
+                board_size,
+                _square_mm,
+                auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
+            ) = _parse_camera_board_payload()
+            frame, overlay, quality = _capture_checkerboard_candidate(
+                camera_id,
+                board_size,
+                auto_bracket,
+                calibration_exposure_us,
+                calibration_gain,
+            )
         except (TypeError, ValueError) as exc:
             return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
         except HardwareError as exc:
@@ -741,9 +1928,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if accepted:
             metrics = quality.get("metrics", {})
             with _camera_calib_lock:
-                idx = len(_camera_calib_session["images"]) + 1
-                _camera_calib_session["images"].append(frame)
-                _camera_calib_session["captures"].append(
+                state = _camera_calib_state(camera_id)
+                idx = len(state["images"]) + 1
+                state["images"].append(frame)
+                state["captures"].append(
                     {
                         "index": idx,
                         "pose": quality.get("pose"),
@@ -753,7 +1941,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                     }
                 )
 
-        result = _camera_calib_summary()
+        result = _camera_calib_summary(camera_id)
         result.update(
             {
                 "accepted": accepted,
@@ -768,31 +1956,37 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         """Run calibration from the in-memory guided capture session."""
         from scanner.calibration import CalibrationError, calibrate_camera_with_report
 
-        if not bool(settings.get("calibration", {}).get("use_checkerboard", True)):
-            return jsonify(
-                {
-                    "error": (
-                        "Checkerboard calibration is disabled in settings "
-                        "(calibration.use_checkerboard=false)."
-                    )
-                }
-            ), 409
         try:
-            board_size, square_mm, _auto_bracket = _parse_camera_board_payload()
+            (
+                camera_id,
+                board_size,
+                square_mm,
+                _auto_bracket,
+                _calibration_exposure_us,
+                _calibration_gain,
+            ) = _parse_camera_board_payload()
         except (TypeError, ValueError) as exc:
             return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
 
         with _camera_calib_lock:
-            images = list(_camera_calib_session["images"])
+            state = _camera_calib_state(camera_id)
+            images = list(state["images"])
         if len(images) < 4:
             return jsonify({"error": f"At least 4 accepted images are required, got {len(images)}"}), 422
 
         try:
+            cam_cfg = _calibration_camera_config(camera_id)
+            output_path = _project_path(cam_cfg.get("intrinsics_path"))
             camera_matrix, dist_coeffs, report = calibrate_camera_with_report(
-                images, board_size=board_size, square_size_mm=square_mm
+                images,
+                board_size=board_size,
+                square_size_mm=square_mm,
+                output_path=output_path,
             )
             result = {
                 "status": "ok",
+                "camera": camera_id,
+                "output_path": output_path,
                 "fx": float(camera_matrix[0, 0]),
                 "fy": float(camera_matrix[1, 1]),
                 "cx": float(camera_matrix[0, 2]),
@@ -801,13 +1995,14 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 "report": report,
             }
             with _camera_calib_lock:
-                _camera_calib_session["last_report"] = report
+                state = _camera_calib_state(camera_id)
+                state["last_report"] = report
             return jsonify(result)
         except CalibrationError as exc:
             return jsonify({"error": str(exc)}), 422
         except Exception as exc:
-            logger.error("Guided camera calibration error: %s", exc)
-            return jsonify({"error": "Internal error during calibration"}), 500
+            logger.exception("Guided camera calibration error")
+            return jsonify({"error": f"Internal error during calibration: {exc}"}), 500
 
     @app.route("/calibration/camera", methods=["POST"])
     def calibration_camera() -> Response:
@@ -815,16 +2010,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         import cv2  # type: ignore[import]
         import numpy as np
         from scanner.calibration import CalibrationError, calibrate_camera_with_report
-
-        if not bool(settings.get("calibration", {}).get("use_checkerboard", True)):
-            return jsonify(
-                {
-                    "error": (
-                        "Checkerboard calibration is disabled in settings "
-                        "(calibration.use_checkerboard=false)."
-                    )
-                }
-            ), 409
 
         files = request.files.getlist("images")
         if not files:
@@ -840,19 +2025,32 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         if not images:
             return jsonify({"error": "Could not decode any uploaded images"}), 400
 
-        board_size = (
-            int(request.form.get("board_cols", 9)),
-            int(request.form.get("board_rows", 6)),
-        )
-        square_mm = float(request.form.get("square_size_mm", 25.0))
+        try:
+            (
+                camera_id,
+                board_size,
+                square_mm,
+                _auto_bracket,
+                _calibration_exposure_us,
+                _calibration_gain,
+            ) = _parse_camera_board_payload()
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid checkerboard payload: {exc}"}), 400
 
         try:
+            cam_cfg = _calibration_camera_config(camera_id)
+            output_path = _project_path(cam_cfg.get("intrinsics_path"))
             camera_matrix, dist_coeffs, report = calibrate_camera_with_report(
-                images, board_size=board_size, square_size_mm=square_mm
+                images,
+                board_size=board_size,
+                square_size_mm=square_mm,
+                output_path=output_path,
             )
             return jsonify(
                 {
                     "status": "ok",
+                    "camera": camera_id,
+                    "output_path": output_path,
                     "fx": float(camera_matrix[0, 0]),
                     "fy": float(camera_matrix[1, 1]),
                     "cx": float(camera_matrix[0, 2]),
@@ -864,8 +2062,8 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except CalibrationError as exc:
             return jsonify({"error": str(exc)}), 422
         except Exception as exc:
-            logger.error("Camera calibration error: %s", exc)
-            return jsonify({"error": "Internal error during calibration"}), 500
+            logger.exception("Camera calibration error")
+            return jsonify({"error": f"Internal error during calibration: {exc}"}), 500
 
     @app.route("/calibration/laser", methods=["POST"])
     def calibration_laser() -> Response:
@@ -876,11 +2074,21 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             CalibrationError,
             approximate_camera_intrinsics,
             calibrate_laser_plane,
+            collect_laser_points_platform_z,
+            fit_laser_plane_points,
             load_camera_calibration,
         )
+        from scanner.calibration.multi_camera import _load_extrinsics
+
+        try:
+            camera_id = _selected_camera_id()
+            cam_cfg = _calibration_camera_config(camera_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
         files = request.files.getlist("images")
         distances_raw = request.form.get("distances_mm", "")
+        plane_mode = str(request.form.get("plane_mode", "platform_z")).strip()
 
         if not files or not distances_raw:
             return jsonify({"error": "images and distances_mm are required"}), 400
@@ -908,18 +2116,17 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             ), 400
 
         calib_cfg = settings.get("calibration", {})
-        use_checkerboard = bool(calib_cfg.get("use_checkerboard", True))
-        focal_scale = float(calib_cfg.get("approx_focal_scale", 1.25))
-        cam_cfg = settings.get("camera", {})
-        resolution = cam_cfg.get("resolution", [640, 480])
+        focal_scale = float(cam_cfg.get("approx_focal_scale", calib_cfg.get("approx_focal_scale", 1.25)))
+        resolution = cam_cfg.get("resolution", settings.get("camera", {}).get("resolution", [640, 480]))
         try:
             cam_res = (int(resolution[0]), int(resolution[1]))
         except Exception:
             cam_res = (640, 480)
 
+        intrinsics_path = _project_path(cam_cfg.get("intrinsics_path"))
         try:
-            if use_checkerboard:
-                camera_matrix, dist_coeffs = load_camera_calibration()
+            if intrinsics_path and os.path.exists(intrinsics_path):
+                camera_matrix, dist_coeffs = load_camera_calibration(intrinsics_path)
             else:
                 camera_matrix, dist_coeffs = approximate_camera_intrinsics(
                     cam_res, focal_scale=focal_scale
@@ -928,45 +2135,281 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             return jsonify({"error": f"Camera intrinsics unavailable: {exc}"}), 409
 
         try:
-            plane = calibrate_laser_plane(
-                images,
-                distances,
-                camera_matrix,
-                dist_coeffs,
-                crop_left_of_col=_background_crop_left_col(),
+            global_output_path = _project_path(
+                settings.get("calibration", {}).get("global_laser_plane_path")
+                or settings.get("laser", {}).get("plane_path")
+                or "config/laser_plane.yaml"
             )
-            return jsonify({"status": "ok", "plane": plane.tolist()})
+            default_threshold, mask_rects, sampling = _camera_processing_config(camera_id)
+            proc_cfg = settings.get("processing", {})
+            min_px = int(proc_cfg.get("min_line_pixels", 5))
+            extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
+            if plane_mode == "camera_depth":
+                output_path = _project_path(cam_cfg.get("laser_plane_path"))
+                plane = calibrate_laser_plane(
+                    images,
+                    distances,
+                    camera_matrix,
+                    dist_coeffs,
+                    output_path=output_path,
+                    threshold=default_threshold,
+                    min_pixels=max(1, min_px),
+                    mode=extraction_mode,
+                    mask_rects=mask_rects,
+                    camera_id=camera_id,
+                    **sampling,
+                )
+            elif plane_mode == "platform_z":
+                cam_rot, cam_trans = _load_extrinsics(cam_cfg)
+                points = collect_laser_points_platform_z(
+                    images,
+                    distances,
+                    camera_matrix,
+                    dist_coeffs,
+                    cam_rot,
+                    cam_trans,
+                    threshold=default_threshold,
+                    min_pixels=max(1, min_px),
+                    mode=extraction_mode,
+                    mask_rects=mask_rects,
+                    camera_id=camera_id,
+                    **sampling,
+                )
+                output_path = global_output_path
+                plane = fit_laser_plane_points(points, output_path=output_path)
+            else:
+                return jsonify({"error": f"Unknown laser calibration plane_mode: {plane_mode}"}), 400
+            return jsonify(
+                {
+                    "status": "ok",
+                    "camera": camera_id,
+                    "plane_mode": plane_mode,
+                    "output_path": output_path,
+                    "intrinsics_path": intrinsics_path,
+                    "used_approx_intrinsics": not bool(intrinsics_path and os.path.exists(intrinsics_path)),
+                    "plane": plane.tolist(),
+                }
+            )
         except CalibrationError as exc:
             return jsonify({"error": str(exc)}), 422
         except Exception as exc:
             logger.error("Laser calibration error: %s", exc)
             return jsonify({"error": "Internal error during laser calibration"}), 500
 
+    @app.route("/calibration/laser/session")
+    def calibration_laser_session() -> Response:
+        """Return guided vertical-board laser calibration session."""
+        return jsonify(_laser_calib_summary())
+
+    @app.route("/calibration/laser/reset", methods=["POST"])
+    def calibration_laser_reset() -> Response:
+        """Clear guided laser calibration captures."""
+        with _laser_calib_lock:
+            _laser_calib_session["captures"] = []
+            _laser_calib_session["last_result"] = None
+        return jsonify(_laser_calib_summary())
+
+    @app.route("/calibration/laser/capture", methods=["POST"])
+    def calibration_laser_capture() -> Response:
+        """Capture both cameras for one vertical-board platform Z position."""
+        import cv2
+        from scanner.hardware import HardwareError, camera_capture_all, laser_set
+        from scanner.processing import extract_laser_line
+
+        if not _manual_allowed():
+            return jsonify({"error": "Calibration disabled while scan is running"}), 409
+
+        payload = request.get_json(silent=True) or {}
+        try:
+            z_mm = float(payload.get("z_mm"))
+            threshold_override = payload.get("threshold")
+            min_px = int(payload.get("min_pixels", settings.get("processing", {}).get("min_line_pixels", 5)))
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": f"Invalid laser capture payload: {exc}"}), 400
+        min_px = max(1, min(4096, min_px))
+        extraction_mode = str(settings.get("processing", {}).get("extraction_mode", "row_mean"))
+
+        try:
+            laser_set(True)
+            time.sleep(float(settings.get("laser", {}).get("warmup_ms", 50)) / 1000.0)
+            frames = camera_capture_all()
+        except HardwareError as exc:
+            return jsonify({"error": str(exc)}), 503
+        finally:
+            try:
+                laser_set(False)
+            except Exception:
+                pass
+
+        previews: dict = {}
+        metrics: dict = {}
+        stored_frames: dict = {}
+        for camera_id, frame in frames.items():
+            default_threshold, mask_rects, sampling = _camera_processing_config(camera_id)
+            threshold = int(threshold_override if threshold_override is not None else default_threshold)
+            threshold = max(0, min(255, threshold))
+            line = extract_laser_line(
+                frame,
+                threshold=threshold,
+                min_pixels=min_px,
+                subpixel=True,
+                mode=extraction_mode,
+                camera_id=camera_id,
+                mask_rects=mask_rects,
+                **sampling,
+            )
+            overlay = frame.copy()
+            for i in range(line.shape[0]):
+                col, row = int(round(line[i, 0])), int(round(line[i, 1]))
+                cv2.circle(overlay, (col, row), 2, (0, 0, 255), -1)
+            green = frame[:, :, 1]
+            previews[camera_id] = _encode_jpeg_base64(overlay, quality=70)
+            metrics[camera_id] = {
+                "detected_points": int(line.shape[0]),
+                "green_max": int(green.max()),
+                "green_mean": float(green.mean()),
+                "saturated_pct": float((green >= 250).mean() * 100.0),
+                "threshold": threshold,
+                "min_pixels": min_px,
+            }
+            stored_frames[camera_id] = frame
+
+        with _laser_calib_lock:
+            _laser_calib_session["captures"].append(
+                {
+                    "z_mm": z_mm,
+                    "frames": stored_frames,
+                    "previews": previews,
+                    "metrics": metrics,
+                }
+            )
+        return jsonify(_laser_calib_summary())
+
+    @app.route("/calibration/laser/run", methods=["POST"])
+    def calibration_laser_run() -> Response:
+        """Calibrate one shared platform-frame laser plane from guided captures."""
+        import numpy as np
+
+        from scanner.calibration import (
+            CalibrationError,
+            approximate_camera_intrinsics,
+            camera_ids,
+            collect_laser_points_platform_z,
+            fit_laser_plane_points,
+            load_camera_calibration,
+        )
+        from scanner.calibration.multi_camera import _load_extrinsics
+
+        with _laser_calib_lock:
+            captures = list(_laser_calib_session["captures"])
+        if len(captures) < 3:
+            return jsonify({"error": f"At least 3 Z captures are required, got {len(captures)}"}), 422
+
+        proc_cfg = settings.get("processing", {})
+        min_px = max(1, int(proc_cfg.get("min_line_pixels", 5)))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
+        results = {}
+        all_points = []
+        for camera_id in camera_ids(settings):
+            cam_cfg = _calibration_camera_config(camera_id)
+            images = [item["frames"][camera_id] for item in captures if camera_id in item["frames"]]
+            z_values = [float(item["z_mm"]) for item in captures if camera_id in item["frames"]]
+            if len(images) < 3:
+                return jsonify({"error": f"Camera {camera_id}: at least 3 captures are required"}), 422
+
+            calib_cfg = settings.get("calibration", {})
+            focal_scale = float(cam_cfg.get("approx_focal_scale", calib_cfg.get("approx_focal_scale", 1.25)))
+            resolution = cam_cfg.get("resolution", settings.get("camera", {}).get("resolution", [640, 480]))
+            cam_res = (int(resolution[0]), int(resolution[1]))
+            intrinsics_path = _project_path(cam_cfg.get("intrinsics_path"))
+            try:
+                if intrinsics_path and os.path.exists(intrinsics_path):
+                    camera_matrix, dist_coeffs = load_camera_calibration(intrinsics_path)
+                else:
+                    camera_matrix, dist_coeffs = approximate_camera_intrinsics(
+                        cam_res, focal_scale=focal_scale
+                    )
+                cam_rot, cam_trans = _load_extrinsics(cam_cfg)
+                default_threshold, mask_rects, sampling = _camera_processing_config(camera_id)
+                points = collect_laser_points_platform_z(
+                    images,
+                    z_values,
+                    camera_matrix,
+                    dist_coeffs,
+                    cam_rot,
+                    cam_trans,
+                    threshold=default_threshold,
+                    min_pixels=min_px,
+                    mode=extraction_mode,
+                    mask_rects=mask_rects,
+                    camera_id=camera_id,
+                    **sampling,
+                )
+            except CalibrationError as exc:
+                return jsonify({"error": f"Camera {camera_id}: {exc}"}), 422
+            except Exception as exc:
+                logger.exception("Guided laser calibration error for %s", camera_id)
+                return jsonify({"error": f"Camera {camera_id}: {exc}"}), 500
+
+            results[camera_id] = {
+                "intrinsics_path": intrinsics_path,
+                "z_values": z_values,
+                "points": int(points.shape[0]),
+            }
+            all_points.append(points)
+
+        try:
+            calib_cfg = settings.get("calibration", {})
+            output_path = _project_path(
+                calib_cfg.get("global_laser_plane_path")
+                or settings.get("laser", {}).get("plane_path")
+                or "config/laser_plane.yaml"
+            )
+            plane = fit_laser_plane_points(np.vstack(all_points), output_path=output_path)
+        except CalibrationError as exc:
+            return jsonify({"error": str(exc)}), 422
+        except Exception as exc:
+            logger.exception("Global guided laser calibration error")
+            return jsonify({"error": str(exc)}), 500
+
+        result = {
+            "status": "ok",
+            "plane_mode": "platform_z_global",
+            "output_path": output_path,
+            "plane": plane.tolist(),
+            "results": results,
+        }
+        with _laser_calib_lock:
+            _laser_calib_session["last_result"] = result
+        return jsonify(result)
+
     @app.route("/calibration/laser/test", methods=["POST"])
     def calibration_laser_test() -> Response:
         """Capture one laser test frame and return extraction overlay + metrics."""
         import cv2
         from scanner.hardware import HardwareError, camera_capture, laser_set
-        from scanner.processing import crop_laser_line, extract_laser_line
+        from scanner.processing import extract_laser_line
 
         if not _manual_allowed():
             return jsonify({"error": "Calibration disabled while scan is running"}), 409
 
         proc_cfg = settings.get("processing", {})
         payload = request.get_json(silent=True) or {}
+        camera_id = payload.get("camera")
         try:
-            threshold = int(payload.get("threshold", proc_cfg.get("laser_threshold", 60)))
+            default_threshold, mask_rects, sampling = _camera_processing_config(camera_id)
+            threshold = int(payload.get("threshold", default_threshold))
             min_px = int(payload.get("min_pixels", proc_cfg.get("min_line_pixels", 15)))
         except (TypeError, ValueError) as exc:
             return jsonify({"error": f"Invalid laser test payload: {exc}"}), 400
         threshold = max(0, min(255, threshold))
         min_px = max(1, min(4096, min_px))
-        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
+        extraction_mode = str(proc_cfg.get("extraction_mode", "row_mean"))
 
         try:
             laser_set(True)
             time.sleep(float(settings.get("laser", {}).get("warmup_ms", 50)) / 1000.0)
-            frame = camera_capture()
+            frame = camera_capture(camera_id)
         except HardwareError as exc:
             return jsonify({"error": str(exc)}), 503
         finally:
@@ -981,11 +2424,9 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             min_pixels=min_px,
             subpixel=True,
             mode=extraction_mode,
-        )
-        line = crop_laser_line(
-            line,
-            crop_left_of_col=_background_crop_left_col(),
-            min_points=min_px,
+            camera_id=camera_id,
+            mask_rects=mask_rects,
+            **sampling,
         )
         overlay = frame.copy()
         for i in range(line.shape[0]):
@@ -1006,107 +2447,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 "preview_jpeg_base64": _encode_jpeg_base64(overlay),
             }
         )
-
-    @app.route("/calibration/background-filter", methods=["POST"])
-    def calibration_background_filter() -> Response:
-        """Capture an empty frame and calibrate the left-image crop."""
-        import cv2
-        import numpy as np
-        from scanner.calibration import save_background_filter
-        from scanner.hardware import HardwareError, camera_capture, laser_set
-        from scanner.processing import extract_laser_line
-
-        if not _manual_allowed():
-            return jsonify({"error": "Calibration disabled while scan is running"}), 409
-
-        proc_cfg = settings.get("processing", {})
-        default_threshold = int(proc_cfg.get("laser_threshold", 60))
-        default_min_px = int(proc_cfg.get("min_line_pixels", 15))
-        extraction_mode = str(proc_cfg.get("extraction_mode", "component_axis"))
-
-        payload = request.get_json(silent=True) or {}
-        try:
-            threshold = int(payload.get("threshold", default_threshold))
-            min_px = int(payload.get("min_pixels", default_min_px))
-            margin_px = int(payload.get("margin_px", 6))
-        except (TypeError, ValueError) as exc:
-            return jsonify({"error": f"Invalid calibration payload: {exc}"}), 400
-
-        threshold = max(0, min(255, threshold))
-        min_px = max(1, min(4096, min_px))
-        margin_px = max(0, min(200, margin_px))
-
-        frame = None
-        try:
-            laser_set(True)
-            frame = camera_capture()
-        except HardwareError as exc:
-            return jsonify({"error": str(exc)}), 500
-        finally:
-            try:
-                laser_set(False)
-            except Exception:
-                pass
-
-        if frame is None:
-            return jsonify({"error": "Camera capture failed"}), 500
-
-        line = extract_laser_line(
-            frame,
-            threshold=threshold,
-            min_pixels=min_px,
-            subpixel=True,
-            mode=extraction_mode,
-        )
-        if line.shape[0] < min_px:
-            return jsonify(
-                {
-                    "error": (
-                        f"Ligne de fond introuvable: {line.shape[0]} points detectes "
-                        f"(minimum requis: {min_px})"
-                    )
-                }
-            ), 422
-
-        background_col = float(np.max(line[:, 0]))
-        crop_left_of_col = float(math.ceil(background_col + margin_px))
-        saved = save_background_filter(
-            crop_left_of_col=crop_left_of_col,
-            background_line_max_col=background_col,
-            margin_px=margin_px,
-            threshold=threshold,
-            min_pixels=min_px,
-            extraction_mode=extraction_mode,
-        )
-
-        overlay = frame.copy()
-        for i in range(line.shape[0]):
-            col, row = int(round(line[i, 0])), int(round(line[i, 1]))
-            cv2.circle(overlay, (col, row), 2, (0, 0, 255), -1)
-        cutoff_x = int(round(crop_left_of_col))
-        cv2.line(
-            overlay,
-            (cutoff_x, 0),
-            (cutoff_x, overlay.shape[0] - 1),
-            (255, 255, 0),
-            2,
-        )
-        ok, buf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        if not ok:
-            return jsonify({"error": "Could not encode calibration preview"}), 500
-
-        saved["preview_jpeg_base64"] = base64.b64encode(buf.tobytes()).decode("ascii")
-        return jsonify(saved)
-
-    @app.route("/calibration/background-filter/disable", methods=["POST"])
-    def calibration_background_filter_disable() -> Response:
-        """Disable the calibrated left-image crop."""
-        from scanner.calibration import disable_background_filter
-
-        if not _manual_allowed():
-            return jsonify({"error": "Calibration disabled while scan is running"}), 409
-
-        return jsonify(disable_background_filter())
 
     # ------------------------------------------------------------------ #
     # Routes — USB export

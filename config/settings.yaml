@@ -4,7 +4,7 @@
 # avec de vraies valeurs — utiliser les .example.yaml comme templates.
 
 scan:
-  n_steps: 200           # nombre de photos pour 360° (1 photo = steps_per_rev*microstepping/n_steps pas moteur)
+  n_steps: 100           # nombre de photos pour 360° (1 photo = steps_per_rev*microstepping/n_steps pas moteur)
   direction: clockwise      # sens de rotation : clockwise / counterclockwise
 
 camera:
@@ -15,27 +15,130 @@ camera:
   awb_mode: off             # balance des blancs : off (fixe) pour cohérence entre frames
   awb_gains: [0.5, 1.0]    # gains rouge/bleu — rouge bas pour supprimer reflets parasites
 
+cameras:
+  # Configuration multi-camera cible: camera droite Pi + camera gauche USB.
+  # Les chemins pointent vers des fichiers calibres separes par camera.
+  - id: right
+    display_name: Nappe
+    type: pi
+    resolution: [640, 480]
+    mock_shape: duck
+    exposure_us: 1000
+    gain: 1
+    calibration_exposure_us: 20000
+    calibration_gain: 4
+    lens_position: 2.7
+    laser_threshold: 70
+    laser_sampling:
+      x_stride: 1
+      y_stride: 2
+    laser_mask:
+      - [[412, 271], [412, 480], [151, 480], [153, 454]]
+      - [411, 0, 640, 480]
+      - [0, 451, 414, 480]
+      - [0, 0, 111, 455]
+    awb_mode: off
+    awb_gains: [0.5, 1.0]
+    intrinsics_path: config/camera_intrinsics_right.yaml
+    extrinsics_path: config/camera_extrinsics_right.yaml
+    extrinsics:
+      # Rough measured pose in the shared platform frame:
+      # origin = turntable center at top surface.
+      # +Z follows the laser axis from the laser toward the turntable center.
+      # +X points right when looking from the laser toward the turntable.
+      # +Y is vertical up and is the turntable rotation axis.
+      position_mm: [120.300, 125.700, -254.000]
+      # Mechanical optical-axis angles:
+      # angle_camera_laser_deg = yaw in XZ plane, from +Z toward +X.
+      # angle_planxz_camera_deg = elevation from the XZ plane.
+      angle_camera_laser_deg: -25.400
+      angle_planxz_camera_deg: -20.100
+      up_mm: [0.0, 1.0, 0.0]
+  - id: left
+    display_name: USB Arducam
+    type: usb
+    device_index: 2
+    device_path: /dev/video2
+    backend: CAP_V4L2
+    # Arducam B0475 reports only YUYV modes on this Raspberry Pi.
+    # Supported sizes: 1280x720, 1920x1080, 2312x1736, 3840x2160, 4624x3472, 9248x6944.
+    pixel_format: YUYV
+    # High-resolution YUYV frames are heavy on USB; keep flush low to reduce bus load.
+    flush_frames: 1
+    # USB cameras can re-enumerate slowly on Raspberry Pi. These retries avoid
+    # losing the Arducam after a short /dev/video2 disappearance.
+    open_retries: 5
+    open_retry_delay_s: 0.7
+    reconnect_retries: 5
+    reconnect_retry_delay_s: 0.4
+    device_wait_s: 3.0
+    startup_frame_check: true
+    v4l2_exposure_scale_us: 100
+    resolution: [1920, 1080]
+    mock_shape: duck
+    exposure_us: 8000
+    # V4L2 gain range reported by this camera: 100..1494.
+    gain: 100
+    calibration_exposure_us: 30000
+    calibration_gain: 100
+    focus_absolute: 500
+    laser_threshold: 70
+    laser_sampling:
+      x_stride: 3
+      y_stride: 4
+    laser_mask:
+      - [[577, 1080], [631, 429], [0, 428], [0, 1080]]
+      - [[662, 433], [780, 0], [0, 0], [0, 433]]
+      - [[1488, 1080], [1377, 0], [1920, 0], [1920, 1080]]
+      - [550, 1065, 1500, 1080]
+    intrinsics_path: config/camera_intrinsics_left.yaml
+    extrinsics_path: config/camera_extrinsics_left.yaml
+    extrinsics:
+      # Rough measured pose in the shared platform frame:
+      # origin = turntable center at top surface.
+      # +Z follows the laser axis from the laser toward the turntable center.
+      # +X points right when looking from the laser toward the turntable.
+      # +Y is vertical up and is the turntable rotation axis.
+      position_mm: [-161.500, -22.800, -264.800]
+      # Mechanical optical-axis angles:
+      # angle_camera_laser_deg = yaw in XZ plane, from +Z toward +X.
+      # angle_planxz_camera_deg = elevation from the XZ plane.
+      angle_camera_laser_deg: 32.800
+      angle_planxz_camera_deg: 19.600
+      up_mm: [0.0, 1.0, 0.0]
+
 laser:
-  gpio_pin: 2             # numéro de broche GPIO (BCM) pour le laser
+  gpio_pin: 4             # numéro de broche GPIO (BCM) pour le laser
   warmup_ms: 50             # temps de stabilisation après allumage (ms)
+  # Repere plateforme: origine centre plateau, +Z laser -> centre, +X droite vue laser, +Y haut.
+  position_mm: [0.0, 50.0, -400.0]
+  line_orientation: vertical
 
 motor:
   # Moteur : Generic 17HS3401 (NEMA 17, 1.8°/pas, 200 pas/tour, 1.5A)
   # Driver : DM320T (microstepping STEP/DIR, 20V max)
-  step_pin: 3              # broche GPIO STEP
-  dir_pin: 4              # broche GPIO DIR
-  enable_pin: 17            # broche GPIO ENABLE (actif bas sur DM320T)
+  step_pin: 17              # broche GPIO STEP
+  dir_pin: 27               # broche GPIO DIR
+  enable_pin: 22            # broche GPIO ENABLE (actif bas sur DM320T)
   steps_per_rev: 200        # pas physiques du NEMA 17 (1.8°/pas)
   microstepping: 16          # facteur de microstepping du driver DM320T
   speed_rpm: 5             # vitesse de rotation (tours/min)
   accel_steps: 100          # nombre de pas d'accélération/décélération
 
+safety:
+  door_interlock:
+    enabled: true            # true = arret immediat du scan + laser si la porte s'ouvre (toggle rapide)
+    gpio_pin: 10             # broche GPIO (BCM) du capteur de porte (interrupteur/reed vers GND)
+    pull_up: false           # pull-down interne : contact ferme = pin tiree a 3.3V
+    closed_when_pressed: true # true = contact ferme (pin tire a l'etat actif) <=> porte fermee
+    bounce_time_s: 0.1      # anti-rebond du capteur (s)
+
 processing:
   laser_channel: green      # canal couleur à isoler : green (laser vert ~520nm)
-  laser_threshold: 70       # seuil de détection; en row_green, il s'applique au vert brut
+  laser_threshold: 70       # seuil par defaut; peut etre remplace par cameras[].laser_threshold
   min_line_pixels: 1      # nombre minimum de points de ligne pour valider une détection
   subpixel: true            # activer la détection sub-pixel (centroïde)
-  extraction_mode: row_green  # row_green = 1 point par ligne sur le vert brut
+  extraction_mode: row_mean  # row_mean = 1 point par ligne sur le vert brut
   occlusion_interpolation: false  # comble les zones cachées du laser avant la reconstruction 3D
   occlusion_max_gap_rows: 0      # 0 = sans limite, interpolation des trous internes dans une image
   occlusion_max_gap_frames: 0    # 0 = sans limite, interpolation entre la derniere vue visible et la suivante
@@ -43,9 +146,33 @@ processing:
 reconstruction:
   outlier_nb_neighbors: 20  # voisins pour filtrage outliers (SciPy KDTree)
   outlier_std_ratio: 2.0    # ratio écart-type pour filtrage outliers
+  flat_caps:
+    enabled: true
+    axis_mode: pca
+    axis_index: 2
+    grid_mm: 0.8
+    top_quantile: 0.99
+    bottom_quantile: 0.01
+    border_pad_mm: 1.0
+  auto_cheat_extrinsics:
+    enabled: true
+    max_iter: 60
+    max_points: 12000
+    per_line_max_points: 250
+    translation_span_mm: 120.0
+    angle_span_deg: 20.0
+  profile_fusion:
+    enabled: true
+    gap_mm: 4.0
+    min_segment_points: 12
+    min_overlap_points: 8
+    local_window_points: 21
+    local_poly_degree: 2
+    local_min_points: 9
 
 calibration:
-  use_checkerboard: false    # false = desactive la calibration camera par damier et utilise des intrinsèques approx
+  use_checkerboard: true    # true = utilise les fichiers intrinsics_path calibres par camera
+  global_laser_plane_path: config/laser_plane.yaml
   approx_focal_scale: 1.25  # focale approx = largeur_image * facteur (640 px -> 800 px)
 
 export:
@@ -67,5 +194,6 @@ export:
 interface:
   web_host: 0.0.0.0         # écouter sur toutes les interfaces
   web_port: 5000            # port du serveur Flask
+  led_enabled: false        # false = n'initialise pas les GPIO LEDs
   display_type: none        # type d'écran : oled / lcd / none
   display_i2c_address: 0x3C # adresse I2C de l'écran OLED (souvent 0x3C ou 0x3D)

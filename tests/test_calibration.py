@@ -12,6 +12,8 @@ from scanner.calibration.camera import _save_camera_calibration
 from scanner.calibration.camera import approximate_camera_intrinsics
 from scanner.calibration.camera import checkerboard_capture_quality
 from scanner.calibration.laser_plane import _save_laser_plane
+from scanner.calibration.laser_plane import calibrate_laser_plane_global_platform_z
+from scanner.calibration.laser_plane import calibrate_laser_plane_platform_z
 
 
 # --------------------------------------------------------------------------- #
@@ -171,9 +173,81 @@ class TestLoadLaserPlane:
         plane_orig = np.array([0.48, 0.02, 0.877, -205.0], dtype=np.float64)
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "rt.yaml")
-            _save_laser_plane(plane_orig, 29.5, path)
+            _save_laser_plane(plane_orig, 29.5, path, frame="platform")
             plane = load_laser_plane(path)
         np.testing.assert_allclose(plane, plane_orig, atol=1e-6)
+
+
+class TestLaserPlanePlatformZCalibration:
+    """Tests for vertical-board laser calibration in the platform frame."""
+
+    def test_fits_plane_from_platform_z_boards(self) -> None:
+        images = []
+        for col in (40, 55, 70):
+            img = np.zeros((80, 120, 3), dtype=np.uint8)
+            img[:, col, 1] = 255
+            images.append(img)
+
+        camera_matrix = np.array(
+            [[100.0, 0.0, 60.0], [0.0, 100.0, 40.0], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plane = calibrate_laser_plane_platform_z(
+                images,
+                [100.0, 120.0, 140.0],
+                camera_matrix,
+                np.zeros(5),
+                np.eye(3),
+                np.zeros(3),
+                output_path=os.path.join(tmpdir, "laser.yaml"),
+                threshold=100,
+                min_pixels=5,
+                mask_rects=[],
+            )
+
+        assert plane.shape == (4,)
+        assert np.isfinite(plane).all()
+
+    def test_fits_global_plane_from_two_camera_platform_z_boards(self) -> None:
+        camera_matrix = np.array(
+            [[100.0, 0.0, 60.0], [0.0, 100.0, 40.0], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+
+        observations = []
+        for camera_id, translation in (
+            ("right", np.array([20.0, 0.0, 0.0])),
+            ("left", np.array([-20.0, 0.0, 0.0])),
+        ):
+            images = []
+            for col in (55, 60, 65):
+                img = np.zeros((80, 120, 3), dtype=np.uint8)
+                img[:, col, 1] = 255
+                images.append(img)
+            observations.append(
+                {
+                    "camera_id": camera_id,
+                    "reference_images": images,
+                    "platform_z_mm": [100.0, 120.0, 140.0],
+                    "camera_matrix": camera_matrix,
+                    "dist_coeffs": np.zeros(5),
+                    "camera_to_platform_rotation": np.eye(3),
+                    "camera_to_platform_translation": translation,
+                    "threshold": 100,
+                    "min_pixels": 5,
+                    "mask_rects": [],
+                }
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plane = calibrate_laser_plane_global_platform_z(
+                observations,
+                output_path=os.path.join(tmpdir, "laser.yaml"),
+            )
+
+        assert plane.shape == (4,)
+        assert np.isfinite(plane).all()
 
 
 class TestApproximateCameraIntrinsics:

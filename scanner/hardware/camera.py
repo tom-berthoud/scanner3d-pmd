@@ -40,16 +40,20 @@ class PiCamera:
             raise HardwareError("picamera2 not available — install it on the Pi") from exc
 
         res = config.get("resolution", [1920, 1080])
+        self._camera_num: int | None = (
+            int(config["camera_num"]) if config.get("camera_num") is not None else None
+        )
         self._width: int = int(res[0])
         self._height: int = int(res[1])
         self._exposure_us: int = int(config.get("exposure_us", 5000))
         self._gain: float = float(config.get("gain", 1.0))
+        self._lens_position: float = float(config.get("lens_position", 2.7))
         self._awb_mode: str = str(config.get("awb_mode", "off"))
         awb_gains = config.get("awb_gains", [1.5, 1.2])
         self._awb_gains: tuple[float, float] = (float(awb_gains[0]), float(awb_gains[1]))
 
         try:
-            self._cam = Picamera2()
+            self._cam = Picamera2() if self._camera_num is None else Picamera2(self._camera_num)
             capture_cfg = self._cam.create_still_configuration(
                 main={"size": (self._width, self._height), "format": "BGR888"},
             )
@@ -61,7 +65,7 @@ class PiCamera:
             self._cam.set_controls(
                 {
                     "AfMode": 0,
-                    "LensPosition": 2.53,
+                    "LensPosition": self._lens_position,
                     "ExposureTime": self._exposure_us,
                     "AnalogueGain": self._gain,
                 }
@@ -115,7 +119,7 @@ class PiCamera:
         try:
             controls = {
                 "AfMode": 0,
-                "LensPosition": 2.53,
+                "LensPosition": self._lens_position,
                 "ExposureTime": self._exposure_us,
                 "AnalogueGain": self._gain,
             }
@@ -123,6 +127,74 @@ class PiCamera:
             logger.info("PiCamera exposure set to %d us, gain=%.2f", self._exposure_us, self._gain)
         except Exception as exc:
             raise HardwareError(f"Camera exposure update failed: {exc}") from exc
+
+    def set_controls(self, controls: dict) -> dict:
+        """Apply runtime camera controls and return current camera info."""
+        from scanner.hardware import HardwareError
+
+        width = controls.get("width")
+        height = controls.get("height")
+        resolution_changed = False
+        if width is not None and height is not None:
+            new_width = int(width)
+            new_height = int(height)
+            if new_width > 0 and new_height > 0:
+                resolution_changed = new_width != self._width or new_height != self._height
+                self._width = new_width
+                self._height = new_height
+
+        if controls.get("exposure_us") is not None:
+            self._exposure_us = int(controls["exposure_us"])
+        if controls.get("gain") is not None:
+            self._gain = float(controls["gain"])
+        if controls.get("lens_position") is not None:
+            self._lens_position = float(controls["lens_position"])
+
+        try:
+            if resolution_changed:
+                self._cam.stop()
+                capture_cfg = self._cam.create_still_configuration(
+                    main={"size": (self._width, self._height), "format": "BGR888"},
+                )
+                self._cam.configure(capture_cfg)
+                self._cam.start()
+            self._cam.set_controls(
+                {
+                    "AfMode": 0,
+                    "LensPosition": self._lens_position,
+                    "ExposureTime": self._exposure_us,
+                    "AnalogueGain": self._gain,
+                }
+            )
+        except Exception as exc:
+            raise HardwareError(f"Camera control update failed: {exc}") from exc
+        return self.get_info()
+
+    def get_info(self) -> dict:
+        """Return requested camera settings and best-effort runtime metadata."""
+        metadata = {}
+        try:
+            metadata = dict(self._cam.capture_metadata())
+        except Exception:
+            metadata = {}
+        return {
+            "driver": "PiCamera",
+            "requested": {
+                "width": self._width,
+                "height": self._height,
+                "exposure_us": self._exposure_us,
+                "gain": self._gain,
+                "lens_position": self._lens_position,
+                "awb_mode": self._awb_mode,
+            },
+            "actual": {
+                "width": self._width,
+                "height": self._height,
+                "exposure_us": metadata.get("ExposureTime", self._exposure_us),
+                "gain": metadata.get("AnalogueGain", self._gain),
+                "lens_position": metadata.get("LensPosition", self._lens_position),
+            },
+        }
 
     def close(self) -> None:
         """Release the camera resource."""

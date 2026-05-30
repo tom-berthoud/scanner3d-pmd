@@ -7,4 +7,6 @@ Exports:
 
 from scanner.reconstruction.pointcloud import filter_outliers, merge_profiles
 
-__all__ = ["merge_profiles", "filter_outliers"]
+from scanner.reconstruction.pointcloud import add_flat_caps_aligned
+
+__all__ = ["merge_profiles", "filter_outliers", "add_flat_caps_aligned"]

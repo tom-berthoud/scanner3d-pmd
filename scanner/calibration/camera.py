@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import cv2  # type: ignore[import]
 import numpy as np
 import yaml
 
@@ -29,6 +28,12 @@ def _detect_checkerboard(
     board_size: tuple[int, int] = (9, 6),
 ) -> tuple[bool, np.ndarray | None, np.ndarray]:
     """Detect checkerboard corners with the robust SB detector, then fallback."""
+    try:
+        import cv2  # type: ignore[import]
+    except ModuleNotFoundError:
+        gray = image.mean(axis=2).astype(np.uint8) if image.ndim == 3 else image
+        return False, None, gray
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     flags = cv2.CALIB_CB_NORMALIZE_IMAGE | getattr(cv2, "CALIB_CB_EXHAUSTIVE", 0)
 
@@ -58,10 +63,15 @@ def checkerboard_capture_quality(
     previous_poses: Optional[list[list[float]]] = None,
 ) -> dict:
     """Return detection, exposure and pose-diversity quality for one frame."""
+    try:
+        import cv2  # type: ignore[import]
+    except ModuleNotFoundError:
+        cv2 = None
+
     found, corners, gray = _detect_checkerboard(image, board_size)
     mean = float(gray.mean())
     contrast = float(gray.std())
-    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var()) if cv2 is not None else 0.0
     saturated_pct = float(np.mean(gray >= 250) * 100.0)
     dark_pct = float(np.mean(gray <= 5) * 100.0)
 
@@ -137,6 +147,8 @@ def draw_checkerboard_overlay(
     quality: Optional[dict] = None,
 ) -> np.ndarray:
     """Draw checkerboard corners and a compact status overlay."""
+    import cv2  # type: ignore[import]
+
     overlay = image.copy()
     quality = quality or checkerboard_capture_quality(image, board_size)
     corners = quality.get("corners")
@@ -204,14 +216,16 @@ def _calibrate_camera_impl(
     square_size_mm: float = 25.0,
     output_path: Optional[str] = None,
 ) -> tuple[np.ndarray, np.ndarray, dict]:
+    import cv2  # type: ignore[import]
+
     from scanner.calibration import CalibrationError
 
     obj_cols, obj_rows = board_size
     # 3D object points for one checkerboard image (z=0 plane)
-    objp = np.zeros((obj_rows * obj_cols, 3), dtype=np.float64)
+    objp = np.zeros((obj_rows * obj_cols, 3), dtype=np.float32)
     objp[:, :2] = (
         np.mgrid[0:obj_cols, 0:obj_rows].T.reshape(-1, 2) * square_size_mm
-    )
+    ).astype(np.float32)
 
     object_points: list[np.ndarray] = []
     image_points: list[np.ndarray] = []
@@ -228,13 +242,19 @@ def _calibrate_camera_impl(
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
         if image_size is None:
             image_size = (gray.shape[1], gray.shape[0])
+        elif image_size != (gray.shape[1], gray.shape[0]):
+            raise CalibrationError(
+                "All checkerboard images must have the same resolution. "
+                f"Expected {image_size}, got {(gray.shape[1], gray.shape[0])} "
+                f"for image {idx}."
+            )
 
         found, corners, _gray = _detect_checkerboard(img, board_size)
         if not found:
             logger.debug("Image %d: checkerboard not found", idx)
             continue
 
-        corners_refined = corners
+        corners_refined = corners.astype(np.float32)
         object_points.append(objp)
         image_points.append(corners_refined)
         logger.debug("Image %d: %d corners found", idx, len(corners_refined))
@@ -250,13 +270,16 @@ def _calibrate_camera_impl(
         "Running calibrateCamera with %d image pairs", len(object_points)
     )
 
-    rms, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
-        object_points,
-        image_points,
-        image_size,  # type: ignore[arg-type]
-        None,
-        None,
-    )
+    try:
+        rms, camera_matrix, dist_coeffs, _rvecs, _tvecs = cv2.calibrateCamera(
+            object_points,
+            image_points,
+            image_size,  # type: ignore[arg-type]
+            None,
+            None,
+        )
+    except cv2.error as exc:
+        raise CalibrationError(f"OpenCV camera calibration failed: {exc}") from exc
 
     if rms > 2.0:
         logger.warning(

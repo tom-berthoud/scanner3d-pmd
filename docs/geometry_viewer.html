@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Scanner Geometry Viewer</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0b1020;
+      color: #e6edf3;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    #scene {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      cursor: grab;
+    }
+    #scene:active {
+      cursor: grabbing;
+    }
+    .panel {
+      position: fixed;
+      left: 16px;
+      top: 16px;
+      width: min(420px, calc(100vw - 32px));
+      padding: 14px 16px;
+      background: rgba(10, 15, 30, 0.86);
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 8px;
+      box-shadow: 0 16px 50px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(8px);
+    }
+    .panel h1 {
+      margin: 0 0 10px;
+      font-size: 17px;
+      font-weight: 650;
+    }
+    .panel p {
+      margin: 8px 0;
+      color: #9fb0c7;
+      font-size: 13px;
+      line-height: 1.38;
+    }
+    .legend {
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 6px 8px;
+      align-items: center;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .swatch {
+      width: 14px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .controls {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    button {
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(15, 23, 42, 0.9);
+      color: #e6edf3;
+      border-radius: 6px;
+      padding: 8px 11px;
+      font-size: 13px;
+    }
+    button:hover {
+      background: rgba(30, 41, 59, 0.95);
+    }
+    code {
+      color: #c4d7ff;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div class="panel">
+    <h1>Geometrie globale du scanner</h1>
+    <p>
+      Repere affiche: <code>X</code> droite/gauche, <code>Y</code> hauteur,
+      <code>Z</code> axe laser vers le centre plateau.
+    </p>
+    <p>
+      Souris: glisser pour tourner, molette pour zoomer, double clic pour recentrer.
+    </p>
+    <div class="legend">
+      <span class="swatch" style="background:#ef4444"></span><span>Axe X global</span>
+      <span class="swatch" style="background:#22c55e"></span><span>Axe Y global, hauteur</span>
+      <span class="swatch" style="background:#3b82f6"></span><span>Axe Z global, laser vers plateau</span>
+      <span class="swatch" style="background:#facc15"></span><span>Axe optique camera nappe/right</span>
+      <span class="swatch" style="background:#38bdf8"></span><span>Axe optique camera USB/left</span>
+      <span class="swatch" style="background:#a78bfa"></span><span>Plan laser ideal: X = 0</span>
+      <span class="swatch" style="background:#fb7185"></span><span>Plan laser calibre actuel</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button type="button" id="top">Vue dessus</button>
+    <button type="button" id="front">Vue laser</button>
+    <button type="button" id="side">Vue cote</button>
+    <button type="button" id="reset">Reset</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("scene");
+    const ctx = canvas.getContext("2d");
+
+    const state = {
+      yaw: -0.78,
+      pitch: -0.48,
+      scale: 2.2,
+      panX: 0,
+      panY: 24,
+      dragging: false,
+      lastX: 0,
+      lastY: 0
+    };
+
+    const cameras = {
+      right: {
+        label: "Nappe/right",
+        pos: [173.5, 140.0, -300.5],
+        target: [0.0, 13.7, 0.0],
+        color: "#facc15"
+      },
+      left: {
+        label: "USB/left",
+        pos: [-155.0, -20.0, -286.5],
+        target: [0.0, 92.8, -18.0],
+        color: "#38bdf8"
+      }
+    };
+
+    const calibratedPlane = {
+      a: 0.6028111952525835,
+      b: -0.04773788790627225,
+      c: -0.7964544914409109,
+      d: -13.673273057129485
+    };
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      canvas.style.width = window.innerWidth + "px";
+      canvas.style.height = window.innerHeight + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    }
+
+    function rotatePoint(p) {
+      const [x, y, z] = p;
+      const cy = Math.cos(state.yaw);
+      const sy = Math.sin(state.yaw);
+      const cp = Math.cos(state.pitch);
+      const sp = Math.sin(state.pitch);
+
+      const x1 = cy * x + sy * z;
+      const z1 = -sy * x + cy * z;
+      const y1 = cp * y - sp * z1;
+      const z2 = sp * y + cp * z1;
+      return [x1, y1, z2];
+    }
+
+    function project(p) {
+      const [x, y, z] = rotatePoint(p);
+      const perspective = 900 / (900 + z);
+      return [
+        window.innerWidth / 2 + (x * state.scale * perspective) + state.panX,
+        window.innerHeight / 2 - (y * state.scale * perspective) + state.panY,
+        z
+      ];
+    }
+
+    function line3(a, b, color, width = 2, alpha = 1) {
+      const pa = project(a);
+      const pb = project(b);
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(pa[0], pa[1]);
+      ctx.lineTo(pb[0], pb[1]);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    function point3(p, color, radius = 4) {
+      const q = project(p);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(q[0], q[1], radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function text3(p, text, color = "#e6edf3") {
+      const q = project(p);
+      ctx.fillStyle = color;
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.fillText(text, q[0] + 7, q[1] - 7);
+    }
+
+    function planeGridFromEquation(plane, extent, step) {
+      const lines = [];
+      const { a, b, c, d } = plane;
+      for (let y = -extent; y <= extent; y += step) {
+        const pts = [];
+        for (let z = -extent; z <= extent; z += extent * 2) {
+          if (Math.abs(a) > 1e-9) pts.push([(-b * y - c * z - d) / a, y, z]);
+        }
+        if (pts.length === 2) lines.push(pts);
+      }
+      for (let z = -extent; z <= extent; z += step) {
+        const pts = [];
+        for (let y = -extent; y <= extent; y += extent * 2) {
+          if (Math.abs(a) > 1e-9) pts.push([(-b * y - c * z - d) / a, y, z]);
+        }
+        if (pts.length === 2) lines.push(pts);
+      }
+      return lines;
+    }
+
+    function drawPlaneX0() {
+      const extent = 220;
+      const step = 40;
+      for (let y = -40; y <= 180; y += step) {
+        line3([0, y, -extent], [0, y, extent], "#a78bfa", 1, 0.38);
+      }
+      for (let z = -extent; z <= extent; z += step) {
+        line3([0, -40, z], [0, 180, z], "#a78bfa", 1, 0.38);
+      }
+    }
+
+    function drawCalibratedPlane() {
+      const lines = planeGridFromEquation(calibratedPlane, 220, 40);
+      lines.forEach(([a, b]) => line3(a, b, "#fb7185", 1, 0.48));
+    }
+
+    function drawPlateau() {
+      const r = 75;
+      const y = 0;
+      let prev = null;
+      for (let i = 0; i <= 96; i++) {
+        const t = (i / 96) * Math.PI * 2;
+        const p = [Math.cos(t) * r, y, Math.sin(t) * r];
+        if (prev) line3(prev, p, "#94a3b8", 1, 0.7);
+        prev = p;
+      }
+      text3([80, 0, 0], "plateau Y=0", "#94a3b8");
+    }
+
+    function drawCameraAxis(cam) {
+      const dir = [
+        cam.target[0] - cam.pos[0],
+        cam.target[1] - cam.pos[1],
+        cam.target[2] - cam.pos[2]
+      ];
+      const len = Math.hypot(dir[0], dir[1], dir[2]);
+      const unit = dir.map(v => v / len);
+      const end = [
+        cam.pos[0] + unit[0] * 470,
+        cam.pos[1] + unit[1] * 470,
+        cam.pos[2] + unit[2] * 470
+      ];
+      line3(cam.pos, end, cam.color, 3, 0.95);
+      point3(cam.pos, cam.color, 5);
+      point3(cam.target, cam.color, 3);
+      text3(cam.pos, cam.label, cam.color);
+      text3(cam.target, "target", cam.color);
+    }
+
+    function drawAxes() {
+      line3([-240, 0, 0], [240, 0, 0], "#ef4444", 2);
+      line3([0, -80, 0], [0, 220, 0], "#22c55e", 2);
+      line3([0, 0, -360], [0, 0, 220], "#3b82f6", 2);
+      text3([250, 0, 0], "+X", "#ef4444");
+      text3([0, 230, 0], "+Y hauteur", "#22c55e");
+      text3([0, 0, 230], "+Z", "#3b82f6");
+      point3([0, 0, 0], "#ffffff", 4);
+      text3([0, 0, 0], "origine", "#ffffff");
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      drawPlaneX0();
+      drawCalibratedPlane();
+      drawPlateau();
+      drawAxes();
+      drawCameraAxis(cameras.right);
+      drawCameraAxis(cameras.left);
+      text3([0, 170, -210], "plan ideal X=0", "#a78bfa");
+      text3([170, 130, 130], "plan calibre", "#fb7185");
+    }
+
+    canvas.addEventListener("mousedown", event => {
+      state.dragging = true;
+      state.lastX = event.clientX;
+      state.lastY = event.clientY;
+    });
+    window.addEventListener("mouseup", () => {
+      state.dragging = false;
+    });
+    window.addEventListener("mousemove", event => {
+      if (!state.dragging) return;
+      const dx = event.clientX - state.lastX;
+      const dy = event.clientY - state.lastY;
+      state.lastX = event.clientX;
+      state.lastY = event.clientY;
+      state.yaw += dx * 0.007;
+      state.pitch += dy * 0.007;
+      state.pitch = Math.max(-1.45, Math.min(1.45, state.pitch));
+      draw();
+    });
+    canvas.addEventListener("wheel", event => {
+      event.preventDefault();
+      state.scale *= event.deltaY > 0 ? 0.92 : 1.08;
+      state.scale = Math.max(0.6, Math.min(8, state.scale));
+      draw();
+    }, { passive: false });
+    canvas.addEventListener("dblclick", resetView);
+
+    function resetView() {
+      state.yaw = -0.78;
+      state.pitch = -0.48;
+      state.scale = 2.2;
+      state.panX = 0;
+      state.panY = 24;
+      draw();
+    }
+
+    document.getElementById("reset").addEventListener("click", resetView);
+    document.getElementById("top").addEventListener("click", () => {
+      state.yaw = 0;
+      state.pitch = -1.45;
+      state.scale = 2.4;
+      draw();
+    });
+    document.getElementById("front").addEventListener("click", () => {
+      state.yaw = 0;
+      state.pitch = 0;
+      state.scale = 2.1;
+      draw();
+    });
+    document.getElementById("side").addEventListener("click", () => {
+      state.yaw = Math.PI / 2;
+      state.pitch = 0;
+      state.scale = 2.1;
+      draw();
+    });
+
+    window.addEventListener("resize", resize);
+    resize();
+  </script>
+</body>
+</html>
