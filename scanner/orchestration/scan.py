@@ -354,6 +354,7 @@ def run_scan(
         local_window_points = int(profile_fusion_cfg.get("local_window_points", 21))
         local_poly_degree = int(profile_fusion_cfg.get("local_poly_degree", 2))
         local_min_points = int(profile_fusion_cfg.get("local_min_points", 9))
+        max_fuse_distance_mm = float(profile_fusion_cfg.get("max_fuse_distance_mm", 2.5))
 
         def _local_poly_smooth(curve_pts: np.ndarray, t_vals: np.ndarray) -> np.ndarray:
             n = curve_pts.shape[0]
@@ -427,8 +428,25 @@ def run_scan(
             t_grid = np.linspace(t0, t1, n, dtype=np.float64)
             ai = np.column_stack([np.interp(t_grid, ta, a[:, k]) for k in range(3)])
             bi = np.column_stack([np.interp(t_grid, tb, b[:, k]) for k in range(3)])
-            fused_overlap = 0.5 * (ai + bi)
-            fused_overlap = _local_poly_smooth(fused_overlap, t_grid)
+            # Conservative overlap fusion:
+            # - If both cameras agree locally, average them.
+            # - If they diverge, keep both points to avoid collapsing geometry.
+            delta = np.linalg.norm(ai - bi, axis=1)
+            agree = delta <= max_fuse_distance_mm
+            fused_overlap_mid = 0.5 * (ai + bi)
+            fused_overlap_mid = _local_poly_smooth(fused_overlap_mid, t_grid)
+
+            overlap_parts: list[np.ndarray] = []
+            if np.any(agree):
+                overlap_parts.append(fused_overlap_mid[agree])
+            if np.any(~agree):
+                overlap_parts.append(ai[~agree])
+                overlap_parts.append(bi[~agree])
+            fused_overlap = (
+                np.vstack(overlap_parts).astype(np.float64)
+                if overlap_parts
+                else np.empty((0, 3), dtype=np.float64)
+            )
 
             # Keep non-overlapping tails to preserve mono-camera visibility.
             tail_a = a[(ta < t0) | (ta > t1)]
