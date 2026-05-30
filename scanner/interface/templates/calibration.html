@@ -22,7 +22,7 @@
     width: 100%;
     min-height: 240px;
     background: #000;
-    border: 1px solid #30363d;
+    border: 1px solid var(--bdr);
     border-radius: 8px;
     object-fit: contain;
   }
@@ -32,17 +32,17 @@
     gap: 8px;
   }
   .calib-stat {
-    border: 1px solid #30363d;
+    border: 1px solid var(--bdr);
     border-radius: 6px;
     padding: 8px 10px;
-    background: rgba(255,255,255,0.03);
+    background: var(--surf2);
     font-family: monospace;
     font-size: 0.8rem;
-    color: #8b949e;
+    color: var(--txt-mid);
   }
   .calib-stat strong {
     display: block;
-    color: #c9d1d9;
+    color: var(--txt);
     font-size: 1rem;
   }
   .calib-thumbs {
@@ -55,7 +55,7 @@
     aspect-ratio: 4 / 3;
     object-fit: cover;
     border-radius: 6px;
-    border: 1px solid #30363d;
+    border: 1px solid var(--bdr);
     background: #000;
   }
 </style>
@@ -82,15 +82,15 @@
             </option>
             {% endfor %}
           </select>
-          <div class="form-text" style="color:#6e7681;">
+          <div class="form-text" style="color:var(--txt-dim);">
             Les captures damier sont separees par camera. Changez de camera, puis refaites une session.
           </div>
         </div>
 
         <div class="d-flex gap-3 align-items-start">
           <span class="step-badge mt-1">1</span>
-          <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
-            Imprimez un damier, photographiez-le depuis au moins <strong style="color:#c9d1d9;">10 angles differents</strong>.
+          <p class="mb-0" style="color:var(--txt-mid); font-size:0.875rem;">
+            Imprimez un damier, photographiez-le depuis au moins <strong style="color:var(--txt);">10 angles differents</strong>.
             Le resultat est sauvegarde dans le fichier d'intrinseques de la camera choisie.
           </p>
         </div>
@@ -102,7 +102,7 @@
         </div>
         {% endif %}
 
-        <hr style="border-color:#30363d; margin:0;" />
+        <hr style="border-color:var(--bdr); margin:0;" />
 
         <div class="d-flex flex-column gap-3">
 
@@ -111,19 +111,19 @@
               <label class="form-label form-label-sm">Colonnes internes</label>
               <input class="form-control form-control-sm" type="number"
                      id="cam-board-cols" name="board_cols" value="9" min="3" max="20" />
-              <div class="form-text" style="color:#6e7681;">coins interieurs</div>
+              <div class="form-text" style="color:var(--txt-dim);">coins interieurs</div>
             </div>
             <div class="col">
               <label class="form-label form-label-sm">Lignes internes</label>
               <input class="form-control form-control-sm" type="number"
                      id="cam-board-rows" name="board_rows" value="6" min="3" max="20" />
-              <div class="form-text" style="color:#6e7681;">coins interieurs</div>
+              <div class="form-text" style="color:var(--txt-dim);">coins interieurs</div>
             </div>
             <div class="col">
               <label class="form-label form-label-sm">Taille case (mm)</label>
               <input class="form-control form-control-sm" type="number"
                      id="cam-square-mm" name="square_size_mm" value="25" min="1" step="0.5" />
-              <div class="form-text" style="color:#6e7681;">ex. 25 mm</div>
+              <div class="form-text" style="color:var(--txt-dim);">ex. 25 mm</div>
             </div>
           </div>
 
@@ -132,13 +132,13 @@
               <label class="form-label form-label-sm">Exposition calibration (us)</label>
               <input class="form-control form-control-sm" type="number"
                      id="cam-calib-exposure-us" value="20000" min="100" max="1000000" step="100" />
-              <div class="form-text" style="color:#6e7681;">utilisee seulement pour le damier</div>
+              <div class="form-text" style="color:var(--txt-dim);">utilisee seulement pour le damier</div>
             </div>
             <div class="col">
               <label class="form-label form-label-sm">Gain calibration</label>
               <input class="form-control form-control-sm" type="number"
                      id="cam-calib-gain" value="1" min="0" step="0.1" />
-              <div class="form-text" style="color:#6e7681;">focus et resolution inchanges</div>
+              <div class="form-text" style="color:var(--txt-dim);">focus et resolution inchanges</div>
             </div>
           </div>
 
@@ -171,7 +171,7 @@
             </button>
           </div>
 
-          <div class="form-text" style="color:#6e7681;">
+          <div class="form-text" style="color:var(--txt-dim);">
             Visez 12 a 20 poses differentes. Minimum technique: 4 images acceptees.
           </div>
 
@@ -184,7 +184,7 @@
           </div>
 
           <details>
-            <summary style="color:#8b949e; cursor:pointer;">Mode secours: importer des images</summary>
+            <summary style="color:var(--txt-mid); cursor:pointer;">Mode secours: importer des images</summary>
             <form id="form-camera" enctype="multipart/form-data" class="d-flex flex-column gap-3 mt-3">
               <div>
                 <label class="form-label">Images du damier</label>
@@ -197,7 +197,7 @@
                   multiple
                   required
                 />
-                <div class="form-text" style="color:#6e7681;">Formats acceptes : JPG, PNG</div>
+                <div class="form-text" style="color:var(--txt-dim);">Formats acceptes : JPG, PNG</div>
               </div>
               <input type="hidden" name="board_cols" id="upload-board-cols" value="9" />
               <input type="hidden" name="board_rows" id="upload-board-rows" value="6" />
@@ -228,27 +228,27 @@
 
         <div class="d-flex gap-3 align-items-start">
           <span class="step-badge mt-1">1</span>
-          <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
+          <p class="mb-0" style="color:var(--txt-mid); font-size:0.875rem;">
             Gardez une planche blanche verticale, face au laser, a une
-            <strong style="color:#c9d1d9;">position Z connue</strong> dans le repere plateau.
+            <strong style="color:var(--txt);">position Z connue</strong> dans le repere plateau.
             Entrez Z, puis prenez une photo: les deux cameras sont capturees ensemble.
           </p>
         </div>
         <div class="d-flex gap-3 align-items-start">
           <span class="step-badge mt-1">2</span>
-          <p class="mb-0" style="color:#8b949e; font-size:0.875rem;">
+          <p class="mb-0" style="color:var(--txt-mid); font-size:0.875rem;">
             Repetez avec plusieurs positions, par exemple <code>-100, -60, -20, 20, 60</code>,
             puis lancez la calibration laser. Un seul plan laser global est genere.
           </p>
         </div>
 
-        <hr style="border-color:#30363d; margin:0;" />
+        <hr style="border-color:var(--bdr); margin:0;" />
 
         <div class="d-flex flex-column gap-3">
           <div>
             <label class="form-label">Position Z du carton (mm)</label>
             <input class="form-control" type="number" id="laser-z-mm" value="0" step="1" />
-            <div class="form-text" style="color:#6e7681;">
+            <div class="form-text" style="color:var(--txt-dim);">
               Centre plateau = 0. Cote laser/cameras = valeurs negatives.
             </div>
           </div>
@@ -539,7 +539,7 @@ async function submitCalibForm(formId, endpoint, resultId) {
   var btn    = form.querySelector('button[type="submit"]');
 
   result.innerHTML =
-    '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
+    '<div class="d-flex align-items-center gap-2 mt-2" style="color:var(--txt-mid); font-size:.875rem;">' +
     '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
     'Calibration en cours\u2026</div>';
   btn.disabled = true;
@@ -597,13 +597,13 @@ function renderLaserSession(data) {
   box.innerHTML = '';
   (data.captures || []).forEach(function(c) {
     var wrap = document.createElement('div');
-    wrap.style.border = '1px solid #30363d';
+    wrap.style.border = '1px solid var(--bdr)';
     wrap.style.borderRadius = '6px';
     wrap.style.padding = '6px';
-    wrap.style.background = 'rgba(255,255,255,0.03)';
+    wrap.style.background = 'var(--surf2)';
     var title = document.createElement('div');
     title.textContent = c.index + '. Z=' + c.z_mm + ' mm';
-    title.style.color = '#c9d1d9';
+    title.style.color = 'var(--txt)';
     title.style.fontSize = '0.8rem';
     title.style.marginBottom = '6px';
     wrap.appendChild(title);
@@ -639,7 +639,7 @@ async function captureLaserCalibrationPair() {
   };
   btn.disabled = true;
   result.innerHTML =
-    '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
+    '<div class="d-flex align-items-center gap-2 mt-2" style="color:var(--txt-mid); font-size:.875rem;">' +
     '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
     'Capture des deux cameras en cours\u2026</div>';
   try {
@@ -687,7 +687,7 @@ async function runLaserCalibrationSession() {
   var btn = document.getElementById('btn-laser-run');
   btn.disabled = true;
   result.innerHTML =
-    '<div class="d-flex align-items-center gap-2 mt-2" style="color:#8b949e; font-size:.875rem;">' +
+    '<div class="d-flex align-items-center gap-2 mt-2" style="color:var(--txt-mid); font-size:.875rem;">' +
     '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>' +
     'Calibration du plan laser global en cours\u2026</div>';
   try {

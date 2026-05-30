@@ -5,8 +5,8 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three": "{{ url_for('static', filename='vendor/three/three.module.js') }}",
+    "three/addons/": "{{ url_for('static', filename='vendor/three/addons/') }}"
   }
 }
 </script>
@@ -241,7 +241,7 @@ function ensureViewer() {
     const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor(0x000000);
+    renderer.setClearColor(0x0f172a);
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);

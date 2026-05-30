@@ -92,7 +92,7 @@
           {% endif %}
         </div>
 
-        <div class="cam-feed" style="border:1px solid #30363d;">
+        <div class="cam-feed" style="border:1px solid var(--bdr);">
           <img id="cfg-img-{{ camera.id }}" src="/manual/camera/frame?camera={{ camera.id }}" alt="{{ camera.label }}" style="background:#000;min-height:220px;object-fit:contain;" />
           <span class="cam-tag tl">{{ camera.label }}</span>
           <span class="cam-tag br" id="cfg-shape-{{ camera.id }}">-</span>

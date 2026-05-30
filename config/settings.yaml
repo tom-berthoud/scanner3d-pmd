@@ -197,3 +197,8 @@ interface:
   led_enabled: false        # false = n'initialise pas les GPIO LEDs
   display_type: none        # type d'écran : oled / lcd / none
   display_i2c_address: 0x3C # adresse I2C de l'écran OLED (souvent 0x3C ou 0x3D)
+  # Pages d'ingénierie (Calibration/Extrinsèque/Cam Config/Manuel) verrouillées
+  # par défaut ; le scan reste toujours libre. Déverrouillage via SSH avec le
+  # script scripts/scanner-eng.sh (on/off).
+  engineering_unlock_file: /tmp/scanner-engineering.unlock  # présence = déverrouillé ; /tmp => reverrouille au reboot
+  engineering_force: false   # true sur une machine de dev = toujours déverrouillé

@@ -82,7 +82,7 @@
         <div class="row g-2">
           {% for camera in cameras %}
           <div class="col-12 col-xl-6">
-            <div class="cam-feed" style="border:1px solid #30363d;">
+            <div class="cam-feed" style="border:1px solid var(--bdr);">
               <img
                 class="manual-camera-img"
                 data-camera="{{ camera.id }}"
@@ -125,7 +125,7 @@
                 <span>{{ camera.label }} Processing</span>
               </div>
               <div class="trigger-body">
-                <div class="cam-feed" style="border:1px solid #30363d;">
+                <div class="cam-feed" style="border:1px solid var(--bdr);">
                   <img id="proc-img-{{ camera.id }}" src="" alt="Processing {{ camera.label }}" style="background:#000;min-height:220px;object-fit:contain;" />
                   <canvas
                     class="mask-canvas"
@@ -336,29 +336,51 @@ async function manualSafeOff() {
   await manualPost('/manual/safe-off', {}, 'Sorties coupees');
 }
 
-let _camTimer = null;
+// Self-rescheduling preview loop: the next frame is only requested once the
+// current one has fully loaded, so slow captures on the Pi never pile up
+// outstanding requests. CAM_GAP_MS is the breathing room between cycles.
+const CAM_GAP_MS = 200;
+let _camRunning = false;
+let _camTimeout = null;
+
+function scheduleCam() {
+  if (!_camRunning) return;
+  _camTimeout = setTimeout(refreshCameraFrame, CAM_GAP_MS);
+}
 
 function refreshCameraFrame() {
-  document.querySelectorAll('.manual-camera-img').forEach(function(img) {
+  var imgs = document.querySelectorAll('.manual-camera-img');
+  if (!imgs.length) { scheduleCam(); return; }
+  var pending = imgs.length;
+  function done() { if (--pending <= 0) scheduleCam(); }
+  imgs.forEach(function(img) {
     var camera = img.getAttribute('data-camera') || '';
+    img.onload = done;
+    img.onerror = done;
     img.src = '/manual/camera/frame?camera=' + encodeURIComponent(camera) + '&t=' + Date.now();
   });
 }
 
 function toggleCameraAuto() {
   var btn = document.getElementById('btn-camera-toggle');
-  if (_camTimer) {
-    clearInterval(_camTimer);
-    _camTimer = null;
+  if (_camRunning) {
+    _camRunning = false;
+    if (_camTimeout) { clearTimeout(_camTimeout); _camTimeout = null; }
     if (btn) btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Auto';
     return;
   }
+  _camRunning = true;
   refreshCameraFrame();
-  _camTimer = setInterval(refreshCameraFrame, 700);
   if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Stop';
 }
 
-let _tuningTimer = null;
+let _tuningRunning = false;
+let _tuningTimeout = null;
+
+function scheduleTuning() {
+  if (!_tuningRunning) return;
+  _tuningTimeout = setTimeout(refreshTuningFrame, CAM_GAP_MS);
+}
 
 async function refreshTuningFrame() {
   var img = document.getElementById('tuning-img');
@@ -382,29 +404,34 @@ async function refreshTuningFrame() {
     var grMax = r.headers.get('X-GR-Max') || '?';
     var grMean = r.headers.get('X-GR-Mean') || '?';
     var blob = await r.blob();
+    var prev = img.src;
     img.src = URL.createObjectURL(blob);
+    if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
     if (stats) {
       stats.textContent = 'Detections : ' + detected + ' cols  |  G max=' + grMax + ' mean=' + grMean + '  |  seuil=' + th + ' min_px=' + mp;
     }
   } catch (e) {
     if (stats) stats.textContent = 'Erreur: ' + e;
+  } finally {
+    scheduleTuning();
   }
 }
 
 function toggleTuningAuto() {
   var btn = document.getElementById('btn-tuning-toggle');
-  if (_tuningTimer) {
-    clearInterval(_tuningTimer);
-    _tuningTimer = null;
+  if (_tuningRunning) {
+    _tuningRunning = false;
+    if (_tuningTimeout) { clearTimeout(_tuningTimeout); _tuningTimeout = null; }
     if (btn) btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Auto';
     return;
   }
+  _tuningRunning = true;
   refreshTuningFrame();
-  _tuningTimer = setInterval(refreshTuningFrame, 800);
   if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Stop';
 }
 
 let _processingTimers = {};
+let _processingRunning = {};
 let _maskDrag = {};
 let _maskState = {};
 
@@ -788,6 +815,10 @@ async function refreshProcessingFrame(camera) {
     }
   } catch (e) {
     if (stats) stats.textContent = 'Erreur: ' + e;
+  } finally {
+    if (_processingRunning[camera]) {
+      _processingTimers[camera] = setTimeout(function() { refreshProcessingFrame(camera); }, CAM_GAP_MS);
+    }
   }
 }
 
@@ -811,14 +842,14 @@ async function applyProcessingConfig(camera) {
 
 function toggleProcessingAuto(camera) {
   var btn = document.getElementById('btn-proc-auto-' + camera);
-  if (_processingTimers[camera]) {
-    clearInterval(_processingTimers[camera]);
-    delete _processingTimers[camera];
+  if (_processingRunning[camera]) {
+    _processingRunning[camera] = false;
+    if (_processingTimers[camera]) { clearTimeout(_processingTimers[camera]); delete _processingTimers[camera]; }
     if (btn) btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Auto';
     return;
   }
+  _processingRunning[camera] = true;
   refreshProcessingFrame(camera);
-  _processingTimers[camera] = setInterval(function() { refreshProcessingFrame(camera); }, 900);
   if (btn) btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Stop';
 }
 
