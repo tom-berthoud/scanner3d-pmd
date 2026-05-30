@@ -25,7 +25,7 @@
   --txt-mid:   #52677d;
   --txt-dim:   #94a3b8;
   --hover:     rgba(0,0,0,.05);
-  --viewer-bg: #0f172a;
+  --viewer-bg: #eaf0f6;
   --mono:      'Space Mono', monospace;
   --mono2:     'JetBrains Mono', monospace;
   --touch-min: 48px;
@@ -347,7 +347,7 @@ body {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
+  background: var(--viewer-bg);
   display: none;
 }
 #stl-canvas {
@@ -372,15 +372,96 @@ body {
   text-align: center;
   padding: 0 16px;
 }
-.ph-icon {
-  width: 48px; height: 48px;
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 6px;
+.ph-scanbox {
+  position: relative;
+  width: 120px;
+  height: 120px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255,255,255,.25);
-  font-size: 20px;
+  overflow: hidden;
+}
+.ph-cube {
+  font-size: 56px;
+  color: var(--bdr-hi);
+  animation: ph-float 3s ease-in-out infinite;
+}
+@keyframes ph-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+.ph-laser {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+  box-shadow: 0 0 8px var(--green);
+  animation: ph-sweep 2.6s ease-in-out infinite;
+}
+@keyframes ph-sweep {
+  0%   { top: 14%; opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { top: 86%; opacity: 0; }
+}
+#viewer-placeholder-text {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--txt-mid);
+}
+.ph-hint {
+  font-size: 9px;
+  color: var(--txt-dim);
+  letter-spacing: .04em;
+}
+
+/* 3D wireframe cube on a turntable — shown in attract mode only */
+.ph-3d {
+  display: none;
+  position: absolute;
+  inset: 0;
+  perspective: 420px;
+}
+.ph-cube3d {
+  position: absolute;
+  top: 33px;
+  left: 50%;
+  width: 48px;
+  height: 48px;
+  margin-left: -24px;
+  transform-style: preserve-3d;
+  animation: cube-spin 9s linear infinite;
+}
+@keyframes cube-spin {
+  from { transform: rotateX(-20deg) rotateY(0deg); }
+  to   { transform: rotateX(-20deg) rotateY(360deg); }
+}
+.ph-cube3d .cf {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  border: 1.5px solid var(--cyan);
+  background: rgba(2, 132, 199, .06);
+}
+.cf-front  { transform: translateZ(24px); }
+.cf-back   { transform: rotateY(180deg) translateZ(24px); }
+.cf-right  { transform: rotateY(90deg) translateZ(24px); }
+.cf-left   { transform: rotateY(-90deg) translateZ(24px); }
+.cf-top    { transform: rotateX(90deg) translateZ(24px); }
+.cf-bottom { transform: rotateX(-90deg) translateZ(24px); }
+.ph-turntable {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  width: 92px;
+  height: 24px;
+  margin-left: -46px;
+  border: 1.5px dashed var(--bdr-hi);
+  border-radius: 50%;
 }
 .stage-tag {
   position: absolute;
@@ -391,7 +472,7 @@ body {
   text-transform: uppercase;
   padding: 3px 6px;
 }
-.stage-tag.tl { top: 8px; left: 10px; color: var(--amber); text-shadow: 0 0 8px var(--amber); }
+.stage-tag.tl { top: 8px; left: 10px; color: var(--amber); }
 .stage-tag.br { bottom: 8px; right: 10px; color: var(--txt-dim); }
 .stage-foot {
   display: flex;
@@ -469,6 +550,16 @@ body {
 .scan-ring .ring-fill.scanning { stroke: var(--amber); }
 .scan-ring .ring-fill.complete { stroke: var(--green); }
 .scan-ring .ring-fill.error    { stroke: var(--red);   }
+/* Indeterminate spinner for post-processing / meshing (unknown duration). */
+.scan-ring .ring-fill.indeterminate {
+  stroke: var(--amber);
+  stroke-dasharray: 150 553;
+  stroke-dashoffset: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ring-spin 1.1s linear infinite;
+}
+@keyframes ring-spin { to { transform: rotate(360deg); } }
 
 .scan-btn {
   position: absolute;
@@ -505,6 +596,13 @@ body {
   color: var(--txt-mid);
   text-align: center;
   min-height: 18px;
+}
+.hero-counter {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--amber);
 }
 .hero-door {
   font-family: var(--mono);
@@ -557,6 +655,75 @@ body {
   flex-direction: column;
   gap: 16px;
 }
+
+/* ---- Result card (shown on COMPLETE) ---- */
+.result-card {
+  width: 100%;
+  max-width: 380px;
+  border: 1px solid var(--bdr);
+  border-radius: 10px;
+  background: var(--surf);
+  overflow: hidden;
+}
+.result-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--green-d);
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--bdr);
+}
+.result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--bdr);
+}
+.result-item {
+  background: var(--surf);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.result-item .rk {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--txt-dim);
+}
+.result-item .rv {
+  font-family: var(--mono2);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--txt);
+}
+
+/* ---- Attract mode (invite interaction after idle) ---- */
+body.attract .scan-btn {
+  animation: scan-attract 1.8s ease-in-out infinite;
+}
+@keyframes scan-attract {
+  0%, 100% { box-shadow: 0 2px 12px rgba(0,0,0,.08); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 8px var(--cyan-d), 0 6px 22px rgba(2,132,199,.30); transform: scale(1.04); }
+}
+body.attract .scan-ring .ring-bg {
+  stroke: var(--cyan);
+  animation: attract-ring 1.8s ease-in-out infinite;
+}
+@keyframes attract-ring {
+  0%, 100% { opacity: .25; }
+  50%      { opacity: .55; }
+}
+/* In attract mode, swap the flat 2D icon for the rotating 3D cube. */
+body.attract .ph-cube { display: none; }
+body.attract .ph-3d { display: block; }
 
 /* ============================================================
    SHARED — engineering pages (camera tuning, masks)
