@@ -1,6 +1,8 @@
 /* ============================================================
    Scanner 3D — Unified Stylesheet
-   Modes: kiosk (<480px or ?mode=kiosk), mobile (480-900px), desktop (>900px)
+   Scan page = focused, kiosk-like console. Engineering pages
+   (calibration / extrinsics / cam-config / manual) reuse the
+   shared components below (pnl, cam-feed, mask-*, forms, …).
    ============================================================ */
 
 /* ---- CSS Variables ---- */
@@ -37,7 +39,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* ---- Navbar (desktop) ---- */
+/* ---- Top Navbar (minimal, responsive) ---- */
 .nav-top {
   background-color: var(--surf);
   border-bottom: 1px solid var(--bdr);
@@ -55,18 +57,23 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 .nav-top .nav-links {
   display: flex;
   gap: 4px;
   margin-left: 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.nav-top .nav-links::-webkit-scrollbar { display: none; }
 .nav-top .nav-links a {
   color: var(--txt-mid);
   text-decoration: none;
   padding: 6px 14px;
   border-radius: 6px;
   font-size: 0.875rem;
+  white-space: nowrap;
   transition: background 0.2s, color 0.2s;
 }
 .nav-top .nav-links a:hover,
@@ -74,139 +81,19 @@ body {
   color: var(--txt);
   background: var(--hover);
 }
-
-/* ---- Bottom Tab Bar (mobile) ---- */
-.tab-bar {
-  display: none;
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 56px;
-  background: var(--surf);
-  border-top: 1px solid var(--bdr);
-  z-index: 1000;
-  justify-content: space-around;
-  align-items: center;
-}
-.tab-bar a {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  color: var(--txt-mid);
-  text-decoration: none;
-  font-size: 10px;
-  padding: 6px 12px;
-  min-width: var(--touch-min);
-  min-height: var(--touch-min);
-  justify-content: center;
-  transition: color 0.2s;
-}
-.tab-bar a i { font-size: 20px; }
-.tab-bar a.active,
-.tab-bar a:hover { color: var(--cyan); }
-
-/* ---- Kiosk Status Bar ---- */
-.kiosk-bar {
-  display: none;
-  height: 28px;
-  background: var(--surf);
-  border-bottom: 1px solid var(--bdr);
-  padding: 0 10px;
-  align-items: center;
-  justify-content: space-between;
+.nav-eng-badge {
+  margin-left: auto;
+  flex-shrink: 0;
   font-family: var(--mono);
-  font-size: 10px;
-  color: var(--txt-mid);
-}
-.kiosk-bar .title { letter-spacing: 0.1em; text-transform: uppercase; }
-.kiosk-gear {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--txt-mid);
-  cursor: pointer;
-  border: none;
-  background: none;
-  font-size: 16px;
-  min-width: var(--touch-min);
-  min-height: var(--touch-min);
-}
-.kiosk-gear:hover { color: var(--txt); }
-
-/* ---- Gear Slide Panel ---- */
-.gear-panel {
-  position: fixed;
-  top: 0;
-  right: -280px;
-  width: 280px;
-  height: 100%;
-  background: var(--surf);
-  border-left: 1px solid var(--bdr);
-  z-index: 2000;
-  transition: right 0.3s ease;
-  padding: 16px;
-  overflow-y: auto;
-}
-.gear-panel.open { right: 0; }
-.gear-panel-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  z-index: 1999;
-}
-.gear-panel-overlay.open { display: block; }
-.gear-panel h6 {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--txt-mid);
-  margin-bottom: 12px;
-}
-.gear-panel a {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--txt);
-  text-decoration: none;
-  padding: 12px 8px;
-  border-bottom: 1px solid var(--bdr);
-  font-size: 14px;
-  min-height: var(--touch-min);
-}
-.gear-panel a:hover { background: var(--hover); }
-.gear-panel a i { font-size: 18px; color: var(--txt-mid); }
-.gear-panel .ip-info {
-  margin-top: 20px;
-  padding: 12px;
-  background: var(--surf);
-  border: 1px solid var(--bdr);
-  border-radius: 6px;
-  font-family: var(--mono2);
-  font-size: 11px;
-  color: var(--txt-mid);
-}
-.gear-panel .ip-info strong { color: var(--cyan); }
-.gear-close {
-  border: none;
-  background: none;
-  color: var(--txt-mid);
-  font-size: 20px;
-  cursor: pointer;
-  float: right;
-  min-width: var(--touch-min);
-  min-height: var(--touch-min);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  font-size: 9px;
+  letter-spacing: .12em;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+  border-radius: 3px;
+  padding: 2px 7px;
 }
 
-/* ---- Base panel ---- */
+/* ---- Base panel (shared with engineering pages) ---- */
 .pnl {
   background: var(--surf);
   border: 1px solid var(--bdr);
@@ -214,7 +101,6 @@ body {
   overflow: hidden;
 }
 .pnl + .pnl { margin-top: 12px; }
-
 .pnl-head {
   display: flex;
   align-items: center;
@@ -257,29 +143,22 @@ body {
 .led.blink      { animation: blink      1s    ease-in-out infinite; }
 .led.blink-fast { animation: blink-fast .25s  ease-in-out infinite; }
 
-/* ---- Status ---- */
-.status-body { padding: 14px 16px 10px; }
-
-.state-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-
+/* ---- State name ---- */
 .state-name {
   font-family: var(--mono);
   font-size: 16px;
   font-weight: 700;
   letter-spacing: .06em;
   color: var(--txt);
-  flex: 1;
   transition: color .3s;
 }
-.state-name.scanning { color: var(--amber); }
-.state-name.complete { color: var(--green); }
-.state-name.error    { color: var(--red);   }
+.state-name.scanning,
+.state-name.processing,
+.state-name.exporting { color: var(--amber); }
+.state-name.complete  { color: var(--green); }
+.state-name.error     { color: var(--red);   }
 
+/* ---- shared message line (engineering pages) ---- */
 .state-msg {
   font-family: var(--mono2);
   font-size: 10px;
@@ -290,16 +169,15 @@ body {
 
 /* ---- Progress ---- */
 .prog-track {
-  height: 2px;
+  height: 4px;
   background: var(--bdr);
-  border-radius: 1px;
+  border-radius: 2px;
   overflow: hidden;
-  margin-bottom: 4px;
 }
 .prog-fill {
   height: 100%;
   background: linear-gradient(90deg, #0099bb, var(--cyan));
-  border-radius: 1px;
+  border-radius: 2px;
   transition: width .35s ease;
   position: relative;
 }
@@ -321,60 +199,16 @@ body {
   font-size: 9px;
   color: var(--txt-dim);
   letter-spacing: .05em;
-}
-
-/* ---- Scan Button (desktop/mobile) ---- */
-.trigger-body { padding: 14px; display: flex; flex-direction: column; gap: 8px; }
-
-.btn-scan {
-  position: relative;
-  width: 100%;
-  padding: 14px 20px;
-  background: transparent;
-  border: 1px solid var(--cyan);
-  border-radius: 3px;
-  color: var(--cyan);
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  cursor: pointer;
-  overflow: hidden;
-  transition: background .2s, box-shadow .2s, border-color .2s, color .2s;
-  min-height: var(--touch-min);
-}
-.btn-scan:not(:disabled):hover,
-.btn-scan:not(:disabled):active {
-  background: var(--cyan-d);
-  box-shadow: 0 0 24px rgba(0,212,255,.15), inset 0 0 16px rgba(0,212,255,.04);
-}
-.btn-scan:disabled { opacity: .35; cursor: not-allowed; }
-.btn-scan.active {
-  border-color: var(--amber);
-  color: var(--amber);
-  background: var(--amber-d);
-}
-.btn-scan.active::before {
-  content: '';
-  position: absolute;
-  top: 0; bottom: 0; left: -30%;
-  width: 35%;
-  background: linear-gradient(90deg, transparent, rgba(255,147,0,.35), transparent);
-  animation: sweep 1.6s ease-in-out infinite;
-}
-@keyframes sweep {
-  0%   { left: -35%; }
-  100% { left: 110%; }
+  margin-top: 4px;
 }
 
 /* ---- Download & USB buttons ---- */
+.trigger-body { padding: 14px; display: flex; flex-direction: column; gap: 8px; }
 .btn-dl, .btn-usb {
-  width: 100%;
-  padding: 9px 16px;
+  padding: 11px 16px;
   background: transparent;
   border: 1px solid var(--bdr-hi);
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--txt-mid);
   font-family: var(--mono);
   font-size: 10px;
@@ -386,7 +220,7 @@ body {
   justify-content: center;
   gap: 7px;
   cursor: pointer;
-  transition: border-color .2s, color .2s;
+  transition: border-color .2s, color .2s, background .2s;
   min-height: var(--touch-min);
 }
 .btn-dl:not(.off):hover,
@@ -398,7 +232,6 @@ body {
   text-decoration: none;
 }
 .btn-dl.off, .btn-usb.off { opacity: .28; pointer-events: none; }
-
 .btn-usb { border-color: var(--green); color: var(--green); }
 .btn-usb:not(.off):hover,
 .btn-usb:not(.off):active {
@@ -410,16 +243,17 @@ body {
 .err-strip {
   padding: 7px 10px;
   background: var(--red-d);
-  border: 1px solid rgba(255,64,64,.25);
-  border-radius: 3px;
+  border: 1px solid rgba(220,38,38,.25);
+  border-radius: 6px;
   font-family: var(--mono2);
   font-size: 10px;
   color: var(--red);
 }
 
+/* ---- Processing steps ---- */
 .proc-steps {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 .proc-step {
@@ -441,13 +275,10 @@ body {
   background: var(--green-d);
   color: var(--green);
 }
-.proc-step.done::before {
-  content: "✓ ";
-}
+.proc-step.done::before { content: "✓ "; }
 
 /* ---- Terminal log ---- */
 .log-body {
-  padding: 10px 12px;
   font-family: var(--mono2);
   font-size: 10px;
   line-height: 1.75;
@@ -464,33 +295,114 @@ body {
 .log-ok  .log-msg { color: var(--green); }
 .log-err .log-msg { color: var(--red);   }
 
-/* ---- Grid layout (desktop) ---- */
-.scan-grid {
-  display: grid;
-  grid-template-columns: 360px 1fr;
-  gap: 14px;
-  padding-bottom: 24px;
+/* ============================================================
+   SCAN PAGE — focused, centered, kiosk-like
+   ============================================================ */
+.scan-page {
+  max-width: 820px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
-/* ---- Right column ---- */
-.viewer-col { display: flex; flex-direction: column; gap: 12px; }
-
-/* Camera feed */
-.cam-pnl { display: none; }
-.cam-pnl.show { display: block; }
-
-.artifact-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+/* ---- Stage : single visual zone (live extraction → 3D model) ---- */
+.stage {
+  background: var(--surf);
+  border: 1px solid var(--bdr);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.stage-tabs {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 10px;
   background: var(--surf2);
   border-bottom: 1px solid var(--bdr);
 }
+.stage-tabs:empty { display: none; }
+.stage-view {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: var(--viewer-bg);
+}
+.stage-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  display: none;
+}
+#stl-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+}
+.stage-ph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--txt-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-align: center;
+  padding: 0 16px;
+}
+.ph-icon {
+  width: 48px; height: 48px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,.25);
+  font-size: 20px;
+}
+.stage-tag {
+  position: absolute;
+  z-index: 4;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 3px 6px;
+}
+.stage-tag.tl { top: 8px; left: 10px; color: var(--amber); text-shadow: 0 0 8px var(--amber); }
+.stage-tag.br { bottom: 8px; right: 10px; color: var(--txt-dim); }
+.stage-foot {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--txt-dim);
+  background: var(--surf2);
+  border-top: 1px solid var(--bdr);
+}
+
+/* ---- Artifact tabs (in stage) ---- */
 .artifact-tab {
-  min-height: 34px;
+  min-height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--bdr-hi);
-  border-radius: 3px;
+  border-radius: 16px;
   background: transparent;
   color: var(--txt-mid);
   font-family: var(--mono);
@@ -517,6 +429,135 @@ body {
   box-shadow: 0 0 6px var(--green);
 }
 
+/* ---- Hero : main control ---- */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.hero-ring-wrap {
+  position: relative;
+  width: 180px;
+  height: 180px;
+}
+.scan-ring {
+  position: absolute;
+  inset: 0;
+  width: 180px;
+  height: 180px;
+  transform: rotate(-90deg);
+}
+.scan-ring circle { fill: none; stroke-width: 4; }
+.scan-ring .ring-bg { stroke: var(--bdr); }
+.scan-ring .ring-fill {
+  stroke: var(--cyan);
+  stroke-dasharray: 553;
+  stroke-dashoffset: 553;
+  stroke-linecap: round;
+  transition: stroke-dashoffset .5s ease, stroke .3s;
+}
+.scan-ring .ring-fill.scanning { stroke: var(--amber); }
+.scan-ring .ring-fill.complete { stroke: var(--green); }
+.scan-ring .ring-fill.error    { stroke: var(--red);   }
+
+.scan-btn {
+  position: absolute;
+  top: 18px; left: 18px;
+  width: 144px; height: 144px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surf);
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.08);
+  transition: transform .15s, box-shadow .2s, color .2s;
+}
+.scan-btn i { font-size: 32px; }
+.scan-btn span { font-size: 15px; letter-spacing: .16em; }
+.scan-btn:not(:disabled):hover { box-shadow: 0 4px 20px rgba(2,132,199,.28); }
+.scan-btn:not(:disabled):active { transform: scale(.96); }
+.scan-btn:disabled { cursor: not-allowed; }
+.scan-btn.scanning { color: var(--amber); }
+.scan-btn.error    { color: var(--red); }
+
+.hero-state { display: flex; align-items: center; gap: 10px; }
+.hero-state .state-name { font-size: 18px; }
+.hero-msg {
+  font-family: var(--mono2);
+  font-size: 12px;
+  color: var(--txt-mid);
+  text-align: center;
+  min-height: 18px;
+}
+.hero-door {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txt-dim);
+  letter-spacing: .06em;
+}
+.hero .err-strip { width: 100%; max-width: 380px; text-align: center; }
+.hero-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 380px;
+  margin-top: 6px;
+}
+.hero-actions .btn-dl,
+.hero-actions .btn-usb { flex: 1; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { display: inline-block; animation: spin 1s linear infinite; }
+
+/* ---- Details (collapsible) ---- */
+.details-panel {
+  border: 1px solid var(--bdr);
+  border-radius: 10px;
+  background: var(--surf);
+  overflow: hidden;
+}
+.details-panel > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 12px 16px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--txt-mid);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+.details-panel > summary::-webkit-details-marker { display: none; }
+.details-panel .caret { transition: transform .2s; font-size: 12px; }
+.details-panel[open] .caret { transform: rotate(90deg); }
+.details-body {
+  padding: 14px 16px;
+  border-top: 1px solid var(--bdr);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ============================================================
+   SHARED — engineering pages (camera tuning, masks)
+   ============================================================ */
+.scan-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 14px;
+  padding-bottom: 24px;
+}
 .cam-feed {
   position: relative;
   background: #000;
@@ -562,11 +603,7 @@ body {
 .cam-tag.tl { top: 8px; left: 10px; color: var(--amber); text-shadow: 0 0 8px var(--amber); }
 .cam-tag.br { bottom: 8px; right: 10px; color: var(--txt-dim); }
 .mask-mode { width: auto; min-width: 130px; }
-.mask-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+.mask-list { display: flex; flex-direction: column; gap: 6px; }
 .mask-item {
   display: flex;
   align-items: center;
@@ -583,48 +620,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* 3D viewer */
-.viewer-pnl { flex: 1; min-height: 0; }
-.viewer-canvas-wrap { position: relative; background: var(--viewer-bg); }
-#viewer-placeholder {
-  height: 420px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--txt-dim);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: .08em;
-}
-.ph-icon {
-  width: 44px; height: 44px;
-  border: 1px solid var(--bdr-hi);
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--bdr-hi);
-  font-size: 18px;
-}
-#stl-canvas {
-  display: none;
-  width: 100%;
-  height: 420px;
-  background: var(--viewer-bg);
-}
-.viewer-hint {
-  padding: 5px 12px;
-  border-top: 1px solid var(--bdr);
-  font-family: var(--mono);
-  font-size: 8px;
-  letter-spacing: .1em;
-  color: var(--txt-dim);
-  text-align: center;
-  background: var(--surf2);
 }
 
 /* ---- Toast notifications ---- */
@@ -646,9 +641,9 @@ body {
   animation: toast-in 0.3s ease;
   max-width: 320px;
 }
-.toast-msg.success { background: rgba(0,230,118,0.9); color: #000; }
-.toast-msg.error   { background: rgba(255,64,64,0.9); }
-.toast-msg.info    { background: rgba(0,212,255,0.9); color: #000; }
+.toast-msg.success { background: rgba(5,150,105,0.95); }
+.toast-msg.error   { background: rgba(220,38,38,0.95); }
+.toast-msg.info    { background: rgba(2,132,199,0.95); }
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(-10px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -682,9 +677,7 @@ body {
   border-radius: 0.25rem;
   cursor: pointer;
 }
-.form-control[type="file"]::file-selector-button:hover {
-  background-color: var(--bdr);
-}
+.form-control[type="file"]::file-selector-button:hover { background-color: var(--bdr); }
 .text-muted { color: var(--txt-mid) !important; }
 code {
   background-color: var(--surf2);
@@ -707,8 +700,6 @@ code {
   font-weight: 700;
   flex-shrink: 0;
 }
-
-/* Bootstrap card light overrides */
 .card {
   background-color: var(--surf);
   border: 1px solid var(--bdr);
@@ -735,194 +726,50 @@ code {
   border-top: 1px solid var(--bdr);
 }
 
-/* ---- Kiosk Scan Button (giant circular) ---- */
-.kiosk-scan-wrap {
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  padding: 10px;
-  gap: 12px;
-}
-
-.kiosk-btn {
-  position: relative;
-  width: 160px;
-  height: 160px;
-  border-radius: 50%;
-  border: 3px solid var(--cyan);
-  background: transparent;
-  color: var(--cyan);
-  font-family: var(--mono);
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 4px;
-}
-.kiosk-btn i { font-size: 28px; }
-.kiosk-btn:not(:disabled):active {
-  background: var(--cyan-d);
-  box-shadow: 0 0 40px rgba(0,212,255,0.3);
-  transform: scale(0.95);
-}
-.kiosk-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.kiosk-btn.scanning {
-  border-color: var(--amber);
-  color: var(--amber);
-  animation: kiosk-pulse 2s ease-in-out infinite;
-}
-@keyframes kiosk-pulse {
-  0%, 100% { box-shadow: 0 0 10px rgba(255,147,0,0.2); }
-  50%      { box-shadow: 0 0 30px rgba(255,147,0,0.5); }
-}
-.kiosk-btn.complete {
-  border-color: var(--green);
-  color: var(--green);
-}
-.kiosk-btn.error {
-  border-color: var(--red);
-  color: var(--red);
-}
-.kiosk-btn.usb-mode {
-  border-color: var(--green);
-  color: var(--green);
-}
-
-/* Kiosk progress ring (SVG around button) */
-.kiosk-ring-wrap {
-  position: relative;
-  width: 180px;
-  height: 180px;
-}
-.kiosk-ring-wrap .kiosk-btn {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-}
-.kiosk-ring {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 180px;
-  height: 180px;
-  transform: rotate(-90deg);
-}
-.kiosk-ring circle {
-  fill: none;
-  stroke-width: 3;
-}
-.kiosk-ring .ring-bg {
-  stroke: var(--bdr);
-}
-.kiosk-ring .ring-fill {
-  stroke: var(--cyan);
-  stroke-dasharray: 553;
-  stroke-dashoffset: 553;
-  stroke-linecap: round;
-  transition: stroke-dashoffset 0.5s ease, stroke 0.3s;
-}
-.kiosk-ring .ring-fill.scanning { stroke: var(--amber); }
-.kiosk-ring .ring-fill.complete { stroke: var(--green); }
-
-.kiosk-status {
-  text-align: center;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--txt-mid);
-  letter-spacing: 0.06em;
-}
-.kiosk-status .state { font-weight: 700; color: var(--txt); }
-.kiosk-status .msg { font-size: 9px; margin-top: 2px; }
-
-.kiosk-new-scan {
-  background: none;
-  border: 1px solid var(--bdr-hi);
-  color: var(--txt-mid);
-  font-family: var(--mono);
-  font-size: 10px;
-  padding: 8px 20px;
-  border-radius: 3px;
-  cursor: pointer;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  min-height: var(--touch-min);
-}
-.kiosk-new-scan:active { color: var(--txt); border-color: var(--txt-mid); }
-
 /* ============================================================
-   RESPONSIVE BREAKPOINTS
+   RESPONSIVE
    ============================================================ */
 
-/* --- Desktop (>900px) — default layout --- */
-@media (min-width: 901px) {
-  .nav-top { display: flex; }
-  .tab-bar { display: none; }
-  .kiosk-bar { display: none; }
-  .kiosk-scan-wrap { display: none; }
-  .desktop-content { display: block; }
-  main.container { padding-bottom: 24px; }
-}
-
-/* --- Mobile (481px–900px) --- */
-@media (max-width: 900px) and (min-width: 481px) {
-  .nav-top { display: none; }
-  .tab-bar { display: flex; }
-  .kiosk-bar { display: none; }
-  .kiosk-scan-wrap { display: none; }
-  .desktop-content { display: block; }
-
-  .scan-grid {
-    grid-template-columns: 1fr;
-  }
-  main.container { padding-bottom: 72px; } /* space for tab bar */
-
-  .btn-scan { padding: 18px 20px; font-size: 14px; }
-  #viewer-placeholder { height: 300px; }
-  #stl-canvas { height: 300px; }
-}
-
-/* --- Kiosk (<480px or body[data-mode="kiosk"]) --- */
-@media (max-width: 480px) {
-  .nav-top { display: none; }
-  .tab-bar { display: none; }
-  .kiosk-bar { display: flex; }
-  .kiosk-scan-wrap { display: flex; }
-  .desktop-content { display: none; }
-
-  main.container {
-    padding: 0 !important;
-    margin: 0;
+/* --- Landscape (touch display 1280x720, desktop) : 2 columns, fit viewport --- */
+@media (orientation: landscape) and (min-width: 860px) {
+  /* Hide the decorative footer on the scan page to free vertical space. */
+  body:has(.scan-page) .app-footer { display: none; }
+  body:has(.scan-page) main.container {
     max-width: 100%;
-    display: flex;
-    flex-direction: column;
-    height: calc(100vh - 28px);
+    padding: 12px 20px !important;
   }
 
-  footer { display: none; }
+  .scan-page {
+    max-width: 1180px;
+    height: calc(100vh - 47px - 24px); /* viewport − navbar − container padding */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "stage hero"
+      "details details";
+    gap: 16px;
+  }
+  .stage   { grid-area: stage;   height: 100%; min-height: 0; }
+  .hero    { grid-area: hero;    justify-content: center; }
+  .details-panel { grid-area: details; }
+
+  /* Stage fills the column height instead of using a fixed aspect ratio. */
+  .stage-view { aspect-ratio: auto; flex: 1 1 auto; min-height: 0; }
+
+  /* Keep the details log short so the row stays compact. */
+  .details-panel[open] .log-body { max-height: 120px; }
 }
 
-/* Force kiosk mode via data attribute */
-body[data-mode="kiosk"] .nav-top { display: none; }
-body[data-mode="kiosk"] .tab-bar { display: none; }
-body[data-mode="kiosk"] .kiosk-bar { display: flex; }
-body[data-mode="kiosk"] .kiosk-scan-wrap { display: flex; }
-body[data-mode="kiosk"] .desktop-content { display: none; }
-body[data-mode="kiosk"] main.container {
-  padding: 0 !important;
-  margin: 0;
-  max-width: 100%;
-  display: flex;
-  flex-direction: column;
-  height: calc(100vh - 28px);
+/* --- Engineering pages keep their 2-col grid until 900px --- */
+@media (max-width: 900px) {
+  .scan-grid { grid-template-columns: 1fr; }
 }
-body[data-mode="kiosk"] footer { display: none; }
+
+/* --- Narrow / portrait --- */
+@media (max-width: 600px) {
+  main.container { padding-top: 1rem !important; }
+  .proc-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero-actions { max-width: none; }
+  .nav-top .nav-links { margin-left: 8px; }
+}
