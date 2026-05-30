@@ -9,7 +9,7 @@ scan:
 
 camera:
   resolution: [640, 480]    # [width, height] en pixels (mock: 640x480 = résolution de calibration)
-  mock_shape: duck            # forme simulée par le mock : sphere | cylinder | cube | duck
+  mock_shape: cube            # forme simulée par le mock : cube uniquement
   exposure_us: 1000         # temps d'exposition en microsecondes (court = ligne laser nette)
   gain: 1.0                 # gain analogique (faible = moins de bruit)
   awb_mode: off             # balance des blancs : off (fixe) pour cohérence entre frames
@@ -22,7 +22,7 @@ cameras:
     display_name: Nappe
     type: pi
     resolution: [640, 480]
-    mock_shape: duck
+    mock_shape: cube
     exposure_us: 1000
     gain: 1
     calibration_exposure_us: 20000
@@ -75,7 +75,7 @@ cameras:
     startup_frame_check: true
     v4l2_exposure_scale_us: 100
     resolution: [1920, 1080]
-    mock_shape: duck
+    mock_shape: cube
     exposure_us: 8000
     # V4L2 gain range reported by this camera: 100..1494.
     gain: 100
