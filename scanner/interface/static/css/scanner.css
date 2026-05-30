@@ -82,7 +82,7 @@ body {
   background: var(--hover);
 }
 .nav-eng-badge {
-  margin-left: auto;
+  margin-left: 4px;
   flex-shrink: 0;
   font-family: var(--mono);
   font-size: 9px;
@@ -91,6 +91,15 @@ body {
   border: 1px solid var(--amber);
   border-radius: 3px;
   padding: 2px 7px;
+}
+.nav-logo {
+  margin-left: auto;
+  height: 30px;
+  width: auto;
+  flex-shrink: 0;
+}
+@media (max-width: 600px) {
+  .nav-logo { height: 24px; }
 }
 
 /* ---- Base panel (shared with engineering pages) ---- */
