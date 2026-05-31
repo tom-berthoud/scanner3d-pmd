@@ -94,12 +94,15 @@ body {
 }
 .nav-logo {
   margin-left: auto;
-  height: 30px;
+  height: 42px;
   width: auto;
   flex-shrink: 0;
+  padding-left: 14px;
+  border-left: 1px solid var(--bdr);
+  object-fit: contain;
 }
 @media (max-width: 600px) {
-  .nav-logo { height: 24px; }
+  .nav-logo { height: 32px; padding-left: 10px; }
 }
 
 /* ---- Base panel (shared with engineering pages) ---- */
@@ -196,6 +199,7 @@ body {
   inset: 0;
   background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.5) 50%, transparent 100%);
   animation: shimmer 1.4s ease-in-out infinite;
+  will-change: transform;
 }
 @keyframes shimmer {
   0%   { transform: translateX(-200%); }
@@ -385,6 +389,7 @@ body {
   font-size: 56px;
   color: var(--bdr-hi);
   animation: ph-float 3s ease-in-out infinite;
+  will-change: transform;
 }
 @keyframes ph-float {
   0%, 100% { transform: translateY(0); }
@@ -394,17 +399,21 @@ body {
   position: absolute;
   left: 8%;
   right: 8%;
+  top: 0;
   height: 2px;
   border-radius: 2px;
   background: linear-gradient(90deg, transparent, var(--green), transparent);
   box-shadow: 0 0 8px var(--green);
   animation: ph-sweep 2.6s ease-in-out infinite;
+  will-change: transform, opacity;
 }
+/* Animate transform (compositor-only) instead of `top`, which forces a
+   layout reflow on every frame — the main source of lag on the Pi. */
 @keyframes ph-sweep {
-  0%   { top: 14%; opacity: 0; }
+  0%   { transform: translateY(17px);  opacity: 0; }
   15%  { opacity: 1; }
   85%  { opacity: 1; }
-  100% { top: 86%; opacity: 0; }
+  100% { transform: translateY(103px); opacity: 0; }
 }
 #viewer-placeholder-text {
   font-size: 13px;
@@ -435,6 +444,7 @@ body {
   margin-left: -24px;
   transform-style: preserve-3d;
   animation: cube-spin 9s linear infinite;
+  will-change: transform;
 }
 @keyframes cube-spin {
   from { transform: rotateX(-20deg) rotateY(0deg); }
@@ -708,10 +718,15 @@ body {
 /* ---- Attract mode (invite interaction after idle) ---- */
 body.attract .scan-btn {
   animation: scan-attract 1.8s ease-in-out infinite;
+  will-change: transform;
 }
+/* Pulse via transform only (compositor) — animating box-shadow forced a
+   full repaint of the glow every frame, which stuttered badly on the Pi.
+   The cyan glow pulse is now carried by the cheap opacity-animated ring
+   below (.scan-ring .ring-bg). */
 @keyframes scan-attract {
-  0%, 100% { box-shadow: 0 2px 12px rgba(0,0,0,.08); transform: scale(1); }
-  50%      { box-shadow: 0 0 0 8px var(--cyan-d), 0 6px 22px rgba(2,132,199,.30); transform: scale(1.04); }
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.04); }
 }
 body.attract .scan-ring .ring-bg {
   stroke: var(--cyan);
@@ -917,7 +932,7 @@ code {
 
   .scan-page {
     max-width: 1180px;
-    height: calc(100vh - 47px - 24px); /* viewport − navbar − container padding */
+    height: calc(100vh - 58px - 24px); /* viewport − navbar (42px logo + 16px pad) − container padding */
     display: grid;
     grid-template-columns: minmax(0, 1fr) 320px;
     grid-template-rows: minmax(0, 1fr) auto;
@@ -948,4 +963,24 @@ code {
   .proc-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hero-actions { max-width: none; }
   .nav-top .nav-links { margin-left: 8px; }
+}
+
+/* --- Reduced motion -------------------------------------------------------
+   Escape hatch for low-power displays (e.g. the Pi kiosk). Stops every
+   looping decorative animation while keeping functional transitions
+   (progress bar, ring fill). Force it on the Pi with, in Chromium:
+     chromium --force-prefers-reduced-motion
+   or by setting the OS "reduce motion" accessibility preference. */
+@media (prefers-reduced-motion: reduce) {
+  .ph-cube,
+  .ph-laser,
+  .ph-cube3d,
+  .prog-fill.active::after,
+  body.attract .scan-btn,
+  body.attract .scan-ring .ring-bg {
+    animation: none !important;
+  }
+  /* Hide the heavy attract-mode 3D cube; keep the flat 2D icon visible. */
+  body.attract .ph-3d  { display: none; }
+  body.attract .ph-cube { display: block; }
 }
