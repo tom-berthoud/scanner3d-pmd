@@ -380,11 +380,54 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         idx = np.linspace(0, points.shape[0] - 1, max_points).astype(np.int64)
         return points[idx]
 
+    def _filter_fittable_line_pixels(
+        line_pixels,
+        max_angle_from_vertical_deg: float = 55.0,
+    ):
+        """Keep only 2-D line points whose local tangent stays near image vertical.
+
+        A point is considered fitable when the local line tangent angle from the
+        image vertical axis is <= max_angle_from_vertical_deg.
+        """
+        import numpy as np
+
+        if line_pixels is None:
+            return np.empty((0, 2), dtype=np.float64)
+        pts = np.asarray(line_pixels, dtype=np.float64)
+        if pts.ndim != 2 or pts.shape[1] != 2 or pts.shape[0] < 3:
+            return pts
+
+        # Sort by image row (y) so finite differences estimate local tangent.
+        order = np.argsort(pts[:, 1], kind="mergesort")
+        p = pts[order]
+        n = p.shape[0]
+
+        dx = np.empty(n, dtype=np.float64)
+        dy = np.empty(n, dtype=np.float64)
+        dx[1:-1] = p[2:, 0] - p[:-2, 0]
+        dy[1:-1] = p[2:, 1] - p[:-2, 1]
+        dx[0] = p[1, 0] - p[0, 0]
+        dy[0] = p[1, 1] - p[0, 1]
+        dx[-1] = p[-1, 0] - p[-2, 0]
+        dy[-1] = p[-1, 1] - p[-2, 1]
+
+        angle_from_vertical_deg = np.degrees(np.arctan2(np.abs(dx), np.abs(dy) + 1e-9))
+        keep = angle_from_vertical_deg <= float(max_angle_from_vertical_deg)
+        kept_sorted = p[keep]
+        if kept_sorted.shape[0] == 0:
+            return np.empty((0, 2), dtype=np.float64)
+
+        # Preserve original order for downstream assumptions.
+        kept_orig_idx = np.where(keep)[0]
+        kept_orig_order = order[kept_orig_idx]
+        return pts[np.sort(kept_orig_order)]
+
     def _build_cloud_from_cached_capture(
         session: dict,
         cam_rot,
         cam_trans,
         max_points: int = 20000,
+        max_angle_from_vertical_deg: float = 55.0,
     ):
         import numpy as np
         from scanner.processing import triangulate
@@ -394,6 +437,12 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         for item in session.get("profiles", []):
             line_px = item.get("line_pixels")
             if line_px is None or line_px.shape[0] == 0:
+                continue
+            line_px = _filter_fittable_line_pixels(
+                line_px,
+                max_angle_from_vertical_deg=max_angle_from_vertical_deg,
+            )
+            if line_px.shape[0] == 0:
                 continue
             pts = triangulate(
                 line_px,
@@ -1417,6 +1466,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         camera_b = str(payload.get("camera_b", "left"))
         max_points = max(2000, min(40000, int(payload.get("max_points", 14000))))
         max_iter = max(20, min(300, int(payload.get("max_iter", 90))))
+        fitable_angle_deg = max(5.0, min(85.0, float(payload.get("fitable_angle_deg", 55.0))))
 
         if camera_a == camera_b:
             return jsonify({"error": "camera_a and camera_b must differ"}), 400
@@ -1489,8 +1539,20 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             vec_b = np.asarray(vec[5:], dtype=np.float64)
             rot_a, trans_a = _manual_extrinsics_from_payload(_vec_to_payload(vec_a))
             rot_b, trans_b = _manual_extrinsics_from_payload(_vec_to_payload(vec_b))
-            cloud_a = _build_cloud_from_cached_capture(session_a, rot_a, trans_a, max_points=max_points)
-            cloud_b = _build_cloud_from_cached_capture(session_b, rot_b, trans_b, max_points=max_points)
+            cloud_a = _build_cloud_from_cached_capture(
+                session_a,
+                rot_a,
+                trans_a,
+                max_points=max_points,
+                max_angle_from_vertical_deg=fitable_angle_deg,
+            )
+            cloud_b = _build_cloud_from_cached_capture(
+                session_b,
+                rot_b,
+                trans_b,
+                max_points=max_points,
+                max_angle_from_vertical_deg=fitable_angle_deg,
+            )
             if cloud_a.shape[0] < 200 or cloud_b.shape[0] < 200:
                 return cloud_a, cloud_b, 1e9
             tree_a = cKDTree(cloud_a)
@@ -1549,6 +1611,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
             "iterations": int(getattr(result, "nit", 0)),
             "success": bool(result.success),
             "message": str(result.message),
+            "fitable_angle_deg": float(fitable_angle_deg),
             "recommended": {
                 camera_a: rec_a,
                 camera_b: rec_b,
