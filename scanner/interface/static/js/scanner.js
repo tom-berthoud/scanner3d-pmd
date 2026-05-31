@@ -1,32 +1,7 @@
 /* ============================================================
    Scanner 3D — Common JavaScript
-   LEDs, logging, SSE, artifact polling, UI updates, scan trigger
+   Logging, SSE, artifact polling, UI updates, scan trigger
    ============================================================ */
-
-// ---- LED control ----
-const LED_MAP = {
-  IDLE:        { orange:'off',   red:'off' },
-  CALIBRATING: { orange:'blink', red:'off' },
-  SCANNING:    { orange:'on',    red:'off' },
-  PROCESSING:  { orange:'blink-fast', red:'off' },
-  EXPORTING:   { orange:'blink', red:'off' },
-  COMPLETE:    { orange:'off',   red:'off' },
-  ERROR:       { orange:'off',   red:'on'  },
-};
-const LED_ID = { orange:'led-orange', red:'led-red' };
-
-function applyLeds(state) {
-  const p = LED_MAP[state] || LED_MAP.IDLE;
-  for (const [color, mode] of Object.entries(p)) {
-    const el = document.getElementById(LED_ID[color]);
-    if (!el) continue;
-    el.className = 'led';
-    const cls = color === 'orange' ? 'o' : 'r';
-    if (mode === 'on')         el.classList.add(cls);
-    if (mode === 'blink')      el.classList.add(cls, 'blink');
-    if (mode === 'blink-fast') el.classList.add(cls, 'blink-fast');
-  }
-}
 
 // ---- Logging ----
 function log(msg, cls) {
@@ -294,7 +269,6 @@ function updateUI(d) {
     pb.style.width = progress + '%';
     if (pct) pct.textContent = progress + '%';
   }
-  applyLeds(state);
   updateRing(state, progress);
   setScanButton(state, progress, blockedByDoor);
   updateStepCounter(d);

@@ -38,7 +38,7 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
 class ScannerState(Enum):
     """Enumeration of all valid scanner states.
 
-    Meanings and associated LED patterns are defined in agents.md §7.
+    State meanings are defined in agents.md §7.
     """
 
     IDLE = auto()

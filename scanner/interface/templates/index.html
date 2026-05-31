@@ -80,10 +80,6 @@ window.SCANNER_ARTIFACT_KINDS = {{ artifact_tabs | map(attribute='kind') | list 
     </div>
 
     <div class="hero-state">
-      <span class="leds">
-        <span class="led" id="led-orange"></span>
-        <span class="led" id="led-red"></span>
-      </span>
       <span class="state-name {{ scan_state.state | lower }}" id="state-label">{{ scan_state.state }}</span>
     </div>
     <div class="hero-counter" id="step-counter" style="display:none;"></div>
@@ -162,7 +158,6 @@ window.SCANNER_ARTIFACT_KINDS = {{ artifact_tabs | map(attribute='kind') | list 
 <script src="{{ asset('js/usb.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  applyLeds('{{ scan_state.state }}');
   log('Système prêt.');
   connectSSE();
   refreshArtifacts();

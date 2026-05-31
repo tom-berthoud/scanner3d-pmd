@@ -1,6 +1,6 @@
 """scanner.hardware.mock — Synthetic hardware for development without a Raspberry Pi.
 
-Provides MockCamera, MockMotor, MockLaser, MockLED, MockDisplay and
+Provides MockCamera, MockMotor, MockLaser, MockDisplay and
 MockDoorSensor that mimic the real hardware API without requiring any GPIO or
 camera hardware.
 """
@@ -284,59 +284,6 @@ class MockLaser:
             time.sleep(self._warmup_ms / 1000.0)
         self._state = state
         logger.debug("MockLaser → %s", "ON" if state else "OFF")
-
-
-class MockLED:
-    """Simulated RGB LED controller.
-
-    Args:
-        config: Interface configuration dict (unused, kept for API symmetry).
-    """
-
-    def __init__(self, config: dict) -> None:
-        self._states: dict[str, bool] = {}
-        self._blink_freqs: dict[str, float] = {}
-        logger.debug("MockLED initialised")
-
-    def led_set(self, color: str, state: bool) -> None:
-        """Set LED *color* on or off.
-
-        Args:
-            color: LED colour string ('green', 'orange', 'red', …).
-            state: True = on, False = off.
-        """
-        self._states[color] = state
-        # Stop any blinking for this colour
-        self._blink_freqs.pop(color, None)
-        logger.debug("MockLED.led_set(%s, %s)", color, state)
-
-    def led_blink(self, color: str, frequency_hz: float) -> None:
-        """Start blinking LED *color* at *frequency_hz* Hz.
-
-        A frequency of 0 stops blinking and turns the LED off.
-
-        Args:
-            color: LED colour string.
-            frequency_hz: Blink frequency in Hz.
-        """
-        if frequency_hz <= 0:
-            self._blink_freqs.pop(color, None)
-            self._states[color] = False
-        else:
-            self._blink_freqs[color] = frequency_hz
-            self._states[color] = True
-        logger.debug("MockLED.led_blink(%s, %.2f Hz)", color, frequency_hz)
-
-    def get_state(self, color: str) -> bool:
-        """Return the current on/off state of *color* LED.
-
-        Args:
-            color: LED colour string.
-
-        Returns:
-            True if the LED is on (or blinking), False otherwise.
-        """
-        return self._states.get(color, False)
 
 
 class MockDisplay:

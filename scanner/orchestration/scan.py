@@ -1,7 +1,7 @@
 """scanner.orchestration.scan — Main scan loop.
 
 Orchestrates the full acquisition → processing → reconstruction → export
-pipeline, managing the state machine and LEDs throughout.
+pipeline, managing the state machine throughout.
 """
 
 import logging
@@ -52,7 +52,7 @@ def run_scan(
         CalibrationError: if calibration files are missing or corrupt.
         RuntimeError: for any other scan pipeline failure.
     """
-    from scanner.hardware import HardwareError, laser_set, led_set, led_blink
+    from scanner.hardware import HardwareError, laser_set
     from scanner.calibration import (
         CalibrationError,
         camera_ids,
@@ -135,11 +135,6 @@ def run_scan(
     def _go_error(exc: Exception) -> None:
         """Transition to ERROR state and ensure laser is off."""
         _safe_laser_off()
-        try:
-            led_set("orange", False)
-            led_set("red", True)
-        except Exception as led_exc:
-            logger.error("LED update during error: %s", led_exc)
         try:
             sm.transition(ScannerState.ERROR)
         except ValueError:
@@ -475,8 +470,6 @@ def run_scan(
     # ------------------------------------------------------------------ #
     try:
         sm.transition(ScannerState.SCANNING)
-        led_set("orange", True)
-        led_set("red", False)
     except (ValueError, HardwareError) as exc:
         _go_error(exc)
         raise
@@ -508,7 +501,6 @@ def run_scan(
     # ------------------------------------------------------------------ #
     try:
         sm.transition(ScannerState.PROCESSING)
-        led_blink("orange", 4.0)  # fast blink during processing
     except (ValueError, HardwareError) as exc:
         _go_error(exc)
         raise
@@ -671,7 +663,6 @@ def run_scan(
     # ------------------------------------------------------------------ #
     try:
         sm.transition(ScannerState.EXPORTING)
-        led_blink("orange", 0.5)  # slow blink during export
     except (ValueError, HardwareError) as exc:
         _go_error(exc)
         raise
@@ -707,8 +698,6 @@ def run_scan(
     # ------------------------------------------------------------------ #
     try:
         sm.transition(ScannerState.COMPLETE)
-        led_set("orange", False)
-        led_set("red", False)
     except (ValueError, HardwareError) as exc:
         logger.warning("Could not set COMPLETE state: %s", exc)
 

@@ -17,7 +17,7 @@
           Utiliser ce mode uniquement pour les tests. Le laser peut etre dangereux pour les yeux.
         </div>
         <button class="btn btn-outline-danger" id="btn-safe-off" onclick="manualSafeOff()">
-          <i class="bi bi-shield-x me-1"></i>Tout couper (laser + LEDs)
+          <i class="bi bi-shield-x me-1"></i>Tout couper (laser)
         </button>
       </div>
     </div>
@@ -209,31 +209,6 @@
     <div class="pnl">
       <div class="pnl-head">
         <span class="pip"></span>
-        <span>LEDs</span>
-      </div>
-      <div class="trigger-body">
-        <div class="d-flex gap-2">
-          <select id="led-color" class="form-select">
-            <option value="orange">Orange</option>
-            <option value="red">Rouge</option>
-          </select>
-          <select id="led-mode" class="form-select">
-            <option value="on">ON</option>
-            <option value="off">OFF</option>
-            <option value="blink">BLINK</option>
-          </select>
-        </div>
-        <label for="led-freq" class="form-label mb-1">Frequence blink (Hz)</label>
-        <input id="led-freq" class="form-control" type="number" min="0.1" max="20" step="0.1" value="1.0" />
-        <button class="btn btn-outline-warning" id="btn-led-apply" onclick="setLed()">
-          <i class="bi bi-lightbulb me-1"></i>Appliquer
-        </button>
-      </div>
-    </div>
-
-    <div class="pnl">
-      <div class="pnl-head">
-        <span class="pip"></span>
         <span>Journal Manuel</span>
       </div>
       <div class="log-body" id="manual-log"></div>
@@ -256,7 +231,7 @@ function mlog(msg, cls) {
 }
 
 function setManualButtonsEnabled(enabled) {
-  ['btn-safe-off', 'btn-laser-on', 'btn-laser-off', 'btn-motor-cw', 'btn-motor-ccw', 'btn-led-apply', 'btn-camera-refresh']
+  ['btn-safe-off', 'btn-laser-on', 'btn-laser-off', 'btn-motor-cw', 'btn-motor-ccw', 'btn-camera-refresh']
     .forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.disabled = !enabled;
@@ -323,13 +298,6 @@ async function jogMotor(direction) {
     return;
   }
   await manualPost('/manual/motor', { steps: steps, direction: direction }, 'Moteur deplace');
-}
-
-async function setLed() {
-  var color = (document.getElementById('led-color') || {}).value || 'orange';
-  var mode = (document.getElementById('led-mode') || {}).value || 'off';
-  var freq = parseFloat((document.getElementById('led-freq') || {}).value || '1');
-  await manualPost('/manual/led', { color: color, mode: mode, frequency_hz: freq }, 'LED mise a jour');
 }
 
 async function manualSafeOff() {

@@ -13,7 +13,6 @@ Routes:
     GET  /manual/camera/frame   — Manual live camera frame
     POST /manual/laser          — Manual laser on/off
     POST /manual/motor          — Manual motor jog
-    POST /manual/led            — Manual LED control
 
 Run with:
     python -m scanner.interface.web
@@ -1873,57 +1872,15 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         except (HardwareError, ValueError) as exc:
             return jsonify({"error": str(exc)}), 500
 
-    @app.route("/manual/led", methods=["POST"])
-    def manual_led() -> Response:
-        from scanner.hardware import HardwareError, led_blink, led_set
-
-        if not _manual_allowed():
-            return jsonify({"error": "Manual control disabled while scan is running"}), 409
-
-        data = request.get_json(silent=True) or {}
-        try:
-            color = str(data.get("color", "orange")).lower()
-            mode = str(data.get("mode", "off")).lower()
-            frequency_hz = float(data.get("frequency_hz", 1.0))
-        except (TypeError, ValueError):
-            return jsonify({"error": "Invalid payload"}), 400
-
-        if color not in ("orange", "red"):
-            return jsonify({"error": "color must be orange or red"}), 400
-        if mode not in ("on", "off", "blink"):
-            return jsonify({"error": "mode must be on, off or blink"}), 400
-        if frequency_hz <= 0:
-            return jsonify({"error": "frequency_hz must be > 0"}), 400
-
-        try:
-            if mode == "on":
-                led_set(color, True)
-            elif mode == "off":
-                led_set(color, False)
-            else:
-                led_blink(color, frequency_hz)
-            return jsonify(
-                {
-                    "status": "ok",
-                    "color": color,
-                    "mode": mode,
-                    "frequency_hz": frequency_hz if mode == "blink" else None,
-                }
-            )
-        except HardwareError as exc:
-            return jsonify({"error": str(exc)}), 500
-
     @app.route("/manual/safe-off", methods=["POST"])
     def manual_safe_off() -> Response:
-        from scanner.hardware import HardwareError, laser_set, led_set
+        from scanner.hardware import HardwareError, laser_set
 
         if not _manual_allowed():
             return jsonify({"error": "Manual control disabled while scan is running"}), 409
 
         try:
             laser_set(False)
-            for color in ("orange", "red"):
-                led_set(color, False)
             return jsonify({"status": "ok"})
         except HardwareError as exc:
             return jsonify({"error": str(exc)}), 500

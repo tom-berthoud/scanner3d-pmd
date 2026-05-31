@@ -38,7 +38,7 @@ Le système capture des profils d'un objet en rotation sous un laser ligne, reco
 ```
 scanner3d-pmd/
 ├── scanner/
-│   ├── hardware/          Contrôle GPIO : moteur, laser, LEDs, écran, caméra
+│   ├── hardware/          Contrôle GPIO : moteur, laser, écran, caméra
 │   │   └── mock.py        Simulation hardware (sans Raspberry Pi)
 │   ├── acquisition/       Pipeline de capture image + sauvegarde frames
 │   ├── calibration/       Calibration caméra et plan laser
@@ -189,7 +189,7 @@ sudo systemctl enable --now scanner.service
 Pour rester léger en exploitation, **l'interface n'expose que le scan par
 défaut**. Les pages techniques (Calibration, Extrinsèque, Cam Config, Manuel)
 sont **verrouillées** : leurs onglets sont masqués et leurs routes (GET *et*
-POST, donc les actions matérielles laser/moteur/LED comprises) redirigent vers
+POST, donc les actions matérielles laser/moteur comprises) redirigent vers
 la page de scan. Il n'y a **aucun mot de passe web** à gérer.
 
 Un développeur, déjà connecté en SSH au Pi, les déverrouille avec le script
@@ -245,10 +245,9 @@ ssh pi@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh status' # état couran
 | 🔒 `/calibration/laser` | POST | Lance la calibration du plan laser |
 | 🔒 `/extrinsics` | GET | Réglage de la pose caméra (extrinsèques) |
 | 🔒 `/camera-config` | GET | Configuration caméra (format, exposition…) |
-| 🔒 `/manual` | GET | Commande manuelle (laser, moteur, LEDs) |
+| 🔒 `/manual` | GET | Commande manuelle (laser, moteur) |
 | 🔒 `/manual/laser` | POST | Active/désactive le laser |
 | 🔒 `/manual/motor` | POST | Fait avancer le moteur manuellement |
-| 🔒 `/manual/led` | POST | Contrôle manuel des LEDs |
 
 ---
 

@@ -16,7 +16,7 @@ Scanner 3D à triangulation laser : une boîte fermée pilotée par un Raspberry
 - Temps de prise en main < 10 min
 - Export STL ou OBJ obligatoire
 - Boîte fermée (contrôle de la lumière ambiante)
-- Retour visuel utilisateur (écran + LEDs)
+- Retour visuel utilisateur (écran)
 - Communication USB et/ou interface web
 - Budget cible ~300 CHF
 - Sécurité utilisateur vis-à-vis du laser (règles non-négociables, voir section 8)
@@ -33,7 +33,6 @@ Scanner 3D à triangulation laser : une boîte fermée pilotée par un Raspberry
 | Moteur stepper Generic 17HS3401 | **Confirmé** | NEMA 17, 1.8°/pas, 200 pas/tour, 1.5A/phase, couple 40 N·cm |
 | Driver moteur DM320T | **Confirmé** | Microstepping jusqu'à 1/32, 20V max, interface STEP/DIR |
 | Écran RB-TFT3.2-V2 | **Confirmé** | 3.2" TFT, interface SPI, compatible Raspberry Pi |
-| LEDs | 3 couleurs min. (vert/orange/rouge) | Voir signification section 7 |
 | Alimentation | À confirmer (5V/3A USB-C pour le Pi) | Séquence de mise sous tension à définir |
 
 **Point critique caméra — autofocus :**
@@ -66,7 +65,7 @@ Ne jamais appeler `cam.autofocus_cycle()` dans le code de scan ou de calibration
 
 | Dossier | Responsabilité | Langage |
 |---|---|---|
-| `scanner/hardware/` | GPIO : moteur, laser, LEDs, écran, caméra | Python |
+| `scanner/hardware/` | GPIO : moteur, laser, écran, caméra | Python |
 | `scanner/hardware/mock.py` | Simulation hardware complète pour développement sans Pi | Python |
 | `scanner/acquisition/` | Pipeline de capture + sauvegarde frames JPEG | Python |
 | `scanner/calibration/` | Calibration intrinsèque caméra + plan laser | Python + OpenCV |
@@ -119,8 +118,6 @@ def init_hardware(config: dict) -> None: ...
 def motor_step(n: int, direction: str) -> None: ...
 def laser_set(state: bool) -> None: ...
 def camera_capture() -> np.ndarray: ...           # retourne image BGR (H×W×3, uint8)
-def led_set(color: str, state: bool) -> None: ...
-def led_blink(color: str, duration_s: float) -> None: ...
 
 # acquisition/__init__.py
 def run_capture_sequence(
@@ -264,15 +261,15 @@ def export_obj(cloud: np.ndarray, path: str) -> None: ...
 
 ### États
 
-| État | Description | LEDs |
-|---|---|---|
-| `IDLE` | Prêt, attente commande utilisateur | Vert fixe |
-| `CALIBRATING` | Procédure de calibration en cours | Orange clignotant |
-| `SCANNING` | Scan actif (moteur + caméra) | Orange fixe |
-| `PROCESSING` | Calcul post-capture (triangulation, fusion) | Orange rapide |
-| `EXPORTING` | Écriture fichier STL/OBJ | Orange lent |
-| `COMPLETE` | Scan terminé, résultat disponible | Vert clignotant |
-| `ERROR` | Erreur non-récupérable | Rouge fixe |
+| État | Description |
+|---|---|
+| `IDLE` | Prêt, attente commande utilisateur |
+| `CALIBRATING` | Procédure de calibration en cours |
+| `SCANNING` | Scan actif (moteur + caméra) |
+| `PROCESSING` | Calcul post-capture (triangulation, fusion) |
+| `EXPORTING` | Écriture fichier STL/OBJ |
+| `COMPLETE` | Scan terminé, résultat disponible |
+| `ERROR` | Erreur non-récupérable |
 
 ### Transitions valides
 
@@ -300,7 +297,6 @@ Ces règles ne peuvent pas être retirées ou affaiblies par un agent.
 - **Le laser se désactive si le couvercle de la boîte est ouvert** (si un interlock physique est câblé).
 - **Aucune routine de calibration n'active le laser sans confirmation préalable.**
 - **Le moteur décélère progressivement** — pas d'arrêt brutal (risque mécanique).
-- **Signification des LEDs documentée** dans le manuel utilisateur et ce fichier (voir section 7).
 - **Checklist de review :** toute PR touchant `hardware/laser.py` ou `orchestration/` doit inclure la mention "impact laser vérifié".
 
 ---

@@ -138,23 +138,6 @@ body {
   font-size: 8px;
 }
 
-/* ---- LEDs ---- */
-.leds { display: flex; gap: 5px; }
-.led {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--bdr-hi);
-  transition: background .3s, box-shadow .3s;
-  flex-shrink: 0;
-}
-.led.g  { background: var(--green);  box-shadow: 0 0 7px var(--green); }
-.led.o  { background: var(--amber);  box-shadow: 0 0 7px var(--amber); }
-.led.r  { background: var(--red);    box-shadow: 0 0 7px var(--red); }
-@keyframes blink      { 50% { opacity: .1; } }
-@keyframes blink-fast { 50% { opacity: .1; } }
-.led.blink      { animation: blink      1s    ease-in-out infinite; }
-.led.blink-fast { animation: blink-fast .25s  ease-in-out infinite; }
-
 /* ---- State name ---- */
 .state-name {
   font-family: var(--mono);

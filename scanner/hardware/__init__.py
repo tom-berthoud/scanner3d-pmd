@@ -40,7 +40,6 @@ _camera_configs: dict[str, dict] = {}
 _failed_camera_configs: dict[str, dict] = {}
 _motor_instance = None
 _laser_instance = None
-_led_instance = None
 _display_instance = None
 _door_instance = None
 _hardware_config: dict = {}
@@ -49,7 +48,7 @@ _hardware_config: dict = {}
 def init_hardware(config: dict) -> None:
     """Initialise all hardware singletons from *config*."""
     global _camera_instance, _camera_instances, _camera_configs, _failed_camera_configs
-    global _motor_instance, _laser_instance, _led_instance, _display_instance, _hardware_config
+    global _motor_instance, _laser_instance, _display_instance, _hardware_config
     global _door_instance
 
     from scanner.calibration import camera_configs
@@ -58,7 +57,6 @@ def init_hardware(config: dict) -> None:
     logger.info("Initialising hardware (on_pi=%s)", _ON_PI)
     iface_cfg = config.get("interface", {})
     door_cfg = config.get("safety", {}).get("door_interlock", {})
-    led_enabled = bool(iface_cfg.get("led_enabled", True))
     display_type = str(iface_cfg.get("display_type", "oled")).lower()
     display_enabled = display_type not in ("none", "off", "disabled")
 
@@ -68,7 +66,6 @@ def init_hardware(config: dict) -> None:
             from scanner.hardware.display import Display
             from scanner.hardware.door import DoorSensor
             from scanner.hardware.laser import Laser
-            from scanner.hardware.led import LED
             from scanner.hardware.motor import StepperMotor
             from scanner.hardware.usb_camera import USBCamera
 
@@ -88,7 +85,6 @@ def init_hardware(config: dict) -> None:
                     logger.warning("Camera %s init failed: %s", cam_id, exc)
             _motor_instance = StepperMotor(config.get("motor", {}))
             _laser_instance = Laser(config.get("laser", {}))
-            _led_instance = LED(iface_cfg) if led_enabled else None
             _display_instance = Display(iface_cfg) if display_enabled else None
             _door_instance = DoorSensor(door_cfg)
         else:
@@ -96,7 +92,6 @@ def init_hardware(config: dict) -> None:
                 MockCamera,
                 MockDisplay,
                 MockDoorSensor,
-                MockLED,
                 MockLaser,
                 MockMotor,
             )
@@ -110,7 +105,6 @@ def init_hardware(config: dict) -> None:
             }
             _motor_instance = MockMotor(config.get("motor", {}))
             _laser_instance = MockLaser(config.get("laser", {}))
-            _led_instance = MockLED(iface_cfg) if led_enabled else None
             _display_instance = MockDisplay(iface_cfg) if display_enabled else None
             _door_instance = MockDoorSensor(door_cfg)
 
@@ -120,8 +114,6 @@ def init_hardware(config: dict) -> None:
             _camera_instance = next(iter(_camera_instances.values()))
         if _display_instance is None:
             logger.info("Display disabled by config (interface.display_type=%s)", display_type)
-        if _led_instance is None:
-            logger.info("LEDs disabled by config (interface.led_enabled=false)")
     except HardwareError:
         raise
     except Exception as exc:
@@ -264,22 +256,6 @@ def check_door_interlock() -> None:
         raise DoorOpenError("Safety door is open - operation aborted")
 
 
-def led_set(color: str, state: bool) -> None:
-    """Set an LED on or off."""
-    if _led_instance is None:
-        logger.debug("LED set ignored (LEDs disabled): %s=%s", color, state)
-        return
-    _led_instance.led_set(color, state)
-
-
-def led_blink(color: str, frequency_hz: float) -> None:
-    """Start blinking an LED at the given frequency."""
-    if _led_instance is None:
-        logger.debug("LED blink ignored (LEDs disabled): %s at %.2f Hz", color, frequency_hz)
-        return
-    _led_instance.led_blink(color, frequency_hz)
-
-
 def display_text(text: str, line: int = 0) -> None:
     """Write *text* on the display at *line*."""
     if _display_instance is None:
@@ -308,8 +284,6 @@ __all__ = [
     "door_interlock_enabled",
     "door_is_open",
     "check_door_interlock",
-    "led_set",
-    "led_blink",
     "display_text",
     "display_status",
 ]
