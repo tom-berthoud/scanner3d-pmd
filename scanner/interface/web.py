@@ -983,11 +983,31 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         """Server-Sent Events stream for real-time scan progress."""
 
         def _generate():
+            from scanner.hardware import door_interlock_enabled, door_is_open
+
             client_queue: queue.Queue = queue.Queue(maxsize=50)
             with _sse_clients_lock:
                 _sse_clients.add(client_queue)
             try:
                 yield "retry: 2000\n\n"
+                # Immediate snapshot so a freshly (re)connected client syncs to
+                # the current state even if it missed transitions (e.g. EXPORTING
+                # / COMPLETE) while disconnected during a long Poisson meshing.
+                try:
+                    with _scan_lock:
+                        snapshot = {
+                            "state": _scan_state["state"],
+                            "progress": _scan_state["progress"],
+                            "message": _scan_state["message"],
+                        }
+                    # _public_artifacts() takes _scan_lock itself — call it
+                    # OUTSIDE the block above (threading.Lock is not reentrant).
+                    snapshot["artifacts"] = _public_artifacts()
+                    snapshot["door_interlock_enabled"] = door_interlock_enabled()
+                    snapshot["door_open"] = door_is_open()
+                    yield f"data: {json.dumps(snapshot)}\n\n"
+                except Exception:
+                    pass
                 while True:
                     try:
                         data = client_queue.get(timeout=15)

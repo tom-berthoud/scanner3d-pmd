@@ -370,6 +370,30 @@ function connectSSE() {
     } catch(_) {}
   };
   es.onerror = function() { es.close(); setTimeout(connectSSE, 3000); };
+  startStatusReconcile();
+}
+
+// ---- Status reconciliation (self-healing fallback) ----
+// The SSE stream can drop an event (queue full) or miss a transition while the
+// EventSource is reconnecting — notably EXPORTING/COMPLETE during the long
+// Poisson meshing. Without this, the UI freezes at the last received state even
+// though the scan finished. We poll /scan/status and only act when the server
+// state diverges from what the UI shows, so it costs nothing in steady state.
+var _statusPoll = null;
+async function reconcileStatus() {
+  try {
+    var resp = await fetch('/scan/status?t=' + Date.now());
+    if (!resp.ok) return;
+    var d = await resp.json();
+    if (d.state === _currentState) return;  // SSE already in sync
+    if (d.artifacts) applyArtifacts(d.artifacts);
+    updateUI(d);
+    if (d.state === 'COMPLETE') selectArtifact('mesh');
+  } catch (_) {}
+}
+function startStatusReconcile() {
+  if (_statusPoll) return;
+  _statusPoll = setInterval(reconcileStatus, 3000);
 }
 
 // ---- Start scan ----
