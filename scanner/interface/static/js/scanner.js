@@ -33,6 +33,8 @@ const PROCESSING_STEP_ORDER = [
 let _processingStep = null;
 let _scanStartMs = null;
 let _currentState = 'IDLE';
+let _doorOpen = null;
+let _doorEnabled = null;
 
 function setProcessingStep(step) {
   if (!step) return;
@@ -321,6 +323,8 @@ function updateUI(d) {
     if (!_processingStep || state === 'IDLE') resetProcessingSteps();
   }
 
+  if (d.door_interlock_enabled !== undefined) _doorEnabled = !!d.door_interlock_enabled;
+  if (d.door_open !== undefined) _doorOpen = !!d.door_open;
   if (ds) {
     if (!d.door_interlock_enabled) ds.textContent = 'Porte: interlock désactivé';
     else ds.textContent = 'Porte: ' + (d.door_open ? 'OUVERTE' : 'fermée');
@@ -359,7 +363,13 @@ async function reconcileStatus() {
     var resp = await fetch('/scan/status?t=' + Date.now());
     if (!resp.ok) return;
     var d = await resp.json();
-    if (d.state === _currentState) return;  // SSE already in sync
+    // Reconcile when the FSM state OR the door state has drifted from the UI.
+    // The door can open/close without an FSM transition (e.g. while IDLE), so
+    // relying on state alone would leave the door view stale until a refresh.
+    var doorChanged = (d.door_open !== undefined && !!d.door_open !== _doorOpen) ||
+                      (d.door_interlock_enabled !== undefined &&
+                       !!d.door_interlock_enabled !== _doorEnabled);
+    if (d.state === _currentState && !doorChanged) return;  // already in sync
     if (d.artifacts) applyArtifacts(d.artifacts);
     updateUI(d);
     if (d.state === 'COMPLETE') selectArtifact('mesh');

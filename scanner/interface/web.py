@@ -139,6 +139,7 @@ def create_app(config_path: Optional[str] = None) -> Flask:
 
         def _loop() -> None:
             last_open = False
+            first = True
             while True:
                 try:
                     opened = bool(door_is_open())
@@ -146,7 +147,19 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                         laser_set(False)
                         if not last_open:
                             logger.warning("Door opened: forcing laser OFF")
+                    # On every open/close transition, push the current state so
+                    # connected browsers update the door view live (open → show
+                    # warning, close → clear it) without a manual page refresh.
+                    if opened != last_open and not first:
+                        with _scan_lock:
+                            snapshot = {
+                                "state": _scan_state["state"],
+                                "progress": _scan_state["progress"],
+                                "message": _scan_state.get("message"),
+                            }
+                        _push_sse(snapshot)
                     last_open = opened
+                    first = False
                 except HardwareError as exc:
                     logger.debug("Door watchdog hardware warning: %s", exc)
                 except Exception as exc:
@@ -154,8 +167,6 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 time.sleep(0.1)
 
         threading.Thread(target=_loop, daemon=True, name="door-safety-watchdog").start()
-
-    _start_door_safety_watchdog()
 
     # ------------------------------------------------------------------ #
     # Shared scan state
@@ -836,6 +847,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         update_display(new_state.name, _scan_state["progress"])
 
     _sm.add_observer(_on_state_transition)
+
+    # Started here (rather than inline above) so the closure's _push_sse /
+    # _scan_state references are already defined when the watchdog thread runs.
+    _start_door_safety_watchdog()
 
     # ------------------------------------------------------------------ #
     # Routes — Main page
