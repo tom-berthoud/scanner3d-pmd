@@ -610,6 +610,7 @@ def run_scan(
                 offset_tolerance_steps=int(half_turn_fusion_cfg.get("offset_tolerance_steps", 1)),
                 max_pair_distance_mm=float(half_turn_fusion_cfg.get("max_pair_distance_mm", 6.0)),
                 min_profile_points=int(half_turn_fusion_cfg.get("min_profile_points", 8)),
+                distance_axes=str(half_turn_fusion_cfg.get("distance_axes", "xyz")),
             )
             profiles_by_camera[camera_id] = [
                 p for p in camera_fused if p.ndim == 2 and p.shape[0] > 0
@@ -634,6 +635,7 @@ def run_scan(
             offset_tolerance_steps=int(half_turn_fusion_cfg.get("offset_tolerance_steps", 1)),
             max_pair_distance_mm=float(half_turn_fusion_cfg.get("max_pair_distance_mm", 6.0)),
             min_profile_points=int(half_turn_fusion_cfg.get("min_profile_points", 8)),
+            distance_axes=str(half_turn_fusion_cfg.get("distance_axes", "xyz")),
         )
 
         _progress(total_processing, total_processing, "Fusing per-step profiles")

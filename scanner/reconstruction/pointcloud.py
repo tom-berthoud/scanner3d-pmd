@@ -100,12 +100,14 @@ def filter_outliers(
     return filtered.astype(np.float64)
 
 
-def _profile_distance_mm(a: np.ndarray, b: np.ndarray) -> float:
+def _profile_distance_mm(a: np.ndarray, b: np.ndarray, axes: tuple[int, ...] = (0, 1, 2)) -> float:
     """Return a robust symmetric nearest-neighbour distance between profiles."""
-    tree_a = cKDTree(a)
-    tree_b = cKDTree(b)
-    d_ba, _ = tree_a.query(b, k=1)
-    d_ab, _ = tree_b.query(a, k=1)
+    aa = a[:, axes]
+    bb = b[:, axes]
+    tree_a = cKDTree(aa)
+    tree_b = cKDTree(bb)
+    d_ba, _ = tree_a.query(bb, k=1)
+    d_ab, _ = tree_b.query(aa, k=1)
     return float(0.5 * (np.median(d_ab) + np.median(d_ba)))
 
 
@@ -152,6 +154,7 @@ def fuse_half_turn_profiles(
     offset_tolerance_steps: int = 1,
     max_pair_distance_mm: float = 6.0,
     min_profile_points: int = 8,
+    distance_axes: str = "xyz",
 ) -> list[np.ndarray]:
     """Fuse duplicate profiles observed again about half a turn later.
 
@@ -163,6 +166,15 @@ def fuse_half_turn_profiles(
         return profiles
     if max_pair_distance_mm <= 0:
         raise ValueError(f"max_pair_distance_mm must be > 0, got {max_pair_distance_mm}")
+    axes_by_name = {
+        "xyz": (0, 1, 2),
+        "xy": (0, 1),
+        "xz": (0, 2),
+        "yz": (1, 2),
+    }
+    axes = axes_by_name.get(str(distance_axes).lower())
+    if axes is None:
+        raise ValueError(f"distance_axes must be one of {sorted(axes_by_name)}, got {distance_axes!r}")
 
     total = len(profiles)
     half_turn = max(1, int(round(float(n_steps) / 2.0)))
@@ -188,7 +200,11 @@ def fuse_half_turn_profiles(
             other = profiles[j]
             if other.ndim != 2 or other.shape[1] != 3 or other.shape[0] < min_profile_points:
                 continue
-            dist = _profile_distance_mm(profile.astype(np.float64), other.astype(np.float64))
+            dist = _profile_distance_mm(
+                profile.astype(np.float64),
+                other.astype(np.float64),
+                axes=axes,
+            )
             if dist < best_dist:
                 best_dist = dist
                 best_j = j

@@ -99,7 +99,29 @@ class TestFuseHalfTurnProfiles:
         assert len(non_empty) == 1
         np.testing.assert_allclose(non_empty[0][:, 1], np.full(20, 0.2), atol=1e-6)
 
-    def test_keeps_far_half_turn_pair(self) -> None:
+    def test_averages_height_offset_pair_when_xyz_threshold_allows(self) -> None:
+        base = np.column_stack(
+            (
+                np.linspace(-10.0, 10.0, 20),
+                np.zeros(20),
+                np.linspace(2.0, 8.0, 20),
+            )
+        )
+        height_offset = base + np.array([0.0, 20.0, 0.0])
+
+        fused = fuse_half_turn_profiles(
+            [base, np.empty((0, 3)), height_offset, np.empty((0, 3))],
+            n_steps=4,
+            offset_tolerance_steps=0,
+            max_pair_distance_mm=25.0,
+            min_profile_points=4,
+        )
+
+        non_empty = [p for p in fused if p.shape[0] > 0]
+        assert len(non_empty) == 1
+        np.testing.assert_allclose(non_empty[0][:, 1], np.full(20, 10.0), atol=1e-6)
+
+    def test_keeps_height_offset_pair_when_xyz_threshold_is_too_small(self) -> None:
         base = np.column_stack(
             (
                 np.linspace(-10.0, 10.0, 20),
@@ -108,6 +130,27 @@ class TestFuseHalfTurnProfiles:
             )
         )
         far = base + np.array([0.0, 20.0, 0.0])
+
+        fused = fuse_half_turn_profiles(
+            [base, np.empty((0, 3)), far, np.empty((0, 3))],
+            n_steps=4,
+            offset_tolerance_steps=0,
+            max_pair_distance_mm=1.0,
+            min_profile_points=4,
+        )
+
+        non_empty = [p for p in fused if p.shape[0] > 0]
+        assert len(non_empty) == 2
+
+    def test_keeps_pair_with_distant_xyz_footprint(self) -> None:
+        base = np.column_stack(
+            (
+                np.linspace(-10.0, 10.0, 20),
+                np.zeros(20),
+                np.full(20, 5.0),
+            )
+        )
+        far = base + np.array([20.0, 0.0, 0.0])
 
         fused = fuse_half_turn_profiles(
             [base, np.empty((0, 3)), far, np.empty((0, 3))],
