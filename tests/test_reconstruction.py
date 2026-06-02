@@ -150,7 +150,7 @@ class TestFuseHalfTurnProfiles:
                 np.full(20, 5.0),
             )
         )
-        far = base + np.array([20.0, 0.0, 0.0])
+        far = base + np.array([40.0, 0.0, 0.0])
 
         fused = fuse_half_turn_profiles(
             [base, np.empty((0, 3)), far, np.empty((0, 3))],
@@ -162,6 +162,46 @@ class TestFuseHalfTurnProfiles:
 
         non_empty = [p for p in fused if p.shape[0] > 0]
         assert len(non_empty) == 2
+
+    def test_averages_only_close_points_and_keeps_unmatched_face(self) -> None:
+        shared = np.column_stack(
+            (
+                np.linspace(-5.0, 5.0, 10),
+                np.zeros(10),
+                np.full(10, 5.0),
+            )
+        )
+        face_a = np.column_stack(
+            (
+                np.full(6, -30.0),
+                np.linspace(0.0, 20.0, 6),
+                np.full(6, 5.0),
+            )
+        )
+        face_b = np.column_stack(
+            (
+                np.full(6, 30.0),
+                np.linspace(0.0, 20.0, 6),
+                np.full(6, 5.0),
+            )
+        )
+        profile_a = np.vstack((shared, face_a))
+        profile_b = np.vstack((shared + np.array([0.0, 0.6, 0.0]), face_b))
+
+        fused = fuse_half_turn_profiles(
+            [profile_a, np.empty((0, 3)), profile_b, np.empty((0, 3))],
+            n_steps=4,
+            offset_tolerance_steps=0,
+            max_pair_distance_mm=1.0,
+            min_profile_points=4,
+        )
+
+        non_empty = [p for p in fused if p.shape[0] > 0]
+        assert len(non_empty) == 1
+        assert non_empty[0].shape == (22, 3)
+        assert np.count_nonzero(np.isclose(non_empty[0][:, 0], -30.0)) == 6
+        assert np.count_nonzero(np.isclose(non_empty[0][:, 0], 30.0)) == 6
+        np.testing.assert_allclose(non_empty[0][:10, 1], np.full(10, 0.3), atol=1e-6)
 
 
 # --------------------------------------------------------------------------- #

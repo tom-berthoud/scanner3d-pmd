@@ -111,39 +111,44 @@ def _profile_distance_mm(a: np.ndarray, b: np.ndarray, axes: tuple[int, ...] = (
     return float(0.5 * (np.median(d_ab) + np.median(d_ba)))
 
 
-def _average_profiles(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Average two nearby profile curves after resampling along their main axis."""
-    combined = np.vstack((a, b)).astype(np.float64)
-    center = combined.mean(axis=0)
-    if combined.shape[0] < 3:
-        n = min(a.shape[0], b.shape[0])
-        return 0.5 * (a[:n] + b[:n])
+def _average_close_profile_points(
+    a: np.ndarray,
+    b: np.ndarray,
+    *,
+    max_distance_mm: float,
+    axes: tuple[int, ...] = (0, 1, 2),
+) -> tuple[np.ndarray, int, float]:
+    """Average only mutual nearest-neighbour point pairs under the distance gate."""
+    aa = a[:, axes]
+    bb = b[:, axes]
+    tree_a = cKDTree(aa)
+    tree_b = cKDTree(bb)
+    d_ab, idx_ab = tree_b.query(aa, k=1)
+    _d_ba, idx_ba = tree_a.query(bb, k=1)
 
-    cov = np.cov((combined - center).T)
-    evals, evecs = np.linalg.eigh(cov)
-    axis = evecs[:, int(np.argmax(evals))]
+    matched_a: list[int] = []
+    matched_b: list[int] = []
+    matched_dist: list[float] = []
+    for i, (dist, j) in enumerate(zip(d_ab, idx_ab)):
+        j = int(j)
+        if float(dist) <= max_distance_mm and int(idx_ba[j]) == i:
+            matched_a.append(i)
+            matched_b.append(j)
+            matched_dist.append(float(dist))
 
-    def _sort_unique(profile: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        t = (profile - center) @ axis
-        order = np.argsort(t)
-        t = t[order]
-        p = profile[order]
-        unique = np.concatenate(([True], np.diff(t) > 1e-9))
-        return t[unique], p[unique]
+    if not matched_a:
+        return np.vstack((a, b)).astype(np.float64), 0, float("inf")
 
-    ta, pa = _sort_unique(a)
-    tb, pb = _sort_unique(b)
-    t0 = max(float(ta.min()), float(tb.min()))
-    t1 = min(float(ta.max()), float(tb.max()))
-    if t1 <= t0:
-        n = min(a.shape[0], b.shape[0])
-        return 0.5 * (a[:n] + b[:n])
+    matched_a_arr = np.asarray(matched_a, dtype=np.int64)
+    matched_b_arr = np.asarray(matched_b, dtype=np.int64)
+    avg = 0.5 * (a[matched_a_arr] + b[matched_b_arr])
 
-    n_out = max(2, max(a.shape[0], b.shape[0]))
-    t_grid = np.linspace(t0, t1, n_out, dtype=np.float64)
-    ai = np.column_stack([np.interp(t_grid, ta, pa[:, k]) for k in range(3)])
-    bi = np.column_stack([np.interp(t_grid, tb, pb[:, k]) for k in range(3)])
-    return (0.5 * (ai + bi)).astype(np.float64)
+    keep_a = np.ones(a.shape[0], dtype=bool)
+    keep_b = np.ones(b.shape[0], dtype=bool)
+    keep_a[matched_a_arr] = False
+    keep_b[matched_b_arr] = False
+    fused = np.vstack((avg, a[keep_a], b[keep_b])).astype(np.float64)
+    return fused, len(matched_a), float(np.mean(matched_dist))
 
 
 def fuse_half_turn_profiles(
@@ -158,9 +163,9 @@ def fuse_half_turn_profiles(
 ) -> list[np.ndarray]:
     """Fuse duplicate profiles observed again about half a turn later.
 
-    Some top-facing surfaces can be observed at step ``i`` and again near
-    ``i + n_steps/2``. If both triangulated profiles are close in object space,
-    this returns one averaged profile and removes the duplicate observation.
+    Some top-facing points can be observed at step ``i`` and again near
+    ``i + n_steps/2``. Only point pairs closer than ``max_pair_distance_mm``
+    are averaged; unmatched points from both profiles are preserved.
     """
     if not enabled or n_steps < 2 or not profiles:
         return profiles
@@ -192,7 +197,9 @@ def fuse_half_turn_profiles(
             continue
 
         best_j: int | None = None
-        best_dist = float("inf")
+        best_fused: np.ndarray | None = None
+        best_match_count = 0
+        best_mean_dist = float("inf")
         for delta in range(-tolerance, tolerance + 1):
             j = i + half_turn + delta
             if j >= total or j in used:
@@ -200,17 +207,22 @@ def fuse_half_turn_profiles(
             other = profiles[j]
             if other.ndim != 2 or other.shape[1] != 3 or other.shape[0] < min_profile_points:
                 continue
-            dist = _profile_distance_mm(
+            candidate_fused, match_count, mean_dist = _average_close_profile_points(
                 profile.astype(np.float64),
                 other.astype(np.float64),
+                max_distance_mm=max_pair_distance_mm,
                 axes=axes,
             )
-            if dist < best_dist:
-                best_dist = dist
+            if match_count > best_match_count or (
+                match_count == best_match_count and mean_dist < best_mean_dist
+            ):
+                best_fused = candidate_fused
+                best_match_count = match_count
+                best_mean_dist = mean_dist
                 best_j = j
 
-        if best_j is not None and best_dist <= max_pair_distance_mm:
-            fused.append(_average_profiles(profile.astype(np.float64), profiles[best_j].astype(np.float64)))
+        if best_j is not None and best_fused is not None and best_match_count > 0:
+            fused.append(best_fused)
             used.add(i)
             used.add(best_j)
             n_pairs += 1
