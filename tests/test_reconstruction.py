@@ -3,7 +3,12 @@
 import numpy as np
 import pytest
 
-from scanner.reconstruction import filter_outliers, fuse_half_turn_profiles, merge_profiles
+from scanner.reconstruction import (
+    clip_above_detected_top_plane,
+    filter_outliers,
+    fuse_half_turn_profiles,
+    merge_profiles,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -207,6 +212,51 @@ class TestFuseHalfTurnProfiles:
 # --------------------------------------------------------------------------- #
 # filter_outliers
 # --------------------------------------------------------------------------- #
+
+
+class TestClipAboveDetectedTopPlane:
+    """Tests for clipping artifacts above a flat top plane."""
+
+    def test_clips_points_above_flat_reference_top(self) -> None:
+        rng = np.random.default_rng(42)
+        body = rng.normal(0.0, 5.0, size=(120, 3))
+        body[:, 1] = rng.uniform(-20.0, 8.0, size=120)
+        top = rng.normal(0.0, 5.0, size=(120, 3))
+        top[:, 1] = 10.0 + rng.normal(0.0, 0.15, size=120)
+        artifacts = rng.normal(0.0, 5.0, size=(20, 3))
+        artifacts[:, 1] = 16.0
+        cloud = np.vstack((body, top, artifacts))
+
+        clipped, plane_y = clip_above_detected_top_plane(
+            cloud,
+            top,
+            top_quantile=0.5,
+            max_plane_thickness_mm=1.0,
+            clip_margin_mm=1.0,
+            min_plane_points=20,
+        )
+
+        assert plane_y is not None
+        assert clipped.shape[0] < cloud.shape[0]
+        assert clipped[:, 1].max() <= plane_y + 1.0 + 1e-9
+
+    def test_skips_when_reference_top_is_not_planar(self) -> None:
+        rng = np.random.default_rng(43)
+        cloud = rng.normal(0.0, 5.0, size=(150, 3))
+        reference = cloud.copy()
+        reference[:, 1] = np.linspace(0.0, 20.0, reference.shape[0])
+
+        clipped, plane_y = clip_above_detected_top_plane(
+            cloud,
+            reference,
+            top_quantile=0.5,
+            max_plane_thickness_mm=1.0,
+            clip_margin_mm=1.0,
+            min_plane_points=20,
+        )
+
+        assert plane_y is None
+        np.testing.assert_array_equal(clipped, cloud)
 
 
 def _make_sphere_cloud(n: int = 500, radius: float = 50.0, rng_seed: int = 0) -> np.ndarray:

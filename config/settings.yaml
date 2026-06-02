@@ -164,6 +164,13 @@ reconstruction:
     top_quantile: 0.99
     bottom_quantile: 0.01
     border_pad_mm: 1.0
+  top_plane_clip:
+    enabled: true
+    reference_camera: right
+    top_quantile: 0.90
+    max_plane_thickness_mm: 2.0
+    clip_margin_mm: 1.0
+    min_plane_points: 80
   auto_cheat_extrinsics:
     enabled: true
     max_iter: 60

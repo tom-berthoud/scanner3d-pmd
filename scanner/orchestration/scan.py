@@ -70,6 +70,7 @@ def run_scan(
     from scanner.processing import extract_laser_line, triangulate
     from scanner.reconstruction import (
         add_flat_caps_aligned,
+        clip_above_detected_top_plane,
         filter_outliers,
         fuse_half_turn_profiles,
         merge_profiles,
@@ -108,6 +109,7 @@ def run_scan(
     nb_neighbors: int = int(recon_cfg.get("outlier_nb_neighbors", 20))
     std_ratio: float = float(recon_cfg.get("outlier_std_ratio", 2.0))
     flat_caps_cfg = recon_cfg.get("flat_caps", {}) or {}
+    top_plane_clip_cfg = recon_cfg.get("top_plane_clip", {}) or {}
     auto_cheat_cfg = recon_cfg.get("auto_cheat_extrinsics", {}) or {}
     profile_fusion_cfg = recon_cfg.get("profile_fusion", {}) or {}
     half_turn_fusion_cfg = recon_cfg.get("half_turn_profile_fusion", {}) or {}
@@ -795,6 +797,7 @@ def run_scan(
         )
 
         _progress(total_processing, total_processing, "Fusing per-step profiles")
+        camera_clouds: dict[str, np.ndarray] = {}
         for camera_id in frames_by_camera:
             camera_profiles = profiles_by_camera.get(camera_id, [])
             if camera_profiles:
@@ -807,6 +810,7 @@ def run_scan(
                         nb_neighbors=nb_neighbors,
                         std_ratio=std_ratio,
                     )
+                camera_clouds[camera_id] = camera_cloud
                 camera_cloud_path = os.path.join(output_dir, f"scan_{timestamp}_cloud_{camera_id}.ply")
                 export_point_cloud_ply(camera_cloud, camera_cloud_path)
                 _artifact(
@@ -825,6 +829,27 @@ def run_scan(
             cloud = filter_outliers(cloud, nb_neighbors=nb_neighbors, std_ratio=std_ratio)
         else:
             logger.warning("Too few points (%d) for outlier filtering", cloud.shape[0])
+
+        if bool(top_plane_clip_cfg.get("enabled", False)):
+            reference_camera = str(top_plane_clip_cfg.get("reference_camera", "right"))
+            reference_cloud = camera_clouds.get(reference_camera)
+            if reference_cloud is None:
+                logger.warning("top_plane_clip: reference camera %s cloud missing", reference_camera)
+            else:
+                _progress(total_processing, total_processing, "Clipping above detected top plane")
+                cloud, plane_y = clip_above_detected_top_plane(
+                    cloud,
+                    reference_cloud,
+                    enabled=True,
+                    top_quantile=float(top_plane_clip_cfg.get("top_quantile", 0.90)),
+                    max_plane_thickness_mm=float(
+                        top_plane_clip_cfg.get("max_plane_thickness_mm", 2.0)
+                    ),
+                    clip_margin_mm=float(top_plane_clip_cfg.get("clip_margin_mm", 1.0)),
+                    min_plane_points=int(top_plane_clip_cfg.get("min_plane_points", 80)),
+                )
+                if plane_y is not None:
+                    logger.info("top_plane_clip: applied plane_y=%.3fmm", plane_y)
 
         if bool(flat_caps_cfg.get("enabled", False)):
             _progress(total_processing, total_processing, "Adding flat caps")

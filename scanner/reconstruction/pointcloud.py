@@ -240,6 +240,60 @@ def fuse_half_turn_profiles(
     return fused
 
 
+def clip_above_detected_top_plane(
+    cloud: np.ndarray,
+    reference_cloud: np.ndarray,
+    *,
+    enabled: bool = True,
+    top_quantile: float = 0.90,
+    max_plane_thickness_mm: float = 2.0,
+    clip_margin_mm: float = 1.0,
+    min_plane_points: int = 80,
+) -> tuple[np.ndarray, float | None]:
+    """Clip points above a detected horizontal top plane.
+
+    The project convention uses +Y as vertical. The top plane is accepted only
+    when the high-Y band in the reference cloud is thin enough to be plausibly
+    flat.
+    """
+    if not enabled:
+        return cloud, None
+    if cloud.ndim != 2 or cloud.shape[1] != 3:
+        raise ValueError(f"cloud must be (N, 3), got {cloud.shape}")
+    if reference_cloud.ndim != 2 or reference_cloud.shape[1] != 3:
+        raise ValueError(f"reference_cloud must be (N, 3), got {reference_cloud.shape}")
+    if cloud.shape[0] == 0 or reference_cloud.shape[0] < min_plane_points:
+        return cloud, None
+
+    q = max(0.0, min(1.0, float(top_quantile)))
+    y_ref = reference_cloud[:, 1]
+    threshold = float(np.quantile(y_ref, q))
+    top_band = reference_cloud[y_ref >= threshold]
+    if top_band.shape[0] < min_plane_points:
+        return cloud, None
+
+    y_top = top_band[:, 1]
+    thickness = float(np.quantile(y_top, 0.95) - np.quantile(y_top, 0.05))
+    if thickness > max_plane_thickness_mm:
+        logger.info(
+            "clip_above_detected_top_plane: skip, top band thickness %.3fmm > %.3fmm",
+            thickness,
+            max_plane_thickness_mm,
+        )
+        return cloud, None
+
+    plane_y = float(np.median(y_top))
+    keep = cloud[:, 1] <= plane_y + float(clip_margin_mm)
+    clipped = cloud[keep].astype(np.float64)
+    logger.info(
+        "clip_above_detected_top_plane: plane_y=%.3fmm removed=%d/%d",
+        plane_y,
+        int(cloud.shape[0] - clipped.shape[0]),
+        int(cloud.shape[0]),
+    )
+    return clipped, plane_y
+
+
 def _robust_xy_bounds(points: np.ndarray, pad_mm: float) -> tuple[float, float, float, float]:
     x = points[:, 0]
     y = points[:, 1]
