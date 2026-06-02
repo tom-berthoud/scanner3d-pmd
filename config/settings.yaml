@@ -28,7 +28,7 @@ cameras:
     calibration_exposure_us: 20000
     calibration_gain: 4
     lens_position: 2.7
-    laser_threshold: 70
+    laser_threshold: 44
     laser_sampling:
       x_stride: 1
       y_stride: 2
@@ -136,7 +136,7 @@ safety:
 processing:
   laser_channel: green      # canal couleur à isoler : green (laser vert ~520nm)
   laser_threshold: 70       # seuil par defaut; peut etre remplace par cameras[].laser_threshold
-  min_line_pixels: 1      # nombre minimum de points de ligne pour valider une détection
+  min_line_pixels: 4      # nombre minimum de points de ligne pour valider une détection
   subpixel: true            # activer la détection sub-pixel (centroïde)
   extraction_mode: row_mean  # row_mean = 1 point par ligne sur le vert brut
   occlusion_interpolation: false  # comble les zones cachées du laser avant la reconstruction 3D
