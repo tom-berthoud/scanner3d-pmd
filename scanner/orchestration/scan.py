@@ -52,7 +52,14 @@ def run_scan(
         CalibrationError: if calibration files are missing or corrupt.
         RuntimeError: for any other scan pipeline failure.
     """
-    from scanner.hardware import HardwareError, laser_set
+    from scanner.hardware import (
+        HardwareError,
+        camera_capture_all,
+        camera_set_exposure,
+        check_door_interlock,
+        laser_set,
+        motor_step,
+    )
     from scanner.calibration import (
         CalibrationError,
         camera_ids,
@@ -89,6 +96,7 @@ def run_scan(
 
     scan_cfg = config.get("scan", {})
     n_steps: int = int(scan_cfg.get("n_steps", 200))
+    exposure_calib_cfg = scan_cfg.get("exposure_calibration", {}) or {}
 
     proc_cfg = config.get("processing", {})
     default_threshold: int = int(proc_cfg.get("laser_threshold", 180))
@@ -161,6 +169,105 @@ def run_scan(
             (item for item in config.get("cameras", []) if str(item.get("id")) == str(camera_id)),
             {},
         )
+
+    def _measure_laser_width_px(frame: np.ndarray, camera_id: str, threshold: int) -> float | None:
+        from scanner.processing.laser_line import _mask_shapes
+
+        if frame.ndim != 3 or frame.shape[2] != 3:
+            return None
+        cam_cfg = _find_cam_cfg(camera_id)
+        green = frame[:, :, 1]
+        active = green >= int(threshold)
+        active = _mask_shapes(
+            active,
+            cam_cfg.get("laser_mask", []) or [],
+            original_shape=frame.shape[:2],
+        )
+        widths = active.sum(axis=1)
+        widths = widths[widths > 0]
+        if widths.size == 0:
+            return None
+        return float(np.median(widths))
+
+    def _run_pre_scan_exposure_calibration() -> None:
+        if not bool(exposure_calib_cfg.get("enabled", False)):
+            return
+
+        target_width = float(exposure_calib_cfg.get("target_median_width_px", 6.0))
+        if target_width <= 0:
+            logger.warning("exposure_calibration: invalid target width %.3f, skip", target_width)
+            return
+
+        sample_count = max(1, int(exposure_calib_cfg.get("sample_count", 3)))
+        angle_step_deg = float(exposure_calib_cfg.get("angle_step_deg", 30.0))
+        min_exposure = int(exposure_calib_cfg.get("min_exposure_us", 200))
+        max_exposure = int(exposure_calib_cfg.get("max_exposure_us", 60000))
+        max_adjust_factor = max(1.0, float(exposure_calib_cfg.get("max_adjust_factor", 3.0)))
+
+        motor_cfg = config.get("motor", {})
+        direction = str(scan_cfg.get("direction", "clockwise"))
+        total_motor_steps = int(motor_cfg.get("steps_per_rev", 200)) * int(
+            motor_cfg.get("microstepping", 1)
+        )
+        steps_per_sample = max(1, int(round(total_motor_steps * angle_step_deg / 360.0)))
+
+        widths_by_camera: dict[str, list[float]] = {}
+        _progress(0, n_steps, "Calibrating camera exposure")
+        try:
+            for sample_idx in range(sample_count):
+                check_door_interlock()
+                laser_set(True)
+                check_door_interlock()
+                frames = camera_capture_all()
+                laser_set(False)
+
+                for camera_id, frame in frames.items():
+                    cam_cfg = _find_cam_cfg(camera_id)
+                    threshold = int(cam_cfg.get("laser_threshold", default_threshold))
+                    width = _measure_laser_width_px(frame, camera_id, threshold)
+                    if width is not None:
+                        widths_by_camera.setdefault(camera_id, []).append(width)
+
+                if sample_idx < sample_count - 1:
+                    motor_step(steps_per_sample, direction)
+        finally:
+            _safe_laser_off()
+
+        for camera_id, widths in widths_by_camera.items():
+            if not widths:
+                logger.warning("exposure_calibration: camera %s has no detected laser width", camera_id)
+                continue
+            cam_cfg = _find_cam_cfg(camera_id)
+            old_exposure = int(
+                cam_cfg.get("exposure_us", config.get("camera", {}).get("exposure_us", 1000))
+            )
+            measured = float(np.median(np.asarray(widths, dtype=np.float64)))
+            if measured <= 0:
+                continue
+            factor = target_width / measured
+            factor = max(1.0 / max_adjust_factor, min(max_adjust_factor, factor))
+            new_exposure = int(round(old_exposure * factor))
+            new_exposure = max(min_exposure, min(max_exposure, new_exposure))
+            if new_exposure == old_exposure:
+                logger.info(
+                    "exposure_calibration: camera=%s width=%.2fpx target=%.2fpx exposure unchanged=%dus",
+                    camera_id,
+                    measured,
+                    target_width,
+                    old_exposure,
+                )
+                continue
+
+            camera_set_exposure(new_exposure, gain=None, camera_id=camera_id)
+            cam_cfg["exposure_us"] = new_exposure
+            logger.info(
+                "exposure_calibration: camera=%s width=%.2fpx target=%.2fpx exposure %d -> %dus",
+                camera_id,
+                measured,
+                target_width,
+                old_exposure,
+                new_exposure,
+            )
 
     def _seed_vec_from_cfg(camera_id: str) -> np.ndarray | None:
         cam_cfg = _find_cam_cfg(camera_id)
@@ -482,6 +589,8 @@ def run_scan(
 
     frames_by_camera: dict[str, list[np.ndarray]] = {}
     try:
+        _run_pre_scan_exposure_calibration()
+
         def _capture_progress(step: int, total: int) -> None:
             _progress(step, total, f"Capturing step {step}/{total}")
 
