@@ -169,6 +169,11 @@ reconstruction:
     local_window_points: 21
     local_poly_degree: 2
     local_min_points: 9
+  half_turn_profile_fusion:
+    enabled: true
+    offset_tolerance_steps: 1
+    max_pair_distance_mm: 6.0
+    min_profile_points: 8
 
 calibration:
   use_checkerboard: true    # true = utilise les fichiers intrinsics_path calibres par camera

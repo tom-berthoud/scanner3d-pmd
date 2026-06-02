@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from scanner.reconstruction import filter_outliers, merge_profiles
+from scanner.reconstruction import filter_outliers, fuse_half_turn_profiles, merge_profiles
 
 
 # --------------------------------------------------------------------------- #
@@ -57,6 +57,68 @@ class TestMergeProfiles:
         a = np.ones((100, 3), dtype=np.float32)
         result = merge_profiles([a])
         assert result.shape == (100, 3)
+
+
+# --------------------------------------------------------------------------- #
+# fuse_half_turn_profiles
+# --------------------------------------------------------------------------- #
+
+
+class TestFuseHalfTurnProfiles:
+    """Tests for duplicate profile fusion half a turn apart."""
+
+    def test_averages_close_half_turn_pair(self) -> None:
+        base = np.column_stack(
+            (
+                np.linspace(-10.0, 10.0, 20),
+                np.zeros(20),
+                np.full(20, 5.0),
+            )
+        )
+        duplicate = base + np.array([0.0, 0.4, 0.0])
+        profiles = [
+            base,
+            np.empty((0, 3)),
+            np.empty((0, 3)),
+            np.empty((0, 3)),
+            duplicate,
+            np.empty((0, 3)),
+            np.empty((0, 3)),
+            np.empty((0, 3)),
+        ]
+
+        fused = fuse_half_turn_profiles(
+            profiles,
+            n_steps=8,
+            offset_tolerance_steps=0,
+            max_pair_distance_mm=1.0,
+            min_profile_points=4,
+        )
+
+        non_empty = [p for p in fused if p.shape[0] > 0]
+        assert len(non_empty) == 1
+        np.testing.assert_allclose(non_empty[0][:, 1], np.full(20, 0.2), atol=1e-6)
+
+    def test_keeps_far_half_turn_pair(self) -> None:
+        base = np.column_stack(
+            (
+                np.linspace(-10.0, 10.0, 20),
+                np.zeros(20),
+                np.full(20, 5.0),
+            )
+        )
+        far = base + np.array([0.0, 20.0, 0.0])
+
+        fused = fuse_half_turn_profiles(
+            [base, np.empty((0, 3)), far, np.empty((0, 3))],
+            n_steps=4,
+            offset_tolerance_steps=0,
+            max_pair_distance_mm=1.0,
+            min_profile_points=4,
+        )
+
+        non_empty = [p for p in fused if p.shape[0] > 0]
+        assert len(non_empty) == 2
 
 
 # --------------------------------------------------------------------------- #

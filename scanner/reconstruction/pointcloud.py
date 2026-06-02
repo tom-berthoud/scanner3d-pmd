@@ -8,6 +8,7 @@ import logging
 
 import numpy as np
 from scipy.spatial import ConvexHull
+from scipy.spatial import cKDTree
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,118 @@ def filter_outliers(
         global_std,
     )
     return filtered.astype(np.float64)
+
+
+def _profile_distance_mm(a: np.ndarray, b: np.ndarray) -> float:
+    """Return a robust symmetric nearest-neighbour distance between profiles."""
+    tree_a = cKDTree(a)
+    tree_b = cKDTree(b)
+    d_ba, _ = tree_a.query(b, k=1)
+    d_ab, _ = tree_b.query(a, k=1)
+    return float(0.5 * (np.median(d_ab) + np.median(d_ba)))
+
+
+def _average_profiles(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Average two nearby profile curves after resampling along their main axis."""
+    combined = np.vstack((a, b)).astype(np.float64)
+    center = combined.mean(axis=0)
+    if combined.shape[0] < 3:
+        n = min(a.shape[0], b.shape[0])
+        return 0.5 * (a[:n] + b[:n])
+
+    cov = np.cov((combined - center).T)
+    evals, evecs = np.linalg.eigh(cov)
+    axis = evecs[:, int(np.argmax(evals))]
+
+    def _sort_unique(profile: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        t = (profile - center) @ axis
+        order = np.argsort(t)
+        t = t[order]
+        p = profile[order]
+        unique = np.concatenate(([True], np.diff(t) > 1e-9))
+        return t[unique], p[unique]
+
+    ta, pa = _sort_unique(a)
+    tb, pb = _sort_unique(b)
+    t0 = max(float(ta.min()), float(tb.min()))
+    t1 = min(float(ta.max()), float(tb.max()))
+    if t1 <= t0:
+        n = min(a.shape[0], b.shape[0])
+        return 0.5 * (a[:n] + b[:n])
+
+    n_out = max(2, max(a.shape[0], b.shape[0]))
+    t_grid = np.linspace(t0, t1, n_out, dtype=np.float64)
+    ai = np.column_stack([np.interp(t_grid, ta, pa[:, k]) for k in range(3)])
+    bi = np.column_stack([np.interp(t_grid, tb, pb[:, k]) for k in range(3)])
+    return (0.5 * (ai + bi)).astype(np.float64)
+
+
+def fuse_half_turn_profiles(
+    profiles: list[np.ndarray],
+    *,
+    n_steps: int,
+    enabled: bool = True,
+    offset_tolerance_steps: int = 1,
+    max_pair_distance_mm: float = 6.0,
+    min_profile_points: int = 8,
+) -> list[np.ndarray]:
+    """Fuse duplicate profiles observed again about half a turn later.
+
+    Some top-facing surfaces can be observed at step ``i`` and again near
+    ``i + n_steps/2``. If both triangulated profiles are close in object space,
+    this returns one averaged profile and removes the duplicate observation.
+    """
+    if not enabled or n_steps < 2 or not profiles:
+        return profiles
+    if max_pair_distance_mm <= 0:
+        raise ValueError(f"max_pair_distance_mm must be > 0, got {max_pair_distance_mm}")
+
+    total = len(profiles)
+    half_turn = max(1, int(round(float(n_steps) / 2.0)))
+    tolerance = max(0, int(offset_tolerance_steps))
+    used: set[int] = set()
+    fused: list[np.ndarray] = []
+    n_pairs = 0
+
+    for i, profile in enumerate(profiles):
+        if i in used:
+            continue
+        if profile.ndim != 2 or profile.shape[1] != 3 or profile.shape[0] < min_profile_points:
+            fused.append(profile)
+            used.add(i)
+            continue
+
+        best_j: int | None = None
+        best_dist = float("inf")
+        for delta in range(-tolerance, tolerance + 1):
+            j = i + half_turn + delta
+            if j >= total or j in used:
+                continue
+            other = profiles[j]
+            if other.ndim != 2 or other.shape[1] != 3 or other.shape[0] < min_profile_points:
+                continue
+            dist = _profile_distance_mm(profile.astype(np.float64), other.astype(np.float64))
+            if dist < best_dist:
+                best_dist = dist
+                best_j = j
+
+        if best_j is not None and best_dist <= max_pair_distance_mm:
+            fused.append(_average_profiles(profile.astype(np.float64), profiles[best_j].astype(np.float64)))
+            used.add(i)
+            used.add(best_j)
+            n_pairs += 1
+            continue
+
+        fused.append(profile)
+        used.add(i)
+
+    logger.info(
+        "fuse_half_turn_profiles: fused %d half-turn pairs (%d -> %d profiles)",
+        n_pairs,
+        len(profiles),
+        len(fused),
+    )
+    return fused
 
 
 def _robust_xy_bounds(points: np.ndarray, pad_mm: float) -> tuple[float, float, float, float]:

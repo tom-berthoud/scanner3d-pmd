@@ -61,7 +61,12 @@ def run_scan(
     from scanner.calibration.multi_camera import _load_extrinsics
     from scanner.acquisition import run_capture_sequence_multi
     from scanner.processing import extract_laser_line, triangulate
-    from scanner.reconstruction import add_flat_caps_aligned, merge_profiles, filter_outliers
+    from scanner.reconstruction import (
+        add_flat_caps_aligned,
+        filter_outliers,
+        fuse_half_turn_profiles,
+        merge_profiles,
+    )
     from scanner.export import export_stl, export_obj, export_point_cloud_ply
 
     sm = state_machine or StateMachine()
@@ -97,6 +102,7 @@ def run_scan(
     flat_caps_cfg = recon_cfg.get("flat_caps", {}) or {}
     auto_cheat_cfg = recon_cfg.get("auto_cheat_extrinsics", {}) or {}
     profile_fusion_cfg = recon_cfg.get("profile_fusion", {}) or {}
+    half_turn_fusion_cfg = recon_cfg.get("half_turn_profile_fusion", {}) or {}
 
     export_cfg = config.get("export", {})
     fmt: str = export_cfg.get("default_format", "stl").lower()
@@ -594,6 +600,21 @@ def run_scan(
                     f"Triangulating {camera_id} frame {idx + 1}/{len(extracted_items)}",
                 )
 
+        _progress(total_processing, total_processing, "Fusing half-turn duplicate profiles")
+        profiles_by_camera = {}
+        for camera_id, camera_profiles in triangulated_by_camera.items():
+            camera_fused = fuse_half_turn_profiles(
+                camera_profiles,
+                n_steps=n_steps,
+                enabled=bool(half_turn_fusion_cfg.get("enabled", True)),
+                offset_tolerance_steps=int(half_turn_fusion_cfg.get("offset_tolerance_steps", 1)),
+                max_pair_distance_mm=float(half_turn_fusion_cfg.get("max_pair_distance_mm", 6.0)),
+                min_profile_points=int(half_turn_fusion_cfg.get("min_profile_points", 8)),
+            )
+            profiles_by_camera[camera_id] = [
+                p for p in camera_fused if p.ndim == 2 and p.shape[0] > 0
+            ]
+
         max_steps = 0
         for arr in triangulated_by_camera.values():
             max_steps = max(max_steps, len(arr))
@@ -606,6 +627,14 @@ def run_scan(
             fused = _fuse_step_profiles(step_map)
             if fused.shape[0] > 0:
                 profiles.append(fused)
+        profiles = fuse_half_turn_profiles(
+            profiles,
+            n_steps=n_steps,
+            enabled=bool(half_turn_fusion_cfg.get("enabled", True)),
+            offset_tolerance_steps=int(half_turn_fusion_cfg.get("offset_tolerance_steps", 1)),
+            max_pair_distance_mm=float(half_turn_fusion_cfg.get("max_pair_distance_mm", 6.0)),
+            min_profile_points=int(half_turn_fusion_cfg.get("min_profile_points", 8)),
+        )
 
         _progress(total_processing, total_processing, "Fusing per-step profiles")
         for camera_id in frames_by_camera:
