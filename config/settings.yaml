@@ -11,6 +11,8 @@ scan:
     sample_count: 3
     angle_step_deg: 30.0
     target_median_width_px: 6.0
+    tolerance_width_px: 1.0
+    max_iterations: 4
     min_exposure_us: 200
     max_exposure_us: 60000
     max_adjust_factor: 3.0

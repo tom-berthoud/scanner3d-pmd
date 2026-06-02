@@ -200,6 +200,8 @@ def run_scan(
 
         sample_count = max(1, int(exposure_calib_cfg.get("sample_count", 3)))
         angle_step_deg = float(exposure_calib_cfg.get("angle_step_deg", 30.0))
+        tolerance_width = max(0.0, float(exposure_calib_cfg.get("tolerance_width_px", 1.0)))
+        max_iterations = max(1, int(exposure_calib_cfg.get("max_iterations", 4)))
         min_exposure = int(exposure_calib_cfg.get("min_exposure_us", 200))
         max_exposure = int(exposure_calib_cfg.get("max_exposure_us", 60000))
         max_adjust_factor = max(1.0, float(exposure_calib_cfg.get("max_adjust_factor", 3.0)))
@@ -211,63 +213,108 @@ def run_scan(
         )
         steps_per_sample = max(1, int(round(total_motor_steps * angle_step_deg / 360.0)))
 
-        widths_by_camera: dict[str, list[float]] = {}
         _progress(0, n_steps, "Calibrating camera exposure")
-        try:
-            for sample_idx in range(sample_count):
-                check_door_interlock()
-                laser_set(True)
-                check_door_interlock()
-                frames = camera_capture_all()
-                laser_set(False)
 
-                for camera_id, frame in frames.items():
-                    cam_cfg = _find_cam_cfg(camera_id)
-                    threshold = int(cam_cfg.get("laser_threshold", default_threshold))
-                    width = _measure_laser_width_px(frame, camera_id, threshold)
-                    if width is not None:
-                        widths_by_camera.setdefault(camera_id, []).append(width)
+        def _capture_width_cycle() -> dict[str, float | None]:
+            widths_by_camera: dict[str, list[float]] = {}
+            seen_cameras: set[str] = set()
+            try:
+                for sample_idx in range(sample_count):
+                    check_door_interlock()
+                    laser_set(True)
+                    check_door_interlock()
+                    frames = camera_capture_all()
+                    laser_set(False)
 
-                if sample_idx < sample_count - 1:
-                    motor_step(steps_per_sample, direction)
-        finally:
-            _safe_laser_off()
+                    for camera_id, frame in frames.items():
+                        seen_cameras.add(camera_id)
+                        cam_cfg = _find_cam_cfg(camera_id)
+                        threshold = int(cam_cfg.get("laser_threshold", default_threshold))
+                        width = _measure_laser_width_px(frame, camera_id, threshold)
+                        if width is not None:
+                            widths_by_camera.setdefault(camera_id, []).append(width)
 
-        for camera_id, widths in widths_by_camera.items():
-            if not widths:
-                logger.warning("exposure_calibration: camera %s has no detected laser width", camera_id)
-                continue
-            cam_cfg = _find_cam_cfg(camera_id)
-            old_exposure = int(
-                cam_cfg.get("exposure_us", config.get("camera", {}).get("exposure_us", 1000))
-            )
-            measured = float(np.median(np.asarray(widths, dtype=np.float64)))
-            if measured <= 0:
-                continue
-            factor = target_width / measured
-            factor = max(1.0 / max_adjust_factor, min(max_adjust_factor, factor))
-            new_exposure = int(round(old_exposure * factor))
-            new_exposure = max(min_exposure, min(max_exposure, new_exposure))
-            if new_exposure == old_exposure:
+                    if sample_idx < sample_count - 1:
+                        motor_step(steps_per_sample, direction)
+            finally:
+                _safe_laser_off()
+
+            measured_by_camera: dict[str, float | None] = {}
+            for camera_id in seen_cameras:
+                widths = widths_by_camera.get(camera_id, [])
+                measured_by_camera[camera_id] = (
+                    float(np.median(np.asarray(widths, dtype=np.float64))) if widths else None
+                )
+            return measured_by_camera
+
+        for iteration in range(1, max_iterations + 1):
+            measured_by_camera = _capture_width_cycle()
+            if not measured_by_camera:
+                logger.warning("exposure_calibration: no camera frames captured, skip")
+                return
+
+            all_in_tolerance = True
+            for camera_id, measured in measured_by_camera.items():
+                cam_cfg = _find_cam_cfg(camera_id)
+                old_exposure = int(
+                    cam_cfg.get("exposure_us", config.get("camera", {}).get("exposure_us", 1000))
+                )
+
+                if measured is None or measured <= 0:
+                    all_in_tolerance = False
+                    factor = max_adjust_factor
+                    measured_text = "none"
+                else:
+                    error = abs(measured - target_width)
+                    if error <= tolerance_width:
+                        logger.info(
+                            "exposure_calibration: iter=%d camera=%s width=%.2fpx target=%.2fpx "
+                            "error=%.2fpx exposure=%dus ok",
+                            iteration,
+                            camera_id,
+                            measured,
+                            target_width,
+                            error,
+                            old_exposure,
+                        )
+                        continue
+                    all_in_tolerance = False
+                    factor = target_width / measured
+                    measured_text = f"{measured:.2f}"
+
+                factor = max(1.0 / max_adjust_factor, min(max_adjust_factor, factor))
+                new_exposure = int(round(old_exposure * factor))
+                new_exposure = max(min_exposure, min(max_exposure, new_exposure))
+                if new_exposure == old_exposure:
+                    logger.info(
+                        "exposure_calibration: iter=%d camera=%s width=%s target=%.2fpx "
+                        "exposure unchanged=%dus",
+                        iteration,
+                        camera_id,
+                        measured_text,
+                        target_width,
+                        old_exposure,
+                    )
+                    continue
+
+                camera_set_exposure(new_exposure, gain=None, camera_id=camera_id)
+                cam_cfg["exposure_us"] = new_exposure
                 logger.info(
-                    "exposure_calibration: camera=%s width=%.2fpx target=%.2fpx exposure unchanged=%dus",
+                    "exposure_calibration: iter=%d camera=%s width=%s target=%.2fpx "
+                    "exposure %d -> %dus",
+                    iteration,
                     camera_id,
-                    measured,
+                    measured_text,
                     target_width,
                     old_exposure,
+                    new_exposure,
                 )
-                continue
 
-            camera_set_exposure(new_exposure, gain=None, camera_id=camera_id)
-            cam_cfg["exposure_us"] = new_exposure
-            logger.info(
-                "exposure_calibration: camera=%s width=%.2fpx target=%.2fpx exposure %d -> %dus",
-                camera_id,
-                measured,
-                target_width,
-                old_exposure,
-                new_exposure,
-            )
+            if all_in_tolerance:
+                logger.info("exposure_calibration: converged in %d iteration(s)", iteration)
+                return
+
+        logger.info("exposure_calibration: reached max_iterations=%d", max_iterations)
 
     def _seed_vec_from_cfg(camera_id: str) -> np.ndarray | None:
         cam_cfg = _find_cam_cfg(camera_id)
