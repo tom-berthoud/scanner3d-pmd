@@ -29,12 +29,23 @@ class PoissonMeshConfig:
     deduplicate_decimals: int = 4
     close_horizontal_holes: bool = True
     horizontal_normal_tolerance: float = 0.85
+    mesh_clip_plane: tuple[float, float, float, float] | None = None
+    mesh_clip_margin_mm: float = 0.0
+    mesh_clip_cap: bool = True
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any] | None) -> "PoissonMeshConfig":
         """Build a config from settings.yaml values."""
         if not values:
             return cls()
+        clip_plane_raw = values.get("mesh_clip_plane")
+        clip_plane = None
+        if clip_plane_raw is not None:
+            clip_values = tuple(float(v) for v in clip_plane_raw)
+            if len(clip_values) != 4:
+                raise ValueError("poisson.mesh_clip_plane must contain 4 values [a,b,c,d]")
+            clip_plane = clip_values
+
         return cls(
             normal_radius_mm=float(values.get("normal_radius_mm", cls.normal_radius_mm)),
             normal_max_nn=int(values.get("normal_max_nn", cls.normal_max_nn)),
@@ -56,6 +67,11 @@ class PoissonMeshConfig:
                     cls.horizontal_normal_tolerance,
                 )
             ),
+            mesh_clip_plane=clip_plane,
+            mesh_clip_margin_mm=float(
+                values.get("mesh_clip_margin_mm", cls.mesh_clip_margin_mm)
+            ),
+            mesh_clip_cap=bool(values.get("mesh_clip_cap", cls.mesh_clip_cap)),
         ).validated()
 
     def validated(self) -> "PoissonMeshConfig":
@@ -78,6 +94,8 @@ class PoissonMeshConfig:
             raise ValueError("poisson.deduplicate_decimals must be >= 0")
         if not 0.0 <= self.horizontal_normal_tolerance <= 1.0:
             raise ValueError("poisson.horizontal_normal_tolerance must be in [0, 1]")
+        if self.mesh_clip_margin_mm < 0.0:
+            raise ValueError("poisson.mesh_clip_margin_mm must be >= 0")
         return self
 
 
@@ -158,6 +176,14 @@ def _cloud_to_poisson_mesh(
             mesh,
             normal_tolerance=cfg.horizontal_normal_tolerance,
         )
+    if cfg.mesh_clip_plane is not None:
+        _clip_mesh_by_plane(
+            mesh,
+            np.asarray(cfg.mesh_clip_plane, dtype=np.float64),
+            margin_mm=cfg.mesh_clip_margin_mm,
+            cap=cfg.mesh_clip_cap,
+        )
+        _clean_mesh(mesh)
 
     if len(mesh.vertices) == 0 or len(mesh.triangles) == 0:
         raise RuntimeError("Poisson reconstruction produced an empty mesh")
@@ -343,6 +369,211 @@ def _cap_horizontal_boundary_loops(
     mesh.remove_unreferenced_vertices()
     logger.info("Poisson mesh: capped %d horizontal boundary loop(s)", caps_added)
     return caps_added
+
+
+def _clip_mesh_by_plane(
+    mesh: "o3d.geometry.TriangleMesh",  # type: ignore[name-defined]
+    plane: np.ndarray,
+    *,
+    margin_mm: float = 0.0,
+    cap: bool = True,
+) -> None:
+    vertices = np.asarray(mesh.vertices, dtype=np.float64)
+    triangles = np.asarray(mesh.triangles, dtype=np.int64)
+    if vertices.size == 0 or triangles.size == 0:
+        return
+
+    normal = np.asarray(plane[:3], dtype=np.float64)
+    norm = float(np.linalg.norm(normal))
+    if norm <= 1e-12:
+        return
+    normal = normal / norm
+    d = float(plane[3]) / norm - float(margin_mm)
+    signed = vertices @ normal + d
+
+    new_vertices = vertices.tolist()
+    new_triangles: list[list[int]] = []
+    intersection_cache: dict[tuple[int, int], int] = {}
+    cut_segments: list[tuple[int, int]] = []
+
+    def _intersection_idx(i0: int, i1: int) -> int:
+        key = tuple(sorted((int(i0), int(i1))))
+        cached = intersection_cache.get(key)
+        if cached is not None:
+            return cached
+        s0 = float(signed[i0])
+        s1 = float(signed[i1])
+        t = s0 / (s0 - s1)
+        point = vertices[i0] + t * (vertices[i1] - vertices[i0])
+        idx = len(new_vertices)
+        new_vertices.append(point.tolist())
+        intersection_cache[key] = idx
+        return idx
+
+    for tri in triangles:
+        poly = [int(tri[0]), int(tri[1]), int(tri[2])]
+        clipped: list[int] = []
+        intersections: list[int] = []
+        for pos, current in enumerate(poly):
+            previous = poly[pos - 1]
+            current_inside = signed[current] <= 1e-9
+            previous_inside = signed[previous] <= 1e-9
+            if current_inside != previous_inside:
+                inter = _intersection_idx(previous, current)
+                clipped.append(inter)
+                intersections.append(inter)
+            if current_inside:
+                clipped.append(current)
+
+        if len(clipped) < 3:
+            continue
+        for k in range(1, len(clipped) - 1):
+            new_triangles.append([clipped[0], clipped[k], clipped[k + 1]])
+        if cap and len(intersections) == 2 and intersections[0] != intersections[1]:
+            cut_segments.append((intersections[0], intersections[1]))
+
+    if cap and cut_segments:
+        new_triangles.extend(_triangulate_cut_segments(new_vertices, cut_segments, normal))
+
+    o3d = _require_open3d()
+    mesh.vertices = o3d.utility.Vector3dVector(np.asarray(new_vertices, dtype=np.float64))
+    mesh.triangles = o3d.utility.Vector3iVector(np.asarray(new_triangles, dtype=np.int32))
+    logger.info(
+        "Poisson mesh: plane-clipped to %d vertices / %d faces (cap=%s)",
+        len(new_vertices),
+        len(new_triangles),
+        cap,
+    )
+
+
+def _triangulate_cut_segments(
+    vertices: list[list[float]],
+    segments: list[tuple[int, int]],
+    normal: np.ndarray,
+) -> list[list[int]]:
+    unique_edges = {tuple(sorted((int(a), int(b)))) for a, b in segments if a != b}
+    adjacency: dict[int, list[int]] = defaultdict(list)
+    for a, b in unique_edges:
+        adjacency[a].append(b)
+        adjacency[b].append(a)
+
+    loops: list[list[int]] = []
+    used_edges: set[tuple[int, int]] = set()
+    for edge in unique_edges:
+        if edge in used_edges:
+            continue
+        start, nxt = edge
+        loop = [start]
+        prev = start
+        current = nxt
+        used_edges.add(edge)
+        while True:
+            loop.append(current)
+            neighbors = adjacency.get(current, [])
+            candidates = [n for n in neighbors if n != prev]
+            if not candidates:
+                break
+            nxt = candidates[0]
+            edge_key = tuple(sorted((current, nxt)))
+            if nxt == start:
+                used_edges.add(edge_key)
+                break
+            if edge_key in used_edges:
+                break
+            used_edges.add(edge_key)
+            prev, current = current, nxt
+        if len(loop) >= 3 and loop[0] != loop[-1]:
+            loops.append(loop)
+
+    if not loops:
+        return []
+
+    n = normal / max(float(np.linalg.norm(normal)), 1e-12)
+    helper = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    if abs(float(np.dot(helper, n))) > 0.9:
+        helper = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    u = np.cross(helper, n)
+    u /= max(float(np.linalg.norm(u)), 1e-12)
+    v = np.cross(n, u)
+
+    triangles: list[list[int]] = []
+    vertex_arr = np.asarray(vertices, dtype=np.float64)
+    for loop in loops:
+        points_3d = vertex_arr[np.asarray(loop, dtype=np.int64)]
+        points_2d = np.column_stack((points_3d @ u, points_3d @ v))
+        tris = _ear_clip_loop(points_2d)
+        for a, b, c in tris:
+            triangles.append([int(loop[a]), int(loop[b]), int(loop[c])])
+    return triangles
+
+
+def _ear_clip_loop(points: np.ndarray) -> list[tuple[int, int, int]]:
+    n = points.shape[0]
+    if n < 3:
+        return []
+    order = list(range(n))
+    if _polygon_area(points) < 0:
+        order.reverse()
+
+    triangles: list[tuple[int, int, int]] = []
+    guard = 0
+    while len(order) > 3 and guard < n * n:
+        guard += 1
+        clipped = False
+        for idx in range(len(order)):
+            prev_i = order[idx - 1]
+            curr_i = order[idx]
+            next_i = order[(idx + 1) % len(order)]
+            if not _is_convex(points[prev_i], points[curr_i], points[next_i]):
+                continue
+            tri = (points[prev_i], points[curr_i], points[next_i])
+            if any(
+                _point_in_triangle(points[other], tri)
+                for other in order
+                if other not in (prev_i, curr_i, next_i)
+            ):
+                continue
+            triangles.append((prev_i, curr_i, next_i))
+            del order[idx]
+            clipped = True
+            break
+        if not clipped:
+            break
+
+    if len(order) == 3:
+        triangles.append((order[0], order[1], order[2]))
+    return triangles
+
+
+def _polygon_area(points: np.ndarray) -> float:
+    x = points[:, 0]
+    y = points[:, 1]
+    return float(0.5 * np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+
+
+def _is_convex(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> bool:
+    ab = b - a
+    bc = c - b
+    return float(ab[0] * bc[1] - ab[1] * bc[0]) > 1e-10
+
+
+def _point_in_triangle(p: np.ndarray, tri: tuple[np.ndarray, np.ndarray, np.ndarray]) -> bool:
+    a, b, c = tri
+    v0 = c - a
+    v1 = b - a
+    v2 = p - a
+    dot00 = float(np.dot(v0, v0))
+    dot01 = float(np.dot(v0, v1))
+    dot02 = float(np.dot(v0, v2))
+    dot11 = float(np.dot(v1, v1))
+    dot12 = float(np.dot(v1, v2))
+    denom = dot00 * dot11 - dot01 * dot01
+    if abs(denom) <= 1e-12:
+        return False
+    inv = 1.0 / denom
+    u = (dot11 * dot02 - dot01 * dot12) * inv
+    v = (dot00 * dot12 - dot01 * dot02) * inv
+    return u >= -1e-10 and v >= -1e-10 and (u + v) <= 1.0 + 1e-10
 
 
 def _find_boundary_components(triangles: np.ndarray) -> list[set[int]]:

@@ -70,7 +70,7 @@ def run_scan(
     from scanner.processing import extract_laser_line, triangulate
     from scanner.reconstruction import (
         add_flat_caps_aligned,
-        clip_above_detected_top_plane,
+        detect_top_plane,
         filter_outliers,
         fuse_half_turn_profiles,
         merge_profiles,
@@ -830,15 +830,15 @@ def run_scan(
         else:
             logger.warning("Too few points (%d) for outlier filtering", cloud.shape[0])
 
+        mesh_clip_plane: np.ndarray | None = None
         if bool(top_plane_clip_cfg.get("enabled", False)):
             reference_camera = str(top_plane_clip_cfg.get("reference_camera", "right"))
             reference_cloud = camera_clouds.get(reference_camera)
             if reference_cloud is None:
                 logger.warning("top_plane_clip: reference camera %s cloud missing", reference_camera)
             else:
-                _progress(total_processing, total_processing, "Clipping above detected top plane")
-                cloud, plane = clip_above_detected_top_plane(
-                    cloud,
+                _progress(total_processing, total_processing, "Detecting top clipping plane")
+                mesh_clip_plane = detect_top_plane(
                     reference_cloud,
                     enabled=True,
                     top_quantile=float(top_plane_clip_cfg.get("top_quantile", 0.90)),
@@ -848,16 +848,15 @@ def run_scan(
                     max_plane_thickness_mm=float(
                         top_plane_clip_cfg.get("max_plane_thickness_mm", 2.0)
                     ),
-                    clip_margin_mm=float(top_plane_clip_cfg.get("clip_margin_mm", 1.0)),
                     min_plane_points=int(top_plane_clip_cfg.get("min_plane_points", 80)),
                 )
-                if plane is not None:
+                if mesh_clip_plane is not None:
                     logger.info(
                         "top_plane_clip: applied plane=[%.4f, %.4f, %.4f, %.3f]",
-                        plane[0],
-                        plane[1],
-                        plane[2],
-                        plane[3],
+                        mesh_clip_plane[0],
+                        mesh_clip_plane[1],
+                        mesh_clip_plane[2],
+                        mesh_clip_plane[3],
                     )
 
         if bool(flat_caps_cfg.get("enabled", False)):
@@ -901,10 +900,26 @@ def run_scan(
         logger.info("Raw point cloud exported to %s", cloud_path)
 
         _progress(n_steps, n_steps, "Building mesh (Poisson)")
+        mesh_poisson_cfg = dict(poisson_cfg)
+        if "mesh_clip_plane" not in mesh_poisson_cfg:
+            try:
+                if "mesh_clip_plane" in locals() and mesh_clip_plane is not None:
+                    mesh_poisson_cfg["mesh_clip_plane"] = mesh_clip_plane.tolist()
+                    mesh_poisson_cfg.setdefault(
+                        "mesh_clip_margin_mm",
+                        float(top_plane_clip_cfg.get("clip_margin_mm", 1.0)),
+                    )
+                    mesh_poisson_cfg.setdefault(
+                        "mesh_clip_cap",
+                        bool(top_plane_clip_cfg.get("mesh_clip_cap", True)),
+                    )
+            except NameError:
+                pass
+
         if fmt == "obj":
-            export_obj(cloud, output_path, poisson=poisson_cfg)
+            export_obj(cloud, output_path, poisson=mesh_poisson_cfg)
         else:
-            export_stl(cloud, output_path, poisson=poisson_cfg)
+            export_stl(cloud, output_path, poisson=mesh_poisson_cfg)
 
         _artifact("mesh", output_path, "STL final" if fmt == "stl" else "OBJ final", f"model/{fmt}")
 

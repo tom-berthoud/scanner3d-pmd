@@ -9,6 +9,7 @@ Exports:
 
 from scanner.reconstruction.pointcloud import (
     clip_above_detected_top_plane,
+    detect_top_plane,
     filter_outliers,
     fuse_half_turn_profiles,
     merge_profiles,
@@ -22,4 +23,5 @@ __all__ = [
     "add_flat_caps_aligned",
     "fuse_half_turn_profiles",
     "clip_above_detected_top_plane",
+    "detect_top_plane",
 ]

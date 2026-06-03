@@ -83,6 +83,38 @@ def _make_open_cylinder_mesh(o3d: object, n_segments: int = 24) -> object:
     return mesh
 
 
+def _make_l_prism_side_mesh(o3d: object) -> object:
+    poly = np.asarray(
+        [
+            [0.0, 0.0],
+            [2.0, 0.0],
+            [2.0, 1.0],
+            [1.0, 1.0],
+            [1.0, 2.0],
+            [0.0, 2.0],
+        ],
+        dtype=np.float64,
+    )
+    vertices: list[list[float]] = []
+    for y in (-1.0, 1.0):
+        for x, z in poly:
+            vertices.append([float(x), y, float(z)])
+
+    n = poly.shape[0]
+    triangles: list[list[int]] = []
+    for idx in range(n):
+        nxt = (idx + 1) % n
+        b0, b1 = idx, nxt
+        t0, t1 = idx + n, nxt + n
+        triangles.append([b0, b1, t1])
+        triangles.append([b0, t1, t0])
+
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(np.asarray(vertices, dtype=np.float64))
+    mesh.triangles = o3d.utility.Vector3iVector(np.asarray(triangles, dtype=np.int32))
+    return mesh
+
+
 class TestExportSTL:
     """Tests for scanner.export.stl.export_stl."""
 
@@ -162,6 +194,30 @@ class TestHorizontalHoleCapping:
 
         assert capped == 2
         assert _boundary_edge_count(mesh) == 0
+
+
+class TestMeshPlaneClip:
+    """Tests for clipping and capping meshes with a plane."""
+
+    def test_caps_concave_l_cut_without_filling_missing_corner(self) -> None:
+        o3d = pytest.importorskip("open3d")
+        from scanner.export.stl import _clip_mesh_by_plane
+
+        mesh = _make_l_prism_side_mesh(o3d)
+        _clip_mesh_by_plane(mesh, np.asarray([0.0, 1.0, 0.0, 0.0]), cap=True)
+
+        vertices = np.asarray(mesh.vertices)
+        triangles = np.asarray(mesh.triangles)
+        cap_triangles = []
+        for tri in triangles:
+            pts = vertices[tri]
+            if np.allclose(pts[:, 1], 0.0):
+                cap_triangles.append(pts)
+
+        assert cap_triangles, "Expected a cap on the clipping plane"
+        for pts in cap_triangles:
+            centroid = pts.mean(axis=0)
+            assert not (centroid[0] > 1.0 and centroid[2] > 1.0)
 
 
 class TestExportOBJ:

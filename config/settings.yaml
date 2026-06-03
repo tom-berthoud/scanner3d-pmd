@@ -173,6 +173,7 @@ reconstruction:
     min_density_ratio: 0.35
     max_plane_thickness_mm: 2.0
     clip_margin_mm: 1.0
+    mesh_clip_cap: true
     min_plane_points: 80
   auto_cheat_extrinsics:
     enabled: true

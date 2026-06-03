@@ -240,8 +240,7 @@ def fuse_half_turn_profiles(
     return fused
 
 
-def clip_above_detected_top_plane(
-    cloud: np.ndarray,
+def detect_top_plane(
     reference_cloud: np.ndarray,
     *,
     enabled: bool = True,
@@ -250,23 +249,20 @@ def clip_above_detected_top_plane(
     min_xz_extent_mm: float = 20.0,
     min_density_ratio: float = 0.35,
     max_plane_thickness_mm: float = 2.0,
-    clip_margin_mm: float = 1.0,
     min_plane_points: int = 80,
-) -> tuple[np.ndarray, np.ndarray | None]:
-    """Clip points above a detected top plane.
+) -> np.ndarray | None:
+    """Detect the highest dense, extended and planar top band.
 
     Candidate horizontal bands are scanned from the reference cloud. The
     highest dense, spatially extended and planar band is used to fit the plane.
     Its normal is oriented toward +Y, so positive signed distances are above.
     """
     if not enabled:
-        return cloud, None
-    if cloud.ndim != 2 or cloud.shape[1] != 3:
-        raise ValueError(f"cloud must be (N, 3), got {cloud.shape}")
+        return None
     if reference_cloud.ndim != 2 or reference_cloud.shape[1] != 3:
         raise ValueError(f"reference_cloud must be (N, 3), got {reference_cloud.shape}")
-    if cloud.shape[0] == 0 or reference_cloud.shape[0] < min_plane_points:
-        return cloud, None
+    if reference_cloud.shape[0] < min_plane_points:
+        return None
 
     y_ref = reference_cloud[:, 1]
     q = max(0.0, min(1.0, float(top_quantile)))
@@ -278,7 +274,7 @@ def clip_above_detected_top_plane(
     y_max = float(y_ref.max())
     edges = np.arange(y_min, y_max + bin_height, bin_height, dtype=np.float64)
     if edges.shape[0] < 2:
-        return cloud, None
+        return None
 
     candidates: list[tuple[float, int, np.ndarray, np.ndarray, float]] = []
     counts: list[int] = []
@@ -315,7 +311,7 @@ def clip_above_detected_top_plane(
 
     if not candidates:
         logger.info("clip_above_detected_top_plane: no valid planar top band")
-        return cloud, None
+        return None
 
     max_count = max(counts) if counts else 0
     min_count = max(int(min_plane_points), int(round(max_count * min_density)))
@@ -326,23 +322,65 @@ def clip_above_detected_top_plane(
             min_count,
             max_count,
         )
-        return cloud, None
+        return None
 
     _mean_y, count, centroid, normal, thickness = max(dense_candidates, key=lambda item: item[0])
     d = -float(normal @ centroid)
     plane = np.array([normal[0], normal[1], normal[2], d], dtype=np.float64)
-    signed_dist = cloud @ normal + d
-    keep = signed_dist <= float(clip_margin_mm)
-    clipped = cloud[keep].astype(np.float64)
     logger.info(
-        "clip_above_detected_top_plane: plane=[%.4f, %.4f, %.4f, %.3f] band_points=%d "
-        "thickness=%.3fmm removed=%d/%d",
+        "detect_top_plane: plane=[%.4f, %.4f, %.4f, %.3f] band_points=%d thickness=%.3fmm",
         plane[0],
         plane[1],
         plane[2],
         plane[3],
         count,
         thickness,
+    )
+    return plane
+
+
+def clip_above_detected_top_plane(
+    cloud: np.ndarray,
+    reference_cloud: np.ndarray,
+    *,
+    enabled: bool = True,
+    top_quantile: float = 0.90,
+    bin_height_mm: float = 1.0,
+    min_xz_extent_mm: float = 20.0,
+    min_density_ratio: float = 0.35,
+    max_plane_thickness_mm: float = 2.0,
+    clip_margin_mm: float = 1.0,
+    min_plane_points: int = 80,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Clip points above a detected top plane."""
+    if not enabled:
+        return cloud, None
+    if cloud.ndim != 2 or cloud.shape[1] != 3:
+        raise ValueError(f"cloud must be (N, 3), got {cloud.shape}")
+
+    plane = detect_top_plane(
+        reference_cloud,
+        enabled=True,
+        top_quantile=top_quantile,
+        bin_height_mm=bin_height_mm,
+        min_xz_extent_mm=min_xz_extent_mm,
+        min_density_ratio=min_density_ratio,
+        max_plane_thickness_mm=max_plane_thickness_mm,
+        min_plane_points=min_plane_points,
+    )
+    if plane is None:
+        return cloud, None
+
+    normal = plane[:3]
+    signed_dist = cloud @ normal + float(plane[3])
+    keep = signed_dist <= float(clip_margin_mm)
+    clipped = cloud[keep].astype(np.float64)
+    logger.info(
+        "clip_above_detected_top_plane: plane=[%.4f, %.4f, %.4f, %.3f] removed=%d/%d",
+        plane[0],
+        plane[1],
+        plane[2],
+        plane[3],
         int(cloud.shape[0] - clipped.shape[0]),
         int(cloud.shape[0]),
     )
