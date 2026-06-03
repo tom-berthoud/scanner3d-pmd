@@ -444,7 +444,7 @@
     \midrule
     O1  & Num\'{e}riser objet $\leq 150^3$\,mm, automatis\'{e}  & Fonctionnel & D\'{e}montr\'{e} \\
     O2  & Export STL ou OBJ                              & Obligatoire & Fait \\
-    O3  & Cycle de scan $\leq 10$\,min                   & $< 10$ min & $\sim$10 min \\
+    O3  & Cycle de scan $\leq 10$\,min                   & $< 10$ min & $\sim$8 min \\
     O4  & Prise en main $\leq 10$\,min                   & $< 10$ min & \`{A} valider \\
     O5  & Budget $\leq 300$\,CHF                         & $\leq 300$ CHF & Respect\'{e} \\
     O6  & S\'{e}curit\'{e} utilisateur                         & Conforme & Interlock OK \\
@@ -455,7 +455,7 @@
   \end{tabularx}
 
   \vspace{0.15cm}
-  \limitbox{La plupart des objectifs sont atteints, mais le cycle de scan atteint $\sim$10 min (limite du cahier des charges) et la pr\'{e}cision reste au-dessus de la cible ($>2$ mm) : l'objectif O9 n'est pas valid\'{e}.}
+  \limitbox{La plupart des objectifs sont atteints, mais le cycle de scan est bientôt à la limite (8 min) et la pr\'{e}cision reste au-dessus de la cible ($>2$ mm) : l'objectif O9 n'est pas valid\'{e}.}
 \end{frame}
 
 % ============================================================
@@ -478,7 +478,7 @@
         \parbox[t][2.8cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
           \scriptsize
           \textbf{\textcolor{heigred}{Limites}}\\[0.12cm]
-          Pr\'{e}cision encore $>2$ mm (O9 NOK). Cycle de scan \`{a} la limite des 10 min. Cavit\'{e}s profondes non couvertes, maillage STL fragile.
+          Pr\'{e}cision encore $>2$ mm (O9 NOK). Cavit\'{e}s profondes non couvertes, maillage STL fragile.
         }%
       }
     \end{column}
@@ -487,7 +487,7 @@
         \parbox[t][2.8cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
           \scriptsize
           \textbf{\textcolor{deepblue}{Perspectives}}\\[0.12cm]
-          Am\'{e}liorer le maillage (Poisson/Open3D). Valider la pr\'{e}cision sur pi\`{e}ces \'{e}talons. Finition ergonomie et s\'{e}curit\'{e}.
+          Am\'{e}liorer le maillage (Poisson/Open3D). Valider la pr\'{e}cision sur pi\`{e}ces \'{e}talons. Augmenter la performance.
         }%
       }
     \end{column}
@@ -505,5 +505,34 @@
     \end{minipage}
   \end{center}
 \end{frame}
+
+% ============================================================
+% SLIDE 10 : MERCI
+% ============================================================
+{
+\setbeamertemplate{footline}{}
+\begin{frame}
+  \begin{columns}[c,onlytextwidth]
+    \begin{column}{0.50\textwidth}
+      {\usebeamerfont{title}\textcolor{deepblue}{Merci}}\\[0.3cm]
+      {\usebeamerfont{subtitle}\textcolor{mutedgray}{Questions \&{} d\'{e}monstration}}\\[0.55cm]
+
+      \begin{tikzpicture}
+        \fill[heigred] (0,0) rectangle (1.1,0.08);
+        \fill[deepblue] (1.18,0) rectangle (5.0,0.08);
+      \end{tikzpicture}
+
+      \vspace{0.55cm}
+      \small
+      \textbf{\'{E}quipe :} Luc Marchand, Tim Stamm, Jason Weber, Hadrien Fuentes, Tom Berthoud\\[0.2cm]
+      \textbf{Scanner 3D \`{a} triangulation laser} -- HEIG-VD, PMD 2026
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=6.0cm,keepaspectratio]{boitefinal.jpeg}\\
+    \end{column}
+  \end{columns}
+\end{frame}
+}
 
 \end{document}
