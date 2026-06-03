@@ -183,6 +183,10 @@ def create_app(config_path: Optional[str] = None) -> Flask:
         "artifacts": {},
     }
     _scan_lock = threading.Lock()
+    _scan_worker = {
+        "running": False,
+        "thread": None,
+    }
     # One queue per connected SSE client (browser tab). Events are broadcast to
     # every client so multiple tabs/screens stay in sync — a single shared queue
     # would deliver each event to only one tab (round-robin), desyncing the rest.
@@ -882,13 +886,19 @@ def create_app(config_path: Optional[str] = None) -> Flask:
     def scan_start() -> Response:
         """Start a scan in a background thread."""
         with _scan_lock:
-            if _scan_state["state"] not in ("IDLE", "COMPLETE", "ERROR"):
+            if (
+                _scan_worker["running"]
+                or _scan_state["state"] not in ("IDLE", "COMPLETE", "ERROR")
+                or _sm.current_state.name not in ("IDLE", "COMPLETE", "ERROR")
+            ):
                 return jsonify({"error": "Scan already in progress"}), 409
             # COMPLETE/ERROR → SCANNING is invalid; reset to IDLE first
             if _sm.current_state.name in ("COMPLETE", "ERROR"):
                 _sm.reset()
-            _scan_state["state"] = "IDLE"
+            _scan_worker["running"] = True
+            _scan_state["state"] = "SCANNING"
             _scan_state["progress"] = 0
+            _scan_state["message"] = "Starting scan"
             _scan_state["error"] = None
             _scan_state["artifacts"] = _initial_artifacts()
 
@@ -947,8 +957,13 @@ def create_app(config_path: Optional[str] = None) -> Flask:
                 logger.error("Scan thread error: %s", exc)
                 with _scan_lock:
                     _scan_state["error"] = str(exc)
+            finally:
+                with _scan_lock:
+                    _scan_worker["running"] = False
 
         thread = threading.Thread(target=_run, daemon=True, name="scan-worker")
+        with _scan_lock:
+            _scan_worker["thread"] = thread
         thread.start()
         return jsonify({"status": "started"}), 202
 
