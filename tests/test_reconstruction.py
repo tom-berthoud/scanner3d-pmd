@@ -227,7 +227,7 @@ class TestClipAboveDetectedTopPlane:
         artifacts[:, 1] = 16.0
         cloud = np.vstack((body, top, artifacts))
 
-        clipped, plane_y = clip_above_detected_top_plane(
+        clipped, plane = clip_above_detected_top_plane(
             cloud,
             top,
             top_quantile=0.5,
@@ -236,9 +236,36 @@ class TestClipAboveDetectedTopPlane:
             min_plane_points=20,
         )
 
-        assert plane_y is not None
+        assert plane is not None
         assert clipped.shape[0] < cloud.shape[0]
-        assert clipped[:, 1].max() <= plane_y + 1.0 + 1e-9
+        signed_dist = clipped @ plane[:3] + plane[3]
+        assert signed_dist.max() <= 1.0 + 1e-9
+
+    def test_clips_using_inclined_plane_equation(self) -> None:
+        rng = np.random.default_rng(44)
+        x = rng.uniform(-20.0, 20.0, size=180)
+        z = rng.uniform(-20.0, 20.0, size=180)
+        y = 10.0 + 0.08 * x - 0.04 * z + rng.normal(0.0, 0.08, size=180)
+        reference = np.column_stack((x, y, z))
+        below = reference.copy()
+        below[:, 1] -= 8.0
+        above = reference.copy()
+        above[:, 1] += 3.0
+        cloud = np.vstack((below, reference, above))
+
+        clipped, plane = clip_above_detected_top_plane(
+            cloud,
+            reference,
+            top_quantile=0.1,
+            max_plane_thickness_mm=0.8,
+            clip_margin_mm=0.5,
+            min_plane_points=50,
+        )
+
+        assert plane is not None
+        signed_dist = clipped @ plane[:3] + plane[3]
+        assert signed_dist.max() <= 0.5 + 1e-9
+        assert clipped.shape[0] < cloud.shape[0]
 
     def test_skips_when_reference_top_is_not_planar(self) -> None:
         rng = np.random.default_rng(43)
@@ -246,7 +273,7 @@ class TestClipAboveDetectedTopPlane:
         reference = cloud.copy()
         reference[:, 1] = np.linspace(0.0, 20.0, reference.shape[0])
 
-        clipped, plane_y = clip_above_detected_top_plane(
+        clipped, plane = clip_above_detected_top_plane(
             cloud,
             reference,
             top_quantile=0.5,
@@ -255,7 +282,7 @@ class TestClipAboveDetectedTopPlane:
             min_plane_points=20,
         )
 
-        assert plane_y is None
+        assert plane is None
         np.testing.assert_array_equal(clipped, cloud)
 
 

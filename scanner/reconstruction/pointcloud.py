@@ -249,12 +249,12 @@ def clip_above_detected_top_plane(
     max_plane_thickness_mm: float = 2.0,
     clip_margin_mm: float = 1.0,
     min_plane_points: int = 80,
-) -> tuple[np.ndarray, float | None]:
-    """Clip points above a detected horizontal top plane.
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Clip points above a detected top plane.
 
-    The project convention uses +Y as vertical. The top plane is accepted only
-    when the high-Y band in the reference cloud is thin enough to be plausibly
-    flat.
+    The top plane is fitted on the high-Y band of the reference cloud using SVD.
+    Its normal is oriented toward +Y, so points with positive signed distance
+    are considered above the plane and removed.
     """
     if not enabled:
         return cloud, None
@@ -272,8 +272,18 @@ def clip_above_detected_top_plane(
     if top_band.shape[0] < min_plane_points:
         return cloud, None
 
-    y_top = top_band[:, 1]
-    thickness = float(np.quantile(y_top, 0.95) - np.quantile(y_top, 0.05))
+    centroid = top_band.mean(axis=0)
+    _, singular_values, vt = np.linalg.svd(top_band - centroid, full_matrices=False)
+    normal = vt[-1].astype(np.float64)
+    norm = float(np.linalg.norm(normal))
+    if norm <= 1e-12:
+        return cloud, None
+    normal /= norm
+    if normal[1] < 0:
+        normal *= -1.0
+
+    signed_top_dist = (top_band - centroid) @ normal
+    thickness = float(np.quantile(np.abs(signed_top_dist), 0.95) * 2.0)
     if thickness > max_plane_thickness_mm:
         logger.info(
             "clip_above_detected_top_plane: skip, top band thickness %.3fmm > %.3fmm",
@@ -282,16 +292,21 @@ def clip_above_detected_top_plane(
         )
         return cloud, None
 
-    plane_y = float(np.median(y_top))
-    keep = cloud[:, 1] <= plane_y + float(clip_margin_mm)
+    d = -float(normal @ centroid)
+    plane = np.array([normal[0], normal[1], normal[2], d], dtype=np.float64)
+    signed_dist = cloud @ normal + d
+    keep = signed_dist <= float(clip_margin_mm)
     clipped = cloud[keep].astype(np.float64)
     logger.info(
-        "clip_above_detected_top_plane: plane_y=%.3fmm removed=%d/%d",
-        plane_y,
+        "clip_above_detected_top_plane: plane=[%.4f, %.4f, %.4f, %.3f] removed=%d/%d",
+        plane[0],
+        plane[1],
+        plane[2],
+        plane[3],
         int(cloud.shape[0] - clipped.shape[0]),
         int(cloud.shape[0]),
     )
-    return clipped, plane_y
+    return clipped, plane
 
 
 def _robust_xy_bounds(points: np.ndarray, pad_mm: float) -> tuple[float, float, float, float]:

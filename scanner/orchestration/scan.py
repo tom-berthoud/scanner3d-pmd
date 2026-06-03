@@ -837,7 +837,7 @@ def run_scan(
                 logger.warning("top_plane_clip: reference camera %s cloud missing", reference_camera)
             else:
                 _progress(total_processing, total_processing, "Clipping above detected top plane")
-                cloud, plane_y = clip_above_detected_top_plane(
+                cloud, plane = clip_above_detected_top_plane(
                     cloud,
                     reference_cloud,
                     enabled=True,
@@ -848,8 +848,14 @@ def run_scan(
                     clip_margin_mm=float(top_plane_clip_cfg.get("clip_margin_mm", 1.0)),
                     min_plane_points=int(top_plane_clip_cfg.get("min_plane_points", 80)),
                 )
-                if plane_y is not None:
-                    logger.info("top_plane_clip: applied plane_y=%.3fmm", plane_y)
+                if plane is not None:
+                    logger.info(
+                        "top_plane_clip: applied plane=[%.4f, %.4f, %.4f, %.3f]",
+                        plane[0],
+                        plane[1],
+                        plane[2],
+                        plane[3],
+                    )
 
         if bool(flat_caps_cfg.get("enabled", False)):
             _progress(total_processing, total_processing, "Adding flat caps")
