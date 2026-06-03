@@ -246,15 +246,18 @@ def clip_above_detected_top_plane(
     *,
     enabled: bool = True,
     top_quantile: float = 0.90,
+    bin_height_mm: float = 1.0,
+    min_xz_extent_mm: float = 20.0,
+    min_density_ratio: float = 0.35,
     max_plane_thickness_mm: float = 2.0,
     clip_margin_mm: float = 1.0,
     min_plane_points: int = 80,
 ) -> tuple[np.ndarray, np.ndarray | None]:
     """Clip points above a detected top plane.
 
-    The top plane is fitted on the high-Y band of the reference cloud using SVD.
-    Its normal is oriented toward +Y, so points with positive signed distance
-    are considered above the plane and removed.
+    Candidate horizontal bands are scanned from the reference cloud. The
+    highest dense, spatially extended and planar band is used to fit the plane.
+    Its normal is oriented toward +Y, so positive signed distances are above.
     """
     if not enabled:
         return cloud, None
@@ -265,44 +268,81 @@ def clip_above_detected_top_plane(
     if cloud.shape[0] == 0 or reference_cloud.shape[0] < min_plane_points:
         return cloud, None
 
-    q = max(0.0, min(1.0, float(top_quantile)))
     y_ref = reference_cloud[:, 1]
-    threshold = float(np.quantile(y_ref, q))
-    top_band = reference_cloud[y_ref >= threshold]
-    if top_band.shape[0] < min_plane_points:
+    q = max(0.0, min(1.0, float(top_quantile)))
+    search_min_y = float(np.quantile(y_ref, q))
+    bin_height = max(0.1, float(bin_height_mm))
+    min_density = max(0.0, min(1.0, float(min_density_ratio)))
+
+    y_min = float(y_ref.min())
+    y_max = float(y_ref.max())
+    edges = np.arange(y_min, y_max + bin_height, bin_height, dtype=np.float64)
+    if edges.shape[0] < 2:
         return cloud, None
 
-    centroid = top_band.mean(axis=0)
-    _, singular_values, vt = np.linalg.svd(top_band - centroid, full_matrices=False)
-    normal = vt[-1].astype(np.float64)
-    norm = float(np.linalg.norm(normal))
-    if norm <= 1e-12:
-        return cloud, None
-    normal /= norm
-    if normal[1] < 0:
-        normal *= -1.0
+    candidates: list[tuple[float, int, np.ndarray, np.ndarray, float]] = []
+    counts: list[int] = []
+    for low in edges:
+        high = low + bin_height
+        if high < search_min_y:
+            continue
+        band = reference_cloud[(y_ref >= low) & (y_ref < high)]
+        counts.append(int(band.shape[0]))
+        if band.shape[0] < min_plane_points:
+            continue
 
-    signed_top_dist = (top_band - centroid) @ normal
-    thickness = float(np.quantile(np.abs(signed_top_dist), 0.95) * 2.0)
-    if thickness > max_plane_thickness_mm:
+        x_extent = float(np.quantile(band[:, 0], 0.95) - np.quantile(band[:, 0], 0.05))
+        z_extent = float(np.quantile(band[:, 2], 0.95) - np.quantile(band[:, 2], 0.05))
+        if max(x_extent, z_extent) < min_xz_extent_mm:
+            continue
+
+        centroid = band.mean(axis=0)
+        _, _singular_values, vt = np.linalg.svd(band - centroid, full_matrices=False)
+        normal = vt[-1].astype(np.float64)
+        norm = float(np.linalg.norm(normal))
+        if norm <= 1e-12:
+            continue
+        normal /= norm
+        if normal[1] < 0:
+            normal *= -1.0
+
+        signed_band_dist = (band - centroid) @ normal
+        thickness = float(np.quantile(np.abs(signed_band_dist), 0.95) * 2.0)
+        if thickness > max_plane_thickness_mm:
+            continue
+
+        candidates.append((float(band[:, 1].mean()), int(band.shape[0]), centroid, normal, thickness))
+
+    if not candidates:
+        logger.info("clip_above_detected_top_plane: no valid planar top band")
+        return cloud, None
+
+    max_count = max(counts) if counts else 0
+    min_count = max(int(min_plane_points), int(round(max_count * min_density)))
+    dense_candidates = [item for item in candidates if item[1] >= min_count]
+    if not dense_candidates:
         logger.info(
-            "clip_above_detected_top_plane: skip, top band thickness %.3fmm > %.3fmm",
-            thickness,
-            max_plane_thickness_mm,
+            "clip_above_detected_top_plane: no dense planar band (min_count=%d, max_count=%d)",
+            min_count,
+            max_count,
         )
         return cloud, None
 
+    _mean_y, count, centroid, normal, thickness = max(dense_candidates, key=lambda item: item[0])
     d = -float(normal @ centroid)
     plane = np.array([normal[0], normal[1], normal[2], d], dtype=np.float64)
     signed_dist = cloud @ normal + d
     keep = signed_dist <= float(clip_margin_mm)
     clipped = cloud[keep].astype(np.float64)
     logger.info(
-        "clip_above_detected_top_plane: plane=[%.4f, %.4f, %.4f, %.3f] removed=%d/%d",
+        "clip_above_detected_top_plane: plane=[%.4f, %.4f, %.4f, %.3f] band_points=%d "
+        "thickness=%.3fmm removed=%d/%d",
         plane[0],
         plane[1],
         plane[2],
         plane[3],
+        count,
+        thickness,
         int(cloud.shape[0] - clipped.shape[0]),
         int(cloud.shape[0]),
     )

@@ -231,6 +231,7 @@ class TestClipAboveDetectedTopPlane:
             cloud,
             top,
             top_quantile=0.5,
+            min_xz_extent_mm=5.0,
             max_plane_thickness_mm=1.0,
             clip_margin_mm=1.0,
             min_plane_points=20,
@@ -266,6 +267,40 @@ class TestClipAboveDetectedTopPlane:
         signed_dist = clipped @ plane[:3] + plane[3]
         assert signed_dist.max() <= 0.5 + 1e-9
         assert clipped.shape[0] < cloud.shape[0]
+
+    def test_prefers_dense_planar_plateau_over_sparse_higher_artifact(self) -> None:
+        rng = np.random.default_rng(45)
+        top = rng.uniform(-20.0, 20.0, size=(180, 3))
+        top[:, 1] = 10.0 + rng.normal(0.0, 0.08, size=180)
+
+        angles = np.linspace(0.0, 2.0 * np.pi, 36, endpoint=False)
+        artifact = np.column_stack(
+            (
+                30.0 * np.cos(angles),
+                np.full(angles.shape[0], 15.0),
+                30.0 * np.sin(angles),
+            )
+        )
+        body = rng.uniform(-15.0, 15.0, size=(120, 3))
+        body[:, 1] = rng.uniform(-20.0, 8.0, size=120)
+        reference = np.vstack((body, top, artifact))
+        cloud = reference.copy()
+
+        clipped, plane = clip_above_detected_top_plane(
+            cloud,
+            reference,
+            top_quantile=0.50,
+            bin_height_mm=1.0,
+            min_xz_extent_mm=20.0,
+            min_density_ratio=0.35,
+            max_plane_thickness_mm=0.8,
+            clip_margin_mm=1.0,
+            min_plane_points=30,
+        )
+
+        assert plane is not None
+        assert abs(float(-plane[3] / plane[1]) - 10.0) < 1.0
+        assert clipped[:, 1].max() < 12.0
 
     def test_skips_when_reference_top_is_not_planar(self) -> None:
         rng = np.random.default_rng(43)

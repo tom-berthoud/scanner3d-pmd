@@ -168,6 +168,9 @@ reconstruction:
     enabled: true
     reference_camera: right
     top_quantile: 0.90
+    bin_height_mm: 1.0
+    min_xz_extent_mm: 20.0
+    min_density_ratio: 0.35
     max_plane_thickness_mm: 2.0
     clip_margin_mm: 1.0
     min_plane_points: 80

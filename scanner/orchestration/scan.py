@@ -842,6 +842,9 @@ def run_scan(
                     reference_cloud,
                     enabled=True,
                     top_quantile=float(top_plane_clip_cfg.get("top_quantile", 0.90)),
+                    bin_height_mm=float(top_plane_clip_cfg.get("bin_height_mm", 1.0)),
+                    min_xz_extent_mm=float(top_plane_clip_cfg.get("min_xz_extent_mm", 20.0)),
+                    min_density_ratio=float(top_plane_clip_cfg.get("min_density_ratio", 0.35)),
                     max_plane_thickness_mm=float(
                         top_plane_clip_cfg.get("max_plane_thickness_mm", 2.0)
                     ),
