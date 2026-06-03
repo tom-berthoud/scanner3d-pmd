@@ -160,7 +160,7 @@ reconstruction:
     enabled: true
     axis_mode: pca
     axis_index: 2
-    grid_mm: 0.8
+    grid_mm: 1.6
     top_quantile: 0.99
     bottom_quantile: 0.01
     border_pad_mm: 1.0
