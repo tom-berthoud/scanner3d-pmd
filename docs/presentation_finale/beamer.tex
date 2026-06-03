@@ -18,6 +18,7 @@
   {../rapport/diagrams/}
   {../rapport/assets/}
   {../preview/}
+  {assets/}
 }
 
 \definecolor{heigred}{HTML}{D0002B}
@@ -170,8 +171,8 @@
       \vspace{0.35cm}
       \begin{tabularx}{\linewidth}{@{}>{\bfseries}p{2.4cm}X@{}}
         \toprule
-        Temps & $< 10$ min (observ\'{e} : $\sim$1,5 min) \\
-        Pr\'{e}cision & Cible $\leq 2$ mm \\
+        Temps & $< 10$ min (observ\'{e} : $\sim$10 min) \\
+        Pr\'{e}cision & Cible $\leq 2$ mm (non atteinte) \\
         Export & STL et OBJ \\
         Interface & Web + \'{e}cran + LEDs \\
         \bottomrule
@@ -282,19 +283,127 @@
       \end{itemize}
     \end{column}
     \begin{column}{0.50\textwidth}
-      \placeholder{3.0cm}{Photo du montage double cam\'{e}ra r\'{e}el}
+      \centering
+      \includegraphics[width=\linewidth,height=3.0cm,keepaspectratio]{montage2camera.jpeg}\\[0.1cm]
+      \raggedright
+      \scriptsize
+      \textbf{Calibration par cam\'{e}ra :} intrins\`{e}ques (damier OpenCV), plan laser ($\mathbf{n}, d$), extrins\`{e}ques vers le rep\`{e}re plateau.
 
       \vspace{0.1cm}
-      \small
-      \textbf{Calibration par cam\'{e}ra :}
+      \textbf{Fusion :} les deux nuages sont exprim\'{e}s dans un m\^{e}me rep\`{e}re monde avant filtrage et export.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ============================================================
+% SLIDE 6b : PIPELINE LOGICIEL ET NOUVEAUX ALGORITHMES
+% ============================================================
+\begin{frame}{Cha\^{i}ne logicielle}{Les traitements ajout\'{e}s depuis la mi-projet}
+  \footnotesize
+  \begin{enumerate}
+    \item \textbf{Calibration d'exposition} (avant scan) -- largeur de ligne laser cibl\'{e}e par cam\'{e}ra.
+    \item \textbf{Acquisition} -- pas moteur, laser, capture des deux cam\'{e}ras.
+    \item \textbf{Extraction + triangulation} -- pixels laser $\rightarrow$ points 3D (mm).
+    \item \textbf{Fusion par pas} -- les deux cam\'{e}ras combin\'{e}es en un profil lisse.
+    \item \textbf{Fusion demi-tour} -- d\'{e}duplication des points revus \`{a} $180^\circ$.
+    \item \textbf{Nettoyage} -- plan sup\'{e}rieur d\'{e}tect\'{e}, artefacts au-dessus rogn\'{e}s.
+    \item \textbf{Reconstruction + export} -- filtrage k-NN, maillage, STL/OBJ.
+  \end{enumerate}
+
+  \vspace{0.15cm}
+  \begin{center}
+    \tagbox{softblue}{Nouveaut\'{e}s}\quad \'{E}tapes 1, 4, 5 et 6 ajout\'{e}es pour fiabiliser le nuage de la configuration double cam\'{e}ra.
+  \end{center}
+\end{frame}
+
+% ============================================================
+% SLIDE 6c : CALIBRATION D'EXPOSITION AUTOMATIQUE
+% ============================================================
+\begin{frame}{Calibration d'exposition automatique}{\texttt{orchestration/scan.py} -- avant chaque scan}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.54\textwidth}
+      \footnotesize
       \begin{itemize}
-        \item Intrinseques (damier OpenCV)
-        \item Plan laser ($\mathbf{n}, d$)
-        \item Extrinseques vers rep\`{e}re plateau
+        \item Pour chaque cam\'{e}ra, on vise une \textbf{largeur m\'{e}diane} de ligne laser (\texttt{target\_median\_width\_px}).
+        \item On capture quelques \'{e}chantillons \`{a} diff\'{e}rents angles et on mesure la largeur r\'{e}elle.
+        \item Ajustement multiplicatif de l'exposition :
+          \[ t_{n+1} = t_n \cdot \frac{w_{\text{cible}}}{w_{\text{mesur\'{e}}}} \]
+        \item Facteur born\'{e} (\texttt{max\_adjust\_factor}), exposition born\'{e}e (min/max).
+        \item It\'{e}ration jusqu'\`{a} $|w - w_{\text{cible}}| \leq$ \texttt{tolerance\_width\_px} ou \texttt{max\_iterations}.
       \end{itemize}
+    \end{column}
+    \begin{column}{0.44\textwidth}
+      \small
+      \textbf{Pourquoi ?}
+      \begin{itemize}
+        \item Une ligne trop fine $\rightarrow$ points manquants.
+        \item Une ligne satur\'{e}e $\rightarrow$ centro\"{i}de impr\'{e}cis.
+      \end{itemize}
+      \vspace{0.15cm}
+      \validbox{Largeur de ligne homog\`{e}ne entre les deux cam\'{e}ras avant la capture.}
+    \end{column}
+  \end{columns}
+\end{frame}
 
-      \vspace{0.1cm}
-      \textbf{Fusion :} les deux nuages dans un m\^{e}me rep\`{e}re monde avant filtrage et export.
+% ============================================================
+% SLIDE 6d : FUSION DES PROFILS
+% ============================================================
+\begin{frame}{Fusion des profils}{\texttt{reconstruction/pointcloud.py} -- deux m\'{e}canismes}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \small\textbf{\textcolor{deepblue}{Fusion par pas (inter-cam\'{e}ra)}}\\[0.1cm]
+      \footnotesize
+      \texttt{\_fuse\_step\_profiles}
+      \begin{itemize}
+        \item Axe principal du profil par \textbf{ACP}, points tri\'{e}s le long de cet axe.
+        \item D\'{e}coupe en segments selon les \'{e}carts (\texttt{gap\_mm}).
+        \item Sur les zones vues par les \textbf{deux} cam\'{e}ras : lissage polynomial local glissant.
+        \item Une seule courbe coh\'{e}rente au lieu de deux nuages superpos\'{e}s.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \small\textbf{\textcolor{lasergreen}{Fusion demi-tour}}\\[0.1cm]
+      \footnotesize
+      \texttt{fuse\_half\_turn\_profiles}
+      \begin{itemize}
+        \item Un point du dessus est revu vers le pas $i + n/2$.
+        \item Appariement par \textbf{plus proches voisins mutuels} (distance xyz).
+        \item Paires sous \texttt{max\_pair\_distance\_mm} moyenn\'{e}es ; points isol\'{e}s conserv\'{e}s.
+        \item R\'{e}duit doublons et bruit sur les faces sup\'{e}rieures.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.1cm}
+  \begin{center}
+    \tagbox{softblue}{Effet}\quad Nuage plus dense et plus r\'{e}gulier, moins de d\'{e}doublement de surfaces.
+  \end{center}
+\end{frame}
+
+% ============================================================
+% SLIDE 6e : NETTOYAGE PLAN SUPERIEUR
+% ============================================================
+\begin{frame}{Nettoyage du nuage : plan sup\'{e}rieur}{\texttt{detect\_top\_plane} / \texttt{clip\_above\_detected\_top\_plane}}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.56\textwidth}
+      \footnotesize
+      \begin{itemize}
+        \item Balayage de bandes horizontales du nuage de r\'{e}f\'{e}rence (haut vers bas).
+        \item On retient la bande la plus haute qui soit \textbf{dense}, \textbf{\'{e}tendue} et \textbf{plane}.
+        \item Plan ajust\'{e} par \textbf{SVD}, normale orient\'{e}e vers $+Y$ (le haut).
+        \item Tout ce qui d\'{e}passe (au-del\`{a} de \texttt{clip\_margin\_mm}) est rogn\'{e}.
+        \item Option : capuchons plats pour refermer le dessus.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \small
+      \textbf{Probl\`{e}me trait\'{e} :}
+      \begin{itemize}
+        \item Artefacts \og en pointe \fg{} au-dessus de l'objet.
+        \item Sommet bruit\'{e} par la fusion demi-tour.
+      \end{itemize}
+      \vspace{0.15cm}
+      \validbox{Dessus de pi\`{e}ce net, sans points flottants parasites.}
     \end{column}
   \end{columns}
 \end{frame}
@@ -313,8 +422,8 @@
     \begin{column}{0.48\textwidth}
       \centering
       \textbf{\textcolor{lasergreen}{Double cam\'{e}ra}}\\[0.2cm]
-      \placeholder{4.0cm}{STL double cam\'{e}ra : r\'{e}sultat \`{a} capturer apr\`{e}s int\'{e}gration}
-      \scriptsize R\'{e}sultat attendu : couverture am\'{e}lior\'{e}e, moins de trous.
+      \includegraphics[width=\linewidth,height=4.0cm,keepaspectratio]{cube.png}\\[0.1cm]
+      \scriptsize STL double cam\'{e}ra : couverture am\'{e}lior\'{e}e, moins de trous.
     \end{column}
   \end{columns}
 
@@ -335,18 +444,18 @@
     \midrule
     O1  & Num\'{e}riser objet $\leq 150^3$\,mm, automatis\'{e}  & Fonctionnel & D\'{e}montr\'{e} \\
     O2  & Export STL ou OBJ                              & Obligatoire & Fait \\
-    O3  & Cycle de scan $\leq 10$\,min                   & $< 10$ min & $\sim$1,5 min \\
+    O3  & Cycle de scan $\leq 10$\,min                   & $< 10$ min & $\sim$10 min \\
     O4  & Prise en main $\leq 10$\,min                   & $< 10$ min & \`{A} valider \\
     O5  & Budget $\leq 300$\,CHF                         & $\leq 300$ CHF & Respect\'{e} \\
     O6  & S\'{e}curit\'{e} utilisateur                         & Conforme & Interlock OK \\
     O7  & Retour visuel LED / \'{e}cran                     & Fonctionnel & Fait \\
     O8  & Interface web, $\leq 5$ actions                & Fonctionnel & Fait \\
-    O9  & Erreur $\leq 2$\,mm, r\'{e}p\'{e}tabilit\'{e} $\leq 1$\,mm & Quantifi\'{e} & \`{A} mesurer \\
+    O9  & Erreur $\leq 2$\,mm, r\'{e}p\'{e}tabilit\'{e} $\leq 1$\,mm & Quantifi\'{e} & \textcolor{heigred}{\textbf{NOK}} ($>2$\,mm) \\
     \bottomrule
   \end{tabularx}
 
   \vspace{0.15cm}
-  \validbox{La majorit\'{e} des objectifs sont atteints ou d\'{e}montr\'{e}s. La pr\'{e}cision reste \`{a} quantifier formellement.}
+  \limitbox{La plupart des objectifs sont atteints, mais le cycle de scan atteint $\sim$10 min (limite du cahier des charges) et la pr\'{e}cision reste au-dessus de la cible ($>2$ mm) : l'objectif O9 n'est pas valid\'{e}.}
 \end{frame}
 
 % ============================================================
@@ -360,7 +469,7 @@
         \parbox[t][2.8cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
           \scriptsize
           \textbf{\textcolor{deepblue}{R\'{e}alis\'{e}}}\\[0.12cm]
-          Scanner complet et fonctionnel. Scan en $\sim$1,5\,min, export STL/OBJ, interface web, double cam\'{e}ra int\'{e}gr\'{e}e.
+          Scanner complet et fonctionnel. Scan en $\sim$10\,min, export STL/OBJ, interface web, double cam\'{e}ra int\'{e}gr\'{e}e.
         }%
       }
     \end{column}
@@ -369,7 +478,7 @@
         \parbox[t][2.8cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
           \scriptsize
           \textbf{\textcolor{heigred}{Limites}}\\[0.12cm]
-          Pr\'{e}cision absolue \`{a} quantifier. Cavit\'{e}s profondes non couvertes. Maillage STL fragile sur formes complexes.
+          Pr\'{e}cision encore $>2$ mm (O9 NOK). Cycle de scan \`{a} la limite des 10 min. Cavit\'{e}s profondes non couvertes, maillage STL fragile.
         }%
       }
     \end{column}
