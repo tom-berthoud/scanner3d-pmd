@@ -94,29 +94,15 @@
   \end{beamercolorbox}
 }
 
-\newcommand{\placeholder}[2]{%
+% Bandeau "qui parle" en bas de chaque slide de contenu
+\newcommand{\speaker}[2]{%
   \begin{center}
-  \begin{tikzpicture}
-    \node[
-      draw=linegray,
-      dashed,
-      rounded corners=3pt,
-      fill=softblue,
-      minimum width=0.96\linewidth,
-      minimum height=#1,
-      align=center,
-      text width=0.86\linewidth,
-      inner sep=8pt
-    ] {
-      \textbf{\textcolor{deepblue}{Image \`{a} ajouter}}\\[0.15cm]
-      \small #2
-    };
-  \end{tikzpicture}
+    \tagbox{softblue}{#1}\quad\footnotesize\textcolor{mutedgray}{#2}
   \end{center}
 }
 
 \title{Scanner 3D \`{a} triangulation laser}
-\subtitle{Pr\'{e}sentation finale -- Projet multidisciplinaire}
+\subtitle{Pr\'{e}sentation finale}
 \author{Luc Marchand \and Tim Stamm \and Jason Weber \and Hadrien Fuentes \and Tom Berthoud}
 \institute{HEIG-VD -- PMD 2026}
 \date{7 juin 2026}
@@ -124,7 +110,7 @@
 \begin{document}
 
 % ============================================================
-% SLIDE 1 : TITRE
+% SLIDE 1 : TITRE  (Tom -- ~5 s)
 % ============================================================
 {
 \setbeamertemplate{footline}{}
@@ -140,7 +126,7 @@
 
   \vspace{1.0cm}
   {\usebeamerfont{title}\textcolor{deepblue}{Scanner 3D \`{a} triangulation laser}}\\[0.25cm]
-  {\usebeamerfont{subtitle}\textcolor{mutedgray}{Pr\'{e}sentation finale -- bilan et r\'{e}sultats}}\\[0.55cm]
+  {\usebeamerfont{subtitle}\textcolor{mutedgray}{Num\'{e}riser un objet r\'{e}el en mod\`{e}le 3D imprimable}}\\[0.55cm]
 
   \begin{tikzpicture}
     \fill[heigred] (0,0) rectangle (1.1,0.08);
@@ -150,389 +136,196 @@
   \vfill
   \small
   \textbf{\'{E}quipe :} Luc Marchand, Tim Stamm, Jason Weber, Hadrien Fuentes, Tom Berthoud\\
-  \textbf{Contexte :} Projet multidisciplinaire HEIG-VD, semestre 4\\
-  \textbf{Date :} 7 juin 2026
+  \textbf{Projet multidisciplinaire} -- HEIG-VD, semestre 4 -- 7 juin 2026
 \end{frame}
 }
 
 % ============================================================
-% SLIDE 2 : RAPPEL PROJET ET OBJECTIFS
+% SLIDE 2 : LE PROJET & LE CAHIER DES CHARGES  (Tom -- ~50 s)
 % ============================================================
-\begin{frame}{Rappel du projet}{Un scanner 3D ouvert pour le MakeLab}
+\begin{frame}{Le projet}{Pourquoi un scanner 3D, et pour qui ?}
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.55\textwidth}
+    \begin{column}{0.56\textwidth}
       \begin{itemize}
-        \item Num\'{e}riser des objets physiques en mod\`{e}les 3D (\textbf{STL/OBJ}).
-        \item Syst\`{e}me autonome, complet et open-source.
-        \item Budget $\leq 300$\,CHF, scan $< 10$\,min.
-        \item Objets jusqu'\`{a} $150\times150\times150$\,mm.
+        \item \textbf{Le besoin :} num\'{e}riser un objet physique pour obtenir un fichier 3D (\textbf{STL/OBJ}) directement imprimable.
+        \item \textbf{Pour le MakeLab} de la HEIG-VD : un outil simple, autonome et open-source.
+        \item \textbf{Le principe :} l'objet tourne sous une ligne laser, une cam\'{e}ra filme, le logiciel reconstruit le volume.
       \end{itemize}
 
-      \vspace{0.35cm}
-      \begin{tabularx}{\linewidth}{@{}>{\bfseries}p{2.4cm}X@{}}
+      \vspace{0.3cm}
+      \footnotesize\textbf{Cahier des charges (extraits)}
+      \begin{tabularx}{\linewidth}{@{}>{\bfseries}p{2.5cm}X@{}}
         \toprule
-        Temps & $< 10$ min (observ\'{e} : $\sim$10 min) \\
-        Pr\'{e}cision & Cible $\leq 2$ mm (non atteinte) \\
-        Export & STL et OBJ \\
-        Interface & Web + \'{e}cran + LEDs \\
+        Objets    & jusqu'\`{a} $150\times150\times150$\,mm \\
+        Dur\'{e}e     & un scan en $< 10$ min \\
+        Pr\'{e}cision & cible $\leq 2$ mm \\
+        Budget    & $\leq 300$ CHF \\
+        Sortie    & fichier STL / OBJ \\
         \bottomrule
       \end{tabularx}
     \end{column}
     \begin{column}{0.42\textwidth}
-      \hspace{0.5cm}
+      \hspace{0.4cm}
       \includegraphics[width=\linewidth,height=5.8cm,keepaspectratio]{vue_ext_ferme.jpeg}
     \end{column}
   \end{columns}
+
+  \speaker{Tom}{Chef de projet}
 \end{frame}
 
 % ============================================================
-% SLIDE 3 : PRINCIPE ET ARCHITECTURE
+% SLIDE 3 : PRINCIPE DE TRIANGULATION  (Tom -- ~40 s)
 % ============================================================
-\begin{frame}{Principe de triangulation}{Du laser au mod\`{e}le 3D}
+\begin{frame}{Comment \c{c}a marche}{La triangulation laser}
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.46\textwidth}
+    \begin{column}{0.48\textwidth}
       \begin{enumerate}
-        \item Le plateau tourne pas \`{a} pas ($200\times1{,}8^\circ$).
-        \item Le laser ligne \'{e}claire un profil de l'objet.
-        \item La cam\'{e}ra capture la d\'{e}formation de la ligne.
-        \item Triangulation : pixel $\rightarrow$ point 3D.
-        \item Fusion des profils sur $360^\circ$ $\rightarrow$ nuage de points $\rightarrow$ STL.
+        \item Le plateau tourne pas \`{a} pas ($200 \times 1{,}8^\circ$).
+        \item Le laser ligne dessine un profil de l'objet.
+        \item La cam\'{e}ra voit la d\'{e}formation de la ligne.
+        \item Par g\'{e}om\'{e}trie : chaque pixel $\rightarrow$ un point 3D.
+        \item On empile les profils sur $360^\circ$ $\rightarrow$ nuage de points $\rightarrow$ maillage STL.
       \end{enumerate}
-
-      \vspace{0.15cm}
-      \footnotesize
-      \textbf{Pipeline :} Acquisition $\rightarrow$ Extraction $\rightarrow$ Triangulation $\rightarrow$ Reconstruction $\rightarrow$ Export
     \end{column}
     \begin{column}{0.50\textwidth}
-      \hspace{0.5cm}
+      \hspace{0.4cm}
       \input{schemas/triangulation.tex}
     \end{column}
   \end{columns}
+
+  \speaker{Tom}{Du r\'{e}el au mod\`{e}le 3D}
 \end{frame}
 
 % ============================================================
-% SLIDE 4 : RESULTATS MONO-CAMERA
+% SLIDE 4 : MECANIQUE  (Tim -- ~50 s)
 % ============================================================
-\begin{frame}{R\'{e}sultats avec une cam\'{e}ra}{Formes simples vs formes anguleuses}
+\begin{frame}{La m\'{e}canique}{Une boîte qui isole et qui aligne}
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.31\textwidth}
-      \centering
-      \includegraphics[width=\linewidth,height=4.25cm,keepaspectratio]{vue_interieur_laser_piece.jpeg}\\
-      \scriptsize Laser sur pi\`{e}ce
+    \begin{column}{0.50\textwidth}
+      \begin{itemize}
+        \item \textbf{Caisson ferm\'{e}} : noir mat, pas de lumi\`{e}re parasite sur le laser.
+        \item \textbf{Plateau tournant} entra\^{i}n\'{e} par un moteur pas \`{a} pas.
+        \item \textbf{Supports imprim\'{e}s en 3D} pour positionner cam\'{e}ras et laser \`{a} angle fixe.
+        \item \textbf{Conception CAO} puis impression 3D de l'ensemble des pi\`{e}ces.
+      \end{itemize}
     \end{column}
-    \begin{column}{0.31\textwidth}
+    \begin{column}{0.48\textwidth}
       \centering
-      \includegraphics[width=\linewidth,height=4.25cm,keepaspectratio]{screen_cylindre_stl.png}\\
-      \scriptsize Cylindre : r\'{e}sultat correct
-    \end{column}
-    \begin{column}{0.31\textwidth}
-      \centering
-      \includegraphics[width=\linewidth,height=4.25cm,keepaspectratio]{carre_gris_stl.png}\\
-      \scriptsize Cube : zones manquantes
+      \includegraphics[width=\linewidth,height=5.3cm,keepaspectratio]{vue_interrieur_dessus_global.jpeg}\\
+      \scriptsize Int\'{e}rieur : plateau, laser et cam\'{e}ras
     \end{column}
   \end{columns}
 
-  \vspace{0.2cm}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.48\textwidth}
-      \validbox{Formes cylindriques : r\'{e}sultat exploitable et coh\'{e}rent.}
-    \end{column}
-    \begin{column}{0.48\textwidth}
-      \limitbox{Formes anguleuses : occultations et STL incomplet.}
-    \end{column}
-  \end{columns}
+  \speaker{Tim}{Conception m\'{e}canique \& impression 3D}
 \end{frame}
 
 % ============================================================
-% SLIDE 5 : PROBLEME OCCULTATION
+% SLIDE 5 : ELECTRONIQUE  (Luc -- ~50 s)
 % ============================================================
-\begin{frame}{Probl\`{e}me identifi\'{e} : occultation}{Le laser touche la pi\`{e}ce, mais la cam\'{e}ra ne voit pas toujours le point}
+\begin{frame}{L'\'{e}lectronique}{Alimenter, piloter, s\'{e}curiser}
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.48\textwidth}
-      \input{schemas/occultation.tex}
-
-      \vspace{0.2cm}
-      \scriptsize
-      Le laser \'{e}claire la face arri\`{e}re, mais une autre face bloque la vue cam\'{e}ra. Aucun r\'{e}glage logiciel ne peut r\'{e}cup\'{e}rer ce point.
+    \begin{column}{0.50\textwidth}
+      \begin{itemize}
+        \item \textbf{Raspberry Pi 4} : cerveau du syst\`{e}me.
+        \item \textbf{Pilotage} du moteur pas \`{a} pas et du laser via GPIO.
+        \item \textbf{Alimentation} et c\^{a}blage de l'ensemble dans la boîte.
+        \item \textbf{PCB d\'{e}di\'{e}} pour fiabiliser les connexions.
+        \item \textbf{S\'{e}curit\'{e} laser} : \'{e}teint par d\'{e}faut, coupure automatique en cas d'erreur.
+      \end{itemize}
     \end{column}
     \begin{column}{0.48\textwidth}
       \centering
-      \includegraphics[width=\linewidth,height=4.0cm,keepaspectratio]{vue_obsturction_laser.jpeg}\\[0.15cm]
-      \scriptsize Photo r\'{e}elle : zone masqu\'{e}e sur pi\`{e}ce anguleuse.
-
-      \vspace{0.3cm}
-      \limitbox{Limite physique de la configuration mono-cam\'{e}ra : certaines zones restent invisibles.}
+      \includegraphics[width=\linewidth,height=5.3cm,keepaspectratio]{electronique.jpeg}\\
+      \scriptsize C\^{a}blage et carte de commande
     \end{column}
   \end{columns}
+
+  \speaker{Luc \& Hadrien}{C\^{a}blage \& alimentation -- PCB}
 \end{frame}
 
 % ============================================================
-% SLIDE 6 : SOLUTION DOUBLE CAMERA
+% SLIDE 6 : LOGICIEL -- MONO CAMERA & OCCULTATION  (Hadrien -- ~50 s)
 % ============================================================
-\begin{frame}{Solution : double cam\'{e}ra}{Deux points de vue pour r\'{e}duire les zones invisibles}
+\begin{frame}{Le logiciel}{Une cam\'{e}ra : \c{c}a marche... presque}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.50\textwidth}
+      \footnotesize
+      \textbf{Pipeline :} Acquisition $\rightarrow$ Extraction de la ligne $\rightarrow$ Triangulation $\rightarrow$ Reconstruction $\rightarrow$ Export.
+
+      \vspace{0.25cm}
+      \begin{itemize}
+        \item Formes \textbf{rondes} : r\'{e}sultat propre et exploitable.
+        \item Formes \textbf{anguleuses} : le laser touche la pi\`{e}ce, mais une face cache le point \`{a} la cam\'{e}ra.
+        \item R\'{e}sultat : des \textbf{trous} dans le mod\`{e}le, impossibles \`{a} corriger en logiciel.
+      \end{itemize}
+
+      \vspace{0.1cm}
+      \limitbox{Occultation : limite physique d'un montage \`{a} une seule cam\'{e}ra.}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \input{schemas/occultation.tex}\\[0.1cm]
+      \scriptsize Zone \'{e}clair\'{e}e mais invisible pour la cam\'{e}ra
+    \end{column}
+  \end{columns}
+
+  \speaker{Hadrien}{Acquisition \& traitement -- 1\textsuperscript{re} cam\'{e}ra}
+\end{frame}
+
+% ============================================================
+% SLIDE 7 : DOUBLE CAMERA & RECONSTRUCTION  (Jason -- ~50 s)
+% ============================================================
+\begin{frame}{La solution : deux cam\'{e}ras}{Deux points de vue, moins de zones cach\'{e}es}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.46\textwidth}
       \input{schemas/deux_cameras.tex}
 
-      \vspace{0.15cm}
-      \scriptsize
-      \begin{itemize}
-        \item Cam\'{e}ra 1 (Pi Camera) : vue haute, $+30^\circ$.
-        \item Cam\'{e}ra 2 (USB) : vue basse, $-30^\circ$.
-        \item M\^{e}me laser, capture s\'{e}quentielle.
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.50\textwidth}
-      \centering
-      \includegraphics[width=\linewidth,height=3.0cm,keepaspectratio]{montage2camera.jpeg}\\[0.1cm]
-      \raggedright
-      \scriptsize
-      \textbf{Calibration par cam\'{e}ra :} intrins\`{e}ques (damier OpenCV), plan laser ($\mathbf{n}, d$), extrins\`{e}ques vers le rep\`{e}re plateau.
-
       \vspace{0.1cm}
-      \textbf{Fusion :} les deux nuages sont exprim\'{e}s dans un m\^{e}me rep\`{e}re monde avant filtrage et export.
-    \end{column}
-  \end{columns}
-\end{frame}
-
-% ============================================================
-% SLIDE 6b : PIPELINE LOGICIEL ET NOUVEAUX ALGORITHMES
-% ============================================================
-\begin{frame}{Cha\^{i}ne logicielle}{Les traitements ajout\'{e}s depuis la mi-projet}
-  \footnotesize
-  \begin{enumerate}
-    \item \textbf{Calibration d'exposition} (avant scan) -- largeur de ligne laser cibl\'{e}e par cam\'{e}ra.
-    \item \textbf{Acquisition} -- pas moteur, laser, capture des deux cam\'{e}ras.
-    \item \textbf{Extraction + triangulation} -- pixels laser $\rightarrow$ points 3D (mm).
-    \item \textbf{Fusion par pas} -- les deux cam\'{e}ras combin\'{e}es en un profil lisse.
-    \item \textbf{Fusion demi-tour} -- d\'{e}duplication des points revus \`{a} $180^\circ$.
-    \item \textbf{Nettoyage} -- plan sup\'{e}rieur d\'{e}tect\'{e}, artefacts au-dessus rogn\'{e}s.
-    \item \textbf{Reconstruction + export} -- filtrage k-NN, maillage, STL/OBJ.
-  \end{enumerate}
-
-  \vspace{0.15cm}
-  \begin{center}
-    \tagbox{softblue}{Nouveaut\'{e}s}\quad \'{E}tapes 1, 4, 5 et 6 ajout\'{e}es pour fiabiliser le nuage de la configuration double cam\'{e}ra.
-  \end{center}
-\end{frame}
-
-% ============================================================
-% SLIDE 6c : CALIBRATION D'EXPOSITION AUTOMATIQUE
-% ============================================================
-\begin{frame}{Calibration d'exposition automatique}{\texttt{orchestration/scan.py} -- avant chaque scan}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.54\textwidth}
-      \footnotesize
+      \scriptsize
       \begin{itemize}
-        \item Pour chaque cam\'{e}ra, on vise une \textbf{largeur m\'{e}diane} de ligne laser (\texttt{target\_median\_width\_px}).
-        \item On capture quelques \'{e}chantillons \`{a} diff\'{e}rents angles et on mesure la largeur r\'{e}elle.
-        \item Ajustement multiplicatif de l'exposition :
-          \[ t_{n+1} = t_n \cdot \frac{w_{\text{cible}}}{w_{\text{mesur\'{e}}}} \]
-        \item Facteur born\'{e} (\texttt{max\_adjust\_factor}), exposition born\'{e}e (min/max).
-        \item It\'{e}ration jusqu'\`{a} $|w - w_{\text{cible}}| \leq$ \texttt{tolerance\_width\_px} ou \texttt{max\_iterations}.
+        \item Deux cam\'{e}ras \`{a} $+30^\circ$ et $-30^\circ$.
+        \item \textbf{Fusion} des deux nuages de points dans un m\^{e}me rep\`{e}re.
+        \item Lissage, d\'{e}doublonnage et nettoyage du dessus.
       \end{itemize}
     \end{column}
-    \begin{column}{0.44\textwidth}
-      \small
-      \textbf{Pourquoi ?}
-      \begin{itemize}
-        \item Une ligne trop fine $\rightarrow$ points manquants.
-        \item Une ligne satur\'{e}e $\rightarrow$ centro\"{i}de impr\'{e}cis.
-      \end{itemize}
-      \vspace{0.15cm}
-      \validbox{Largeur de ligne homog\`{e}ne entre les deux cam\'{e}ras avant la capture.}
-    \end{column}
-  \end{columns}
-\end{frame}
-
-% ============================================================
-% SLIDE 6d : FUSION DES PROFILS
-% ============================================================
-\begin{frame}{Fusion des profils}{\texttt{reconstruction/pointcloud.py} -- deux m\'{e}canismes}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.48\textwidth}
-      \small\textbf{\textcolor{deepblue}{Fusion par pas (inter-cam\'{e}ra)}}\\[0.1cm]
-      \footnotesize
-      \texttt{\_fuse\_step\_profiles}
-      \begin{itemize}
-        \item Axe principal du profil par \textbf{ACP}, points tri\'{e}s le long de cet axe.
-        \item D\'{e}coupe en segments selon les \'{e}carts (\texttt{gap\_mm}).
-        \item Sur les zones vues par les \textbf{deux} cam\'{e}ras : lissage polynomial local glissant.
-        \item Une seule courbe coh\'{e}rente au lieu de deux nuages superpos\'{e}s.
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.48\textwidth}
-      \small\textbf{\textcolor{lasergreen}{Fusion demi-tour}}\\[0.1cm]
-      \footnotesize
-      \texttt{fuse\_half\_turn\_profiles}
-      \begin{itemize}
-        \item Un point du dessus est revu vers le pas $i + n/2$.
-        \item Appariement par \textbf{plus proches voisins mutuels} (distance xyz).
-        \item Paires sous \texttt{max\_pair\_distance\_mm} moyenn\'{e}es ; points isol\'{e}s conserv\'{e}s.
-        \item R\'{e}duit doublons et bruit sur les faces sup\'{e}rieures.
-      \end{itemize}
-    \end{column}
-  \end{columns}
-
-  \vspace{0.1cm}
-  \begin{center}
-    \tagbox{softblue}{Effet}\quad Nuage plus dense et plus r\'{e}gulier, moins de d\'{e}doublement de surfaces.
-  \end{center}
-\end{frame}
-
-% ============================================================
-% SLIDE 6e : NETTOYAGE PLAN SUPERIEUR
-% ============================================================
-\begin{frame}{Nettoyage du nuage : plan sup\'{e}rieur}{\texttt{detect\_top\_plane} / \texttt{clip\_above\_detected\_top\_plane}}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.56\textwidth}
-      \footnotesize
-      \begin{itemize}
-        \item Balayage de bandes horizontales du nuage de r\'{e}f\'{e}rence (haut vers bas).
-        \item On retient la bande la plus haute qui soit \textbf{dense}, \textbf{\'{e}tendue} et \textbf{plane}.
-        \item Plan ajust\'{e} par \textbf{SVD}, normale orient\'{e}e vers $+Y$ (le haut).
-        \item Tout ce qui d\'{e}passe (au-del\`{a} de \texttt{clip\_margin\_mm}) est rogn\'{e}.
-        \item Option : capuchons plats pour refermer le dessus.
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.40\textwidth}
-      \small
-      \textbf{Probl\`{e}me trait\'{e} :}
-      \begin{itemize}
-        \item Artefacts \og en pointe \fg{} au-dessus de l'objet.
-        \item Sommet bruit\'{e} par la fusion demi-tour.
-      \end{itemize}
-      \vspace{0.15cm}
-      \validbox{Dessus de pi\`{e}ce net, sans points flottants parasites.}
-    \end{column}
-  \end{columns}
-\end{frame}
-
-% ============================================================
-% SLIDE 7 : COMPARATIF MONO VS DOUBLE
-% ============================================================
-\begin{frame}{Comparatif : mono vs double cam\'{e}ra}{R\'{e}sultats sur pi\`{e}ce anguleuse}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.48\textwidth}
-      \centering
-      \textbf{\textcolor{deepblue}{Mono-cam\'{e}ra}}\\[0.2cm]
-      \includegraphics[width=\linewidth,height=4.0cm,keepaspectratio]{carre_gris_stl.png}\\[0.1cm]
-      \scriptsize STL mono-cam\'{e}ra : zones manquantes, d\'{e}formations.
-    \end{column}
-    \begin{column}{0.48\textwidth}
-      \centering
-      \textbf{\textcolor{lasergreen}{Double cam\'{e}ra}}\\[0.2cm]
-      \includegraphics[width=\linewidth,height=4.0cm,keepaspectratio]{cube.png}\\[0.1cm]
-      \scriptsize STL double cam\'{e}ra : couverture am\'{e}lior\'{e}e, moins de trous.
-    \end{column}
-  \end{columns}
-
-  \vspace{0.15cm}
-  \begin{center}
-    \tagbox{softblue}{Objectif}\quad Montrer le gain mesurable sur un m\^{e}me objet de r\'{e}f\'{e}rence.
-  \end{center}
-\end{frame}
-
-% ============================================================
-% SLIDE 8 : VALIDATION ET MESURES
-% ============================================================
-\begin{frame}[shrink=5]{Validation des objectifs}{Bilan final par rapport au cahier des charges}
-  \small
-  \begin{tabularx}{\linewidth}{@{}p{0.8cm}p{5.8cm}p{3.0cm}X@{}}
-    \toprule
-    \textbf{R\'{e}f.} & \textbf{Objectif} & \textbf{Cible} & \textbf{R\'{e}sultat} \\
-    \midrule
-    O1  & Num\'{e}riser objet $\leq 150^3$\,mm, automatis\'{e}  & Fonctionnel & D\'{e}montr\'{e} \\
-    O2  & Export STL ou OBJ                              & Obligatoire & Fait \\
-    O3  & Cycle de scan $\leq 10$\,min                   & $< 10$ min & $\sim$8 min \\
-    O4  & Prise en main $\leq 10$\,min                   & $< 10$ min & \`{A} valider \\
-    O5  & Budget $\leq 300$\,CHF                         & $\leq 300$ CHF & Respect\'{e} \\
-    O6  & S\'{e}curit\'{e} utilisateur                         & Conforme & Interlock OK \\
-    O7  & Retour visuel LED / \'{e}cran                     & Fonctionnel & Fait \\
-    O8  & Interface web, $\leq 5$ actions                & Fonctionnel & Fait \\
-    O9  & Erreur $\leq 2$\,mm, r\'{e}p\'{e}tabilit\'{e} $\leq 1$\,mm & Quantifi\'{e} & \textcolor{heigred}{\textbf{NOK}} ($>2$\,mm) \\
-    \bottomrule
-  \end{tabularx}
-
-  \vspace{0.15cm}
-  \limitbox{La plupart des objectifs sont atteints, mais le cycle de scan est bientôt à la limite (8 min) et la pr\'{e}cision reste au-dessus de la cible ($>2$ mm) : l'objectif O9 n'est pas valid\'{e}.}
-\end{frame}
-
-% ============================================================
-% SLIDE 9 : CONCLUSION
-% ============================================================
-\begin{frame}{Conclusion}{Bilan du projet}
-  \vspace{0.15cm}
-  \begin{columns}[T,totalwidth=0.94\textwidth]
-    \begin{column}{0.32\textwidth}
-      \colorbox{softgreen}{%
-        \parbox[t][2.8cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
-          \scriptsize
-          \textbf{\textcolor{deepblue}{R\'{e}alis\'{e}}}\\[0.12cm]
-          Scanner complet et fonctionnel. Scan en $\sim$10\,min, export STL/OBJ, interface web, double cam\'{e}ra int\'{e}gr\'{e}e.
-        }%
-      }
-    \end{column}
-    \begin{column}{0.32\textwidth}
-      \colorbox{softred}{%
-        \parbox[t][2.8cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
-          \scriptsize
-          \textbf{\textcolor{heigred}{Limites}}\\[0.12cm]
-          Pr\'{e}cision encore $>2$ mm (O9 NOK). Cavit\'{e}s profondes non couvertes, maillage STL fragile.
-        }%
-      }
-    \end{column}
-    \begin{column}{0.32\textwidth}
-      \colorbox{softblue}{%
-        \parbox[t][2.8cm][t]{\dimexpr\linewidth-0.45cm\relax}{%
-          \scriptsize
-          \textbf{\textcolor{deepblue}{Perspectives}}\\[0.12cm]
-          Am\'{e}liorer le maillage (Poisson/Open3D). Valider la pr\'{e}cision sur pi\`{e}ces \'{e}talons. Augmenter la performance.
-        }%
-      }
-    \end{column}
-  \end{columns}
-
-  \vspace{0.32cm}
-  \begin{center}
-    \begin{minipage}{0.78\textwidth}
-      \centering
-      \textcolor{linegray}{\rule{\linewidth}{0.5pt}}\\[0.14cm]
-      \large\textbf{\textcolor{deepblue}{Message final}}\\[0.12cm]
-      \small
-      Le scanner 3D est fonctionnel de bout en bout : de la pi\`{e}ce pos\'{e}e au fichier STL, en passant par la double cam\'{e}ra et l'interface web. Le projet est livrable et am\'{e}liorable.\\[0.14cm]
-      \textcolor{linegray}{\rule{\linewidth}{0.5pt}}
-    \end{minipage}
-  \end{center}
-\end{frame}
-
-% ============================================================
-% SLIDE 10 : MERCI
-% ============================================================
-{
-\setbeamertemplate{footline}{}
-\begin{frame}
-  \begin{columns}[c,onlytextwidth]
     \begin{column}{0.50\textwidth}
-      {\usebeamerfont{title}\textcolor{deepblue}{Merci}}\\[0.3cm]
-      {\usebeamerfont{subtitle}\textcolor{mutedgray}{Questions \&{} d\'{e}monstration}}\\[0.55cm]
-
-      \begin{tikzpicture}
-        \fill[heigred] (0,0) rectangle (1.1,0.08);
-        \fill[deepblue] (1.18,0) rectangle (5.0,0.08);
-      \end{tikzpicture}
-
-      \vspace{0.55cm}
-      \small
-      \textbf{\'{E}quipe :} Luc Marchand, Tim Stamm, Jason Weber, Hadrien Fuentes, Tom Berthoud\\[0.2cm]
-      \textbf{Scanner 3D \`{a} triangulation laser} -- HEIG-VD, PMD 2026
-    \end{column}
-    \begin{column}{0.48\textwidth}
       \centering
-      \includegraphics[width=\linewidth,height=6.0cm,keepaspectratio]{boitefinal.jpeg}\\
+      \includegraphics[width=\linewidth,height=4.0cm,keepaspectratio]{cube.png}\\[0.1cm]
+      \scriptsize STL double cam\'{e}ra : couverture nettement am\'{e}lior\'{e}e.
     \end{column}
   \end{columns}
+
+  \speaker{Jason}{Algorithmes de fusion \& reconstruction -- 2\textsuperscript{e} cam\'{e}ra}
 \end{frame}
-}
+
+% ============================================================
+% SLIDE 8 : RESULTATS, INTERFACE & CONCLUSION  (Tom -- ~40 s)
+% ============================================================
+\begin{frame}{R\'{e}sultats \& bilan}{Un scanner fonctionnel de bout en bout}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.50\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=3.6cm,keepaspectratio]{screen_interface.png}\\
+      \scriptsize Interface web : lancer un scan en quelques clics
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \footnotesize
+      \begin{tabularx}{\linewidth}{@{}>{\bfseries}p{2.3cm}X@{}}
+        \toprule
+        Scan complet & $\sim$8 min \quad\textcolor{lasergreen}{OK} \\
+        Export STL/OBJ & \textcolor{lasergreen}{OK} \\
+        Budget & $\leq 300$ CHF \quad\textcolor{lasergreen}{OK} \\
+        Interface web & \textcolor{lasergreen}{OK} \\
+        Pr\'{e}cision $\leq 2$ mm & \textcolor{heigred}{\`{a} affiner} \\
+        \bottomrule
+      \end{tabularx}
+
+      \vspace{0.15cm}
+      \validbox{De la pi\`{e}ce pos\'{e}e au fichier STL : le scanner est livrable et am\'{e}liorable.}
+    \end{column}
+  \end{columns}
+
+  \speaker{Tom}{Interface \& d\'{e}monstration -- Merci ! Questions ?}
+\end{frame}
 
 \end{document}

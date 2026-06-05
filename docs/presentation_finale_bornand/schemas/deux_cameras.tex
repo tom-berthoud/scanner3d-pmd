@@ -1,0 +1,41 @@
+\begin{tikzpicture}[scale=0.72, every node/.style={font=\scriptsize}]
+  \draw[fill=softblue,draw=linegray] (0,0) rectangle (7.0,5.0);
+  \node[deepblue,font=\small\bfseries] at (3.5,4.65) {vue de dessus};
+
+  % Plateau rotatif.
+  \draw[fill=white,draw=mutedgray,thick] (3.5,2.45) circle (1.25);
+  \node[mutedgray,font=\tiny] at (3.5,1.00) {plateau};
+
+  % Objet anguleux sur le plateau (vu de dessus).
+  \begin{scope}[shift={(3.5,2.45)},rotate=28]
+    \draw[fill=white,draw=deepblue,thick] (-0.42,-0.42) rectangle (0.42,0.42);
+  \end{scope}
+
+  \coordinate (O) at (3.5,2.45);
+  \coordinate (cam1) at ($(O)+(150:2.05)$);
+  \coordinate (cam2) at ($(O)+(210:2.05)$);
+
+  % Source laser et axe optique horizontal (côté gauche).
+  \draw[fill=white,draw=lasergreen,thick] (0.30,2.27) rectangle (0.65,2.63);
+  \draw[lasergreen,very thick] (0.65,2.45) -- (3.30,2.45);
+  \draw[lasergreen,very thick,dashed,opacity=0.55] (3.30,2.45) -- (5.30,2.45);
+  \node[lasergreen,font=\scriptsize\bfseries] at (1.2,2.65) {laser};
+
+  % Caméra 1 : 30° au-dessus de l'axe laser (existante), côté gauche.
+  \draw[deepblue,very thick,opacity=0.55] (O) -- (cam1);
+  \fill[deepblue] (cam1) circle (0.14);
+  \draw[deepblue,very thick] (cam1) circle (0.21);
+  \node[deepblue,font=\scriptsize\bfseries,anchor=south east] at ($(cam1)+(-0.20,0.04)$) {caméra 1};
+  \node[deepblue,font=\tiny,anchor=north east] at ($(cam1)+(-0.20,-0.06)$) {(actuelle)};
+  \draw[deepblue,thick] ($(O)+(180:0.90)$) arc (180:150:0.90);
+  \node[deepblue,font=\tiny] at ($(O)+(165:1.15)$) {$30^\circ$};
+
+  % Caméra 2 : 30° en dessous de l'axe laser (à ajouter), côté gauche.
+  \draw[heigred,very thick,opacity=0.55] (O) -- (cam2);
+  \fill[heigred] (cam2) circle (0.14);
+  \draw[heigred,very thick,dashed] (cam2) circle (0.21);
+  \node[heigred,font=\scriptsize\bfseries,anchor=north east] at ($(cam2)+(-0.20,-0.04)$) {caméra 2};
+  \node[heigred,font=\tiny,anchor=south east] at ($(cam2)+(-0.20,0.06)$) {(à ajouter)};
+  \draw[heigred,thick] ($(O)+(180:0.90)$) arc (180:210:0.90);
+  \node[heigred,font=\tiny] at ($(O)+(195:1.15)$) {$30^\circ$};
+\end{tikzpicture}
