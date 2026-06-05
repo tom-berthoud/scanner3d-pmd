@@ -1,19 +1,23 @@
 \section{Conclusion}
 
-\subsection{Bilan intermédiaire}
+\subsection{Bilan}
 
-Au rapport intermédiaire, l'architecture globale du scanner est définie
-et un prototype physique permet déjà de réaliser un cycle de scan réel.
-La boîte, le plateau motorisé, la caméra, le laser, l'électronique,
-l'écran, les LEDs et l'interface web sont suffisamment intégrés pour
-démontrer la chaîne complète depuis la capture image jusqu'à l'export
-d'un fichier STL.
+Le projet aboutit à un scanner 3D à triangulation laser \textbf{fonctionnel de
+bout en bout}. À partir d'un objet posé sur le plateau, le système réalise un
+cycle complet automatisé et produit un fichier STL ou OBJ livrable, en
+respectant le budget et le temps de scan visés. La chaîne complète — caisson,
+plateau motorisé, double caméra, laser, électronique sur PCB, écran et
+interface web — est intégrée et démontrable au MakeLab.
 
-Le résultat obtenu est encourageant mais pas encore final. L'acquisition
-image est de bonne qualité, l'extraction récupère la majorité des points
-visibles et le nuage de points est propre. Les limites principales se
-concentrent sur les occultations dues à la caméra unique, la déformation
-en hauteur et la génération du STL pour les formes non cylindriques.
+L'évolution la plus structurante depuis le rapport intermédiaire est le
+\textbf{passage à deux caméras}. Elle répond directement à la limite physique
+identifiée à mi-parcours : sur les pièces anguleuses, une caméra unique ne
+peut pas voir certaines zones éclairées par le laser. Avec deux points de vue
+complémentaires fusionnés dans un repère commun, la couverture du modèle est
+nettement améliorée. En parallèle, la chaîne de traitement a été fiabilisée
+(calibration d'exposition automatique, fusion calibrée, reconstruction de
+Poisson avec nettoyage géométrique), ce qui a permis de corriger les
+déformations de maillage observées précédemment.
 
 \subsection{Revue des objectifs}
 
@@ -21,74 +25,59 @@ en hauteur et la génération du STL pour les formes non cylindriques.
 \hspace*{-1cm}
   \begin{tabular}{@{}p{1cm}p{8cm}p{8cm}@{}}
     \toprule
-    \textbf{Réf.} & \textbf{Objectif} & \textbf{Statut intermédiaire} \\
+    \textbf{Réf.} & \textbf{Objectif} & \textbf{Statut final} \\
     \midrule
-    O1  & Numériser un objet $\leq 150^3$\,mm, automatisé          & Démontré sur objets simples, à fiabiliser \\
-    O2  & Export STL ou OBJ                                         & Fait, qualité STL à améliorer \\
-    O3  & Cycle de scan $\leq 10$\,min                              & Atteint sur essais actuels (1 à 1{,}5\,min) \\
-    O4  & Prise en main $\leq 10$\,min, autonomie $\geq 90$\,\%     & À valider avec utilisateurs \\
-    O5  & Budget $\leq 300$\,CHF                                    & Dans les clous, suivi final à produire \\
-    O6  & Sécurité utilisateur                                      & Confinement présent, interlock et ouvertures à finaliser \\
-    O7  & Retour visuel LED / écran                                 & Fonctionnel \\
-    O8  & Interface USB ou web, scan en $\leq 5$ actions            & Interface web fonctionnelle \\
-    O9  & Erreur $\leq 2$\,mm, répétabilité $\leq 1$\,mm            & À mesurer ; hauteur à corriger \\
-    O10 & Encombrement $\leq 500^3$\,mm, masse $\leq 15$\,kg        & Compatible avec le prototype actuel \\
-    O11 & Objets sans cavité fermée, contre-dépouille $\leq 45^\circ$ & Périmètre maintenu, cavités à traiter comme limite \\
+    O1  & Numériser un objet $\leq 150^3$\,mm, automatisé          & Atteint sur formes rondes et anguleuses \\
+    O2  & Export STL ou OBJ                                         & Atteint \\
+    O3  & Cycle de scan $\leq 10$\,min                              & Atteint ($\approx$\,8\,min) \\
+    O4  & Prise en main $\leq 10$\,min, autonomie $\geq 90$\,\%     & Interface aboutie, autonomie à valider sur utilisateurs \\
+    O5  & Budget $\leq 300$\,CHF                                    & Atteint (coût réel 133.83\,CHF) \\
+    O6  & Sécurité utilisateur                                      & Caisson fermé + coupure laser sur capot/erreur \\
+    O7  & Retour visuel écran                                       & Fonctionnel \\
+    O8  & Interface web, scan en $\leq 5$ actions                   & Atteint \\
+    O9  & Erreur $\leq 2$\,mm, répétabilité $\leq 1$\,mm            & Dimensions cohérentes ; à quantifier formellement \\
+    O10 & Encombrement $\leq 500^3$\,mm, masse $\leq 15$\,kg        & Respecté \\
+    O11 & Objets sans cavité fermée, contre-dépouille $\leq 45^\circ$ & Périmètre maintenu \\
     \bottomrule
   \end{tabular}
-  \caption{Revue des objectifs au rapport intermédiaire.}
+  \caption{Revue finale des objectifs.}
   \label{tab:revue-obj}
 \end{table}
 
 \subsection{Résultats principaux}
 
 \begin{itemize}
-  \item Prototype réel assemblé et capable de produire un scan complet.
-  \item Temps de scan largement inférieur à la contrainte de 10\,minutes.
-  \item Acquisition image et nuage de points validés qualitativement.
-  \item Interface web démontrable, avec suivi du scan et récupération du
-        résultat.
-  \item Limite géométrique clairement identifiée sur les objets anguleux :
-        certaines zones éclairées par le laser ne sont pas visibles par la
-        caméra unique.
+  \item Prototype réel complet, capable de produire un scan automatisé de bout
+        en bout.
+  \item Passage à deux caméras et fusion calibrée : occultations fortement
+        réduites sur les formes anguleuses.
+  \item Reconstruction de maillage fermé (Poisson + nettoyage), corrigeant les
+        déformations observées à mi-parcours.
+  \item Temps de scan ($\approx$\,8\,min) et budget réel (133.83\,CHF)
+        conformes aux objectifs.
+  \item Interface web aboutie : lancement, suivi temps réel, viewer 3D,
+        fonctionnement hors-ligne et mode ingénierie.
 \end{itemize}
 
-\subsection{Risques identifiés}
+\subsection{Limites et perspectives}
 
-\begin{itemize}
-  \item \textbf{Occultations caméra} : risque principal pour les formes
-        non cylindriques. La mitigation prioritaire est l'essai d'une
-        deuxième caméra et la fusion des nuages.
-  \item \textbf{Qualité du STL} : le maillage actuel est insuffisant pour
-        certaines géométries. Des algorithmes open-source de reconstruction
-        doivent être évalués.
-  \item \textbf{Déformation en hauteur} : la cause n'est pas encore
-        identifiée. Un protocole avec pièces étalons est nécessaire.
-  \item \textbf{Sécurité laser} : l'interlock capot et l'isolation des
-        ouvertures doivent être finalisés avant un usage utilisateur.
-  \item \textbf{Ergonomie} : l'interface est démontrable mais encore
-        orientée debug.
-\end{itemize}
-
-\subsection{Perspectives}
-
-La phase suivante doit être organisée en itérations ciblées :
+Le scanner est livrable et améliorable. Les axes de progression identifiés
+sont :
 
 \begin{enumerate}
-  \item intégrer ou tester une deuxième caméra, probablement USB, avec une
-        vue complémentaire ;
-  \item calibrer les deux caméras et fusionner leurs mesures dans un même
-        repère ;
-  \item améliorer l'extraction des points visibles et séparer les pertes
-        logicielles des occultations physiques ;
-  \item diagnostiquer la déformation en hauteur à l'aide d'objets étalons ;
-  \item évaluer des reconstructions de maillage plus robustes
-        (Open3D, Poisson reconstruction, alpha-shape ou équivalent) ;
-  \item finaliser la sécurité laser, le plateau, le câblage et l'interface
-        utilisateur.
+  \item \textbf{Validation métrique} : établir un protocole avec pièces étalon
+        pour quantifier précision absolue et répétabilité (O9).
+  \item \textbf{Calibration extrinsèque} : fiabiliser et protocoliser la
+        calibration des deux caméras, principal levier de qualité géométrique.
+  \item \textbf{Robustesse de la reconstruction} : poursuivre le réglage de la
+        reconstruction et du nettoyage sur une plus grande variété de formes.
+  \item \textbf{Ergonomie} : simplifier encore le parcours utilisateur pour un
+        usage en pleine autonomie au MakeLab.
+  \item \textbf{Optimisation du coût matériel} : mutualiser ou alléger l'écran
+        et le calculateur pour rapprocher le coût « prix de marché » de
+        l'objectif.
 \end{enumerate}
 
-La validation finale devra ensuite mesurer le temps de scan, la précision,
-la répétabilité et l'ergonomie sur un protocole reproductible. Les essais
-actuels montrent que l'objectif de temps est atteignable ; la priorité
-technique devient donc la qualité géométrique du modèle 3D.
+Le projet valide la faisabilité d'un scanner 3D à triangulation laser
+pédagogique, à bas coût et open-source, et livre une base fonctionnelle sur
+laquelle les améliorations futures pourront s'appuyer.

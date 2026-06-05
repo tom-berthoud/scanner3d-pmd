@@ -7,23 +7,27 @@ laser déformé par l'objet en un modèle 3D exportable (STL ou OBJ),
 conformément aux exigences \textbf{E6} et \textbf{E13}. Le traitement suit
 un pipeline linéaire :
 \textbf{Acquisition} $\rightarrow$ \textbf{Extraction} $\rightarrow$
-\textbf{Triangulation} $\rightarrow$ \textbf{Reconstruction}
-$\rightarrow$ \textbf{Export}.
+\textbf{Triangulation} $\rightarrow$ \textbf{Fusion} $\rightarrow$
+\textbf{Reconstruction} $\rightarrow$ \textbf{Export}.
 
-Au rapport intermédiaire, ce pipeline n'est plus seulement validé en
-simulation. Il est utilisé sur le prototype réel : un scan peut être
-lancé depuis l'interface web, les images sont capturées, la ligne laser
-est extraite, un nuage de points est produit et un fichier STL peut être
-exporté. Les limites actuelles se situent principalement dans
-l'extraction incomplète de certains points et dans la reconstruction du
-maillage à partir du nuage.
+Par rapport au prototype mono-caméra présenté à mi-parcours, la version
+finale a évolué sur deux axes majeurs. D'une part, le scanner exploite
+désormais \textbf{deux caméras} observant la même ligne laser depuis des
+points de vue complémentaires, ce qui réduit fortement les occultations
+sur les pièces anguleuses. D'autre part, la chaîne de traitement a été
+fiabilisée de bout en bout : calibration de l'exposition automatique avant
+chaque scan, fusion calibrée des deux nuages dans un repère commun, et
+reconstruction du maillage par une méthode de Poisson assortie d'un
+nettoyage géométrique. Le logiciel produit aujourd'hui un fichier STL
+livrable depuis l'interface web sur l'ensemble de la chaîne réelle.
 
 \subsection{Architecture logicielle}
 
 L'architecture est modulaire : chaque responsabilité est isolée dans un
 sous-paquet Python exposant une API stable. Cette séparation a permis de
 développer d'abord en mode \emph{mock}, puis de transférer le pipeline sur
-le matériel réel sans réécrire l'ensemble du système.
+le matériel réel, et enfin d'ajouter une seconde caméra sans réécrire
+l'ensemble du système.
 
 \begin{figure}[H]
   \centering
@@ -38,77 +42,173 @@ le matériel réel sans réécrire l'ensemble du système.
     \toprule
     \textbf{Module} & \textbf{Responsabilité} \\
     \midrule
-    \texttt{hardware}       & Abstraction du moteur, laser, LEDs, écran et caméra, avec mode \emph{mock}. \\
-    \texttt{acquisition}    & Séquence moteur, laser, capture image et sauvegarde des images. \\
-    \texttt{processing}     & Extraction de la ligne laser et triangulation pixel $\rightarrow$ point 3D. \\
-    \texttt{reconstruction} & Fusion des profils en nuage de points et filtrage. \\
-    \texttt{export}         & Génération STL / OBJ et export du nuage brut. \\
-    \texttt{orchestration}  & Machine d'états et workflow de scan. \\
-    \texttt{calibration}    & Outils de calibration caméra, laser et filtres de fond. \\
-    \texttt{interface}      & Serveur web Flask, SSE, viewer 3D, commandes manuelles et écran local. \\
+    \texttt{hardware}       & Abstraction du moteur, laser, écran, capteur de capot et des deux caméras (driver Pi Camera et driver USB OpenCV), avec mode \emph{mock}. \\
+    \texttt{acquisition}    & Séquence moteur, laser, capture des images des deux caméras et sauvegarde. \\
+    \texttt{processing}     & Extraction de la ligne laser et triangulation pixel $\rightarrow$ point 3D par caméra. \\
+    \texttt{reconstruction} & Fusion des profils (deux caméras et demi-tour), filtrage et détection du plan supérieur. \\
+    \texttt{export}         & Reconstruction du maillage (Poisson, Open3D) et export STL / OBJ / nuage brut. \\
+    \texttt{orchestration}  & Machine d'états et workflow de scan complet. \\
+    \texttt{calibration}    & Intrinsèques caméra, plan laser, extrinsèques vers le repère plateau et calibration multi-caméras. \\
+    \texttt{interface}      & Serveur web Flask, SSE, viewer 3D, mode ingénierie, commandes manuelles et écran local. \\
     \bottomrule
   \end{tabular}
   \caption{Modules logiciels et responsabilités.}
   \label{tab:modules}
 \end{table}
 
-\subsection{Chaîne de traitement réelle}
+\subsection{D'une à deux caméras}
 
-La chaîne réelle actuellement observée est la suivante :
-
-\begin{enumerate}
-  \item capture d'une image nette avec une ligne laser visible ;
-  \item extraction des points de la ligne laser ;
-  \item conversion des points image en nuage de points 3D ;
-  \item export d'un STL à partir du nuage.
-\end{enumerate}
+\paragraph{Le problème à résoudre.}
+Le montage mono-caméra fonctionne sur les formes rondes mais perd la ligne
+laser sur les pièces anguleuses : le laser éclaire une zone de l'objet,
+mais cette zone est masquée à la caméra par une autre face
+(\autoref{fig:occultation-camera}). Aucun réglage de seuil ne permet de
+récupérer un point qui n'est pas visible dans l'image ; la limite est
+\emph{physique}.
 
 \begin{figure}[H]
   \centering
-  \begin{minipage}{0.48\linewidth}
-    \centering
-    \includegraphics[width=\linewidth,height=4.2cm,keepaspectratio]{images/vue_interieur_laser_piece.jpeg}
-    \\\scriptsize (1) Capture
-  \end{minipage}\hfill
-  \begin{minipage}{0.48\linewidth}
-    \centering
-    \includegraphics[width=\linewidth,height=4.2cm,keepaspectratio]{images/vue_camera.jpg}
-    \\\scriptsize (2) Extraction
-  \end{minipage}
-
-  \vspace{0.5em}
-
-  \begin{minipage}{0.48\linewidth}
-    \centering
-    \includegraphics[width=\linewidth,height=4.2cm,keepaspectratio]{images/screen_cylindre_nuage.png}
-    \\\scriptsize (3) Nuage de points
-  \end{minipage}\hfill
-  \begin{minipage}{0.48\linewidth}
-    \centering
-    \includegraphics[width=\linewidth,height=4.2cm,keepaspectratio]{images/screen_cylindre_stl.png}
-    \\\scriptsize (4) STL exporté
-  \end{minipage}
-  \caption{Chaîne de traitement observée sur le prototype réel : de la capture image jusqu'au fichier STL.}
-  \label{fig:pipeline-reel}
+  \includegraphics[width=0.7\linewidth]{images/vue_obsturction_laser.jpeg}
+  \caption{Occultation en configuration mono-caméra : le laser éclaire une face de la pièce, mais celle-ci est masquée du point de vue de la caméra.}
+  \label{fig:occultation-camera}
 \end{figure}
 
-L'acquisition image est jugée de bonne qualité. L'extraction récupère une
-grande partie de la ligne laser, de l'ordre de 90\,\% sur les essais
-actuels, mais perd encore des points. Deux cas sont distingués : soit le
-laser est physiquement invisible pour la caméra à cause d'une occultation,
-soit le laser est visible mais l'algorithme ne détecte pas tous les points
-à cause des paramètres de seuil ou de la méthode d'extraction.
+\paragraph{La solution retenue.}
+Une seconde caméra est ajoutée pour observer la même ligne laser depuis une
+direction opposée. La disposition mécanique est dissymétrique afin de couvrir
+au mieux les zones cachées :
 
-La transformation des points extraits en nuage de points donne un rendu
-propre et exploitable pour l'analyse. Le passage du nuage de points au
-STL reste le point logiciel le plus critique, surtout pour les formes non
-cylindriques ou anguleuses.
+\begin{itemize}
+  \item \textbf{caméra droite} : Raspberry Pi Camera Module 3 (bus CSI),
+        placée à environ $-25^\circ$ en azimut par rapport à l'axe laser et
+        inclinée d'environ $20^\circ$ vers le bas ;
+  \item \textbf{caméra gauche} : caméra USB (capteur OV9726, bus USB),
+        placée à environ $+33^\circ$ en azimut et inclinée d'environ
+        $20^\circ$ vers le haut ;
+  \item laser, moteur et plateau inchangés.
+\end{itemize}
+
+Le mode mono-caméra reste conservé pour le débogage, la non-régression et un
+fonctionnement dégradé. L'ajout d'une caméra USB sur le Raspberry Pi a
+nécessité l'intégration d'adaptateurs dédiés (cf. budget,
+\autoref{tab:budget-bom}).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\linewidth]{images/montage_2_cameras.jpeg}
+  \caption{Montage des deux caméras de part et d'autre du laser, avec inclinaisons opposées.}
+  \label{fig:montage-2-cam}
+\end{figure}
+
+\paragraph{Le vrai enjeu : un repère commun.}
+Capturer deux images ne suffit pas. Chaque caméra doit produire ses points
+dans un \textbf{même repère plateau}, sans quoi deux nuages individuellement
+corrects se superposent avec un décalage et déforment le STL final. Le code
+évolue donc vers une configuration \texttt{cameras:} décrivant les caméras
+\texttt{right} et \texttt{left}, une capture séquentielle par pas moteur
+(moteur, laser ON, caméra droite, caméra gauche, laser OFF) et une
+calibration séparée par caméra.
+
+\subsection{Calibration}
+
+Le pipeline s'appuie sur quatre familles de paramètres, calibrés par caméra
+et stockés dans des fichiers YAML \emph{immuables au moment du scan} :
+
+\begin{enumerate}
+  \item \textbf{intrinsèques} (matrice caméra et distorsion), obtenus par
+        damier OpenCV ou mire ChArUco ;
+  \item \textbf{plan laser} dans le repère de chaque caméra ;
+  \item \textbf{extrinsèques} de chaque caméra vers le repère plateau, point
+        le plus sensible : une petite erreur angulaire produit un décalage
+        visible entre les deux nuages ;
+  \item \textbf{géométrie de la plateforme} (axe de rotation).
+\end{enumerate}
+
+Le diagnostic clé consiste à comparer les nuages \texttt{right} et
+\texttt{left} \emph{avant} fusion : leurs erreurs moyenne, RMS et maximale
+doivent rester faibles devant la précision visée. Si les deux nuages sont
+décalés, c'est la calibration extrinsèque qu'il faut corriger avant de
+régler le maillage.
+
+\paragraph{Calibration de l'exposition automatique.}
+Avant chaque scan, une routine ajuste itérativement le temps d'exposition de
+chaque caméra pour viser une largeur médiane de ligne laser cible (de l'ordre
+de 6\,pixels), à une tolérance d'environ 1\,pixel près. La routine échantillonne
+quelques angles, mesure la largeur de la ligne, corrige l'exposition dans une
+plage bornée (200 à 60\,000\,$\mu$s) et converge en quelques itérations. Une
+ligne trop large sature et fausse le centroïde ; une ligne trop fine
+disparaît par endroits. Cette étape garde le laser éteint par défaut et le
+coupe en cas d'erreur.
+
+\subsection{Chaîne de traitement complète}
+
+Pour chaque pas du plateau, les deux caméras capturent une image de la ligne
+laser. Le traitement enchaîne ensuite :
+
+\begin{enumerate}
+  \item extraction de la ligne laser dans chaque image (seuillage sur la
+        composante verte $G-R$, puis centroïde sous-pixel par colonne) ;
+  \item triangulation des pixels en points 3D dans le repère de chaque
+        caméra, à l'aide du plan laser correspondant ;
+  \item transformation des points vers le repère plateau via les
+        extrinsèques de chaque caméra ;
+  \item dérotation des points selon l'angle courant du plateau ;
+  \item fusion de tous les profils (deux caméras puis demi-tour) ;
+  \item filtrage des points aberrants (k plus proches voisins, KDTree SciPy)
+        et détection du plan supérieur ;
+  \item reconstruction du maillage et export STL / OBJ.
+\end{enumerate}
+
+Le plateau est échantillonné sur 100 positions pour un tour complet
+(moteur NEMA 17, 200\,pas/tour, $1{,}8^\circ$/pas).
+
+\subsection{Fusion des nuages}
+
+La fusion est l'opération qui conditionne la qualité géométrique du résultat.
+Deux mécanismes complémentaires sont mis en \oe uvre.
+
+\paragraph{Fusion des deux caméras.}
+Dans les zones vues par une seule caméra, tous les points calibrés sont
+conservés : c'est là que la seconde caméra apporte de la couverture. Dans les
+zones de recouvrement, la fusion est volontairement \emph{conservatrice} :
+les points proches sont moyennés plutôt que dupliqués, afin d'éviter une
+double surface qui épaissirait le maillage.
+
+\paragraph{Fusion demi-tour.}
+Un profil acquis à un angle $\theta$ et son symétrique à $\theta+180^\circ$
+observent partiellement la même matière. Les profils en doublon sont
+détectés (tolérance d'un pas) puis moyennés localement, ce qui réduit le
+bruit et le dédoublement de surface sans perdre de couverture.
+
+\subsection{Reconstruction du maillage}
+
+Le passage du nuage de points au maillage fermé est le point logiciel le plus
+délicat. La solution finale repose sur la reconstruction de \textbf{Poisson}
+(Open3D), précédée d'une estimation des normales et suivie d'un nettoyage
+géométrique :
+
+\begin{itemize}
+  \item estimation des normales orientées de manière cohérente ;
+  \item reconstruction de Poisson (profondeur d'octree configurable, 8 par
+        défaut) ;
+  \item suppression des sommets de faible densité, qui correspondent aux
+        extrapolations de Poisson hors du nuage réel ;
+  \item \textbf{détection et découpe du plan supérieur} : une bande planaire
+        dense est détectée au sommet du modèle et le maillage est coupé par
+        ce plan pour supprimer les artefacts en « dôme » caractéristiques de
+        Poisson sur un nuage ouvert ;
+  \item \textbf{fermeture du fond} par un cap plat horizontal dans le repère
+        monde, l'axe vertical du plateau servant de référence.
+\end{itemize}
+
+Cette approche remplace la simple enveloppe convexe utilisée initialement et
+donne un maillage fermé et étanche, exploitable pour l'impression 3D.
 
 \subsection{Orchestration et machine d'états}
 
 La machine d'états centralise les transitions légales et déclenche les
-effets de bord associés : changement de LED, progression de l'interface,
-arrêt du laser en cas d'erreur. Les états
+effets de bord associés : progression de l'interface, signalisation et
+surtout sécurité laser. Les états
 \texttt{IDLE}, \texttt{CALIBRATING}, \texttt{SCANNING},
 \texttt{PROCESSING}, \texttt{EXPORTING}, \texttt{COMPLETE} et
 \texttt{ERROR} couvrent l'ensemble du cycle de vie.
@@ -116,41 +216,34 @@ arrêt du laser en cas d'erreur. Les états
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.85\linewidth]{diagrams/machine_etats.png}
-  \caption{Machine d'états du scanner — transitions et signalisation LED.}
+  \caption{Machine d'états du scanner — transitions et signalisation.}
   \label{fig:fsm}
 \end{figure}
 
 \paragraph{Sécurité laser.}
-Le logiciel désactive le laser au démarrage et lors d'un passage en état
-\texttt{ERROR}. Ce comportement est nécessaire mais ne remplace pas
-l'interlock matériel du capot, qui reste à intégrer pour la version
-utilisateur.
-
-\subsection{Calibration}
-
-Le pipeline s'appuie sur trois familles de paramètres : intrinsèques
-caméra, plan laser et géométrie de la plateforme. Les essais actuels ont
-permis d'obtenir une calibration suffisante pour retrouver des dimensions
-cohérentes en largeur et en profondeur sur des objets simples. La hauteur
-du modèle reste toutefois déformée vers le haut ; la cause n'a pas encore
-été isolée et devra être diagnostiquée lors de la prochaine phase.
-
-La caméra présente encore de la distorsion. Le protocole final devra
-stabiliser la calibration caméra, la calibration du plan laser et la
-position de l'axe de rotation, puis vérifier leur cohérence sur des
-pièces étalons.
+Le logiciel désactive le laser au démarrage, lors d'un passage en état
+\texttt{ERROR} et \textbf{immédiatement à l'ouverture du capot}, détectée par
+un capteur dédié. Un verrou logiciel empêche par ailleurs le lancement de
+deux scans concurrents. Cette sécurité logicielle complète l'isolation
+mécanique du caisson.
 
 \subsection{Interface utilisateur}
 
-L'interface web Flask permet déjà de lancer un scan, suivre son état,
-visualiser les images, télécharger le résultat et afficher le STL dans un
-viewer Three.js. Elle est utilisable pour la démonstration, mais reste
-qualitative et orientée debug. L'ergonomie finale devra simplifier les
-actions utilisateur, clarifier les messages d'erreur et mieux distinguer
-les modes scan, calibration et commande manuelle.
+L'interface web Flask permet de lancer un scan, de suivre son état en temps
+réel (SSE), de visualiser les images, de télécharger le résultat et
+d'afficher le STL dans un viewer Three.js. La version finale a été retravaillée
+pour un usage au MakeLab : thème clair, \textbf{assets servis hors-ligne}
+(aucune dépendance Internet sur le Raspberry Pi), animations de progression,
+et un \textbf{mode ingénierie} séparant les outils de calibration et de
+commande manuelle de l'usage courant. L'écran local complète l'interface web
+pour indiquer l'état du système.
 
-Les LEDs et l'écran fonctionnent et complètent
-l'interface web pour indiquer l'état du système.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\linewidth]{images/screen_interface.png}
+  \caption{Interface web : lancement d'un scan et suivi en temps réel.}
+  \label{fig:interface}
+\end{figure}
 
 \subsection{Choix techniques}
 
@@ -160,12 +253,12 @@ l'interface web pour indiquer l'état du système.
     \toprule
     \textbf{Besoin} & \textbf{Choix} & \textbf{Justification} \\
     \midrule
-    Traitement d'image      & OpenCV          & Extraction de ligne et calibration caméra. \\
+    Traitement d'image      & OpenCV          & Extraction de ligne, calibration caméra et driver USB. \\
     Calcul numérique        & NumPy           & Standard scientifique Python, adapté au Pi. \\
     Filtrage de nuage       & SciPy KDTree    & Solution légère pour filtrer les points aberrants. \\
-    Export maillé actuel    & \texttt{Open3D} & Reconstruction Poisson depuis le nuage de points avec estimation des normales. \\
+    Reconstruction maillée  & Open3D (Poisson) & Maillage fermé depuis le nuage, avec estimation des normales. \\
     Interface web           & Flask + SSE     & Simple, réactive, suffisante pour le suivi temps réel. \\
-    Viewer 3D               & Three.js        & Visualisation directe du STL dans le navigateur. \\
+    Viewer 3D               & Three.js        & Visualisation directe du STL dans le navigateur, hors-ligne. \\
     Tests                   & pytest          & Validation des modules de traitement et de la machine d'états. \\
     \bottomrule
   \end{tabular}
@@ -173,17 +266,15 @@ l'interface web pour indiquer l'état du système.
   \label{tab:choix-tech}
 \end{table}
 
-\subsection{Limites identifiées et actions prévues}
+\subsection{Limites résiduelles}
 
 \begin{itemize}
-  \item \textbf{Extraction incomplète} : ajuster les seuils, améliorer
-        l'algorithme et distinguer les pertes dues au logiciel des pertes
-        dues aux occultations physiques.
-  \item \textbf{Maillage STL} : évaluer des solutions open-source de
-        reconstruction telles qu'Open3D, Poisson reconstruction ou
-        alpha-shape.
-  \item \textbf{Deuxième caméra} : développer la calibration et la fusion
-        des mesures provenant de deux caméras dans un même repère.
-  \item \textbf{Déformation en hauteur} : diagnostiquer la cause
-        géométrique ou logicielle à partir de pièces étalons.
+  \item \textbf{Sensibilité des extrinsèques} : la qualité de la fusion
+        dépend directement de la calibration extrinsèque ; un protocole de
+        calibration reproductible reste le principal levier de précision.
+  \item \textbf{Cavités profondes} : la double caméra réduit les occultations
+        mais ne résout pas les cavités fermées, hors périmètre (O11).
+  \item \textbf{Validation métrique} : la précision absolue et la
+        répétabilité doivent être quantifiées sur pièces étalon
+        (cf. \autoref{sec:prototype-resultats}).
 \end{itemize}

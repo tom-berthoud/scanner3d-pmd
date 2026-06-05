@@ -66,8 +66,9 @@ les suivants :
 \subsection{Planification}
 
 Le projet est structuré en quatre phases principales, réparties sur
-16 semaines pour un effort total estimé à 322 heures (hors imprévus
-et gestion de projet). La livraison du prototype fonctionnel est
+16 semaines pour un effort estimé à environ 357 heures, pour
+\textbf{361 heures effectivement consommées} (planning final,
+\autoref{annexe:planning}). La livraison du prototype fonctionnel est
 fixée au \textbf{7 juin 2026} (E22).
 
 \begin{table}[H]
@@ -113,17 +114,18 @@ Rapport technique (ce document), prototype fonctionnel au MakeLab, vidéo
 de démonstration, présentation finale et jeu de scans d'objets de
 référence.
 
-\subsection{État intermédiaire du projet}
+\subsection{État du projet à la livraison}
 
-Au 27 avril, un prototype physique existe : boîte découpée au laser,
-plateau motorisé, laser monté sur support imprimé en 3D, caméra placée
-à environ $30^\circ$, électronique d'alimentation et de commande, LEDs,
-écran et interface web. Un cycle de scan réel peut être lancé et produit
-un résultat exploitable pour l'analyse.
+À la livraison, le scanner est un prototype complet et fonctionnel : boîte
+fermée découpée au laser, plateau motorisé, laser monté sur support imprimé
+en 3D, \textbf{deux caméras} inclinées de manière complémentaire,
+électronique d'alimentation et de commande sur PCB dédié, capteur de capot,
+écran tactile et interface web. Un cycle de scan complet peut être lancé
+depuis l'interface et produit un fichier STL ou OBJ livrable.
 
-Les essais montrent cependant que la qualité finale du modèle dépend
-encore fortement de trois points : la visibilité de la ligne laser par la
-caméra, la robustesse de l'extraction de points et la reconstruction du
-maillage STL à partir du nuage de points. Le présent rapport intermédiaire
-documente donc à la fois les éléments validés, les limites identifiées et
-les actions prévues pour la phase suivante.
+Par rapport au rapport intermédiaire, l'évolution majeure est le passage à une
+configuration à deux caméras, qui réduit fortement les occultations sur les
+pièces anguleuses, accompagnée d'une fiabilisation de la chaîne de traitement
+(calibration d'exposition, fusion calibrée, reconstruction de Poisson). Le
+présent rapport documente l'architecture, les choix techniques, les résultats
+obtenus, le budget et les limites résiduelles du système livré.

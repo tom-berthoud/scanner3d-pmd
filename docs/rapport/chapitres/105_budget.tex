@@ -1,0 +1,124 @@
+\section{Budget et coûts}
+
+\subsection{Méthode}
+
+Le budget du projet est présenté selon deux notions distinctes, conformément
+à la grille d'estimation fournie au lancement du projet :
+
+\begin{itemize}
+  \item l'\textbf{estimation du coût du prototype} : ce que coûterait la
+        réalisation si l'ensemble du travail était facturé aux tarifs
+        horaires d'un bureau d'ingénierie (main d'\oe uvre, machines de
+        fabrication et pièces achetées) ;
+  \item le \textbf{coût réel pour l'école} : la dépense effectivement engagée.
+        Les heures de travail des étudiants ne sont pas facturées, et les
+        moyens de fabrication (impression 3D, découpe laser) ainsi qu'une
+        partie des composants proviennent du stock du MakeLab. Le coût réel
+        se résume donc aux pièces effectivement commandées, justifiées par
+        les quittances.
+\end{itemize}
+
+Les tarifs horaires retenus sont ceux de la grille du cours : ingénieur HES
+à 150\,CHF/h, mécanicien à 80\,CHF/h, impression 3D à 40\,CHF/h et découpe
+laser à 50\,CHF/h.
+
+\subsection{Estimation du coût du prototype}
+
+Le temps de travail provient du planning final (\autoref{annexe:planning}) :
+\textbf{361 heures} consommées au total. La répartition retenue distingue
+les heures d'ingénierie (logiciel, électronique, électrique, gestion de
+projet) des heures de mécanique (conception, fabrication et montage,
+réalisées par le pôle ROCM). Les durées d'impression 3D et de découpe laser
+correspondent au temps machine, estimé séparément.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{5cm}r r r@{}}
+    \toprule
+    \textbf{Poste} & \textbf{Quantité} & \textbf{Tarif} & \textbf{Total} \\
+    \midrule
+    Ingénieur HES        & 314\,h & 150\,CHF/h & 47\,100\,CHF \\
+    Mécanicien           & 47\,h  & 80\,CHF/h  & 3\,760\,CHF \\
+    Impression 3D        & 35\,h  & 40\,CHF/h  & 1\,400\,CHF \\
+    Découpe laser        & 3\,h   & 50\,CHF/h  & 150\,CHF \\
+    Pièces achetées      & ---    & ---        & $\approx$\,450\,CHF \\
+    \midrule
+    \textbf{Total estimé} & & & $\approx$\,\textbf{52\,860\,CHF} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Estimation du coût de développement du prototype, tarifs HES.}
+  \label{tab:budget-estimation}
+\end{table}
+
+L'essentiel du coût estimé provient de la main d'\oe uvre d'ingénierie : le
+projet est avant tout un travail de conception et de développement
+logiciel. Le coût matériel reste marginal devant le coût en temps.
+
+\subsection{Pièces achetées — nomenclature}
+
+La nomenclature ci-dessous distingue les composants \emph{commandés} pour le
+projet (justifiés par les quittances en annexe) des composants \emph{issus
+du stock} du MakeLab, dont le prix est estimé au prix de marché pour
+l'estimation du prototype.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{6.5cm}p{2.2cm}r p{2.3cm}@{}}
+    \toprule
+    \textbf{Composant} & \textbf{Origine} & \textbf{Prix} & \textbf{Réf.} \\
+    \midrule
+    Laser ligne vert VLM-520-56 (520\,nm) & Commandé    & 77.08\,CHF & DigiKey \\
+    2$\times$ caméra USB OV9726 (720p)     & Commandé    & 17.60\,CHF & Galaxus \\
+    Adaptateur Gigabit Ethernet USB-C      & Commandé    & 8.90\,CHF  & Galaxus \\
+    Adaptateur encastrable USB-C BU-BU     & Commandé    & 15.90\,CHF & Galaxus \\
+    Adaptateur de panneau USB-A f-f        & Commandé    & 13.70\,CHF & Galaxus \\
+    Contribution climatique                & Commandé    & 0.65\,CHF  & Galaxus \\
+    \midrule
+    Raspberry Pi 4 Model B                 & Stock       & $\approx$\,65\,CHF & --- \\
+    Pi Camera Module 3                     & Stock       & $\approx$\,35\,CHF & --- \\
+    Raspberry Pi Touch Display 2           & Stock       & $\approx$\,70\,CHF & --- \\
+    Moteur pas à pas NEMA 17 (17HS3401)    & Stock       & $\approx$\,12\,CHF & --- \\
+    Driver moteur DM320T                   & Stock       & $\approx$\,45\,CHF & --- \\
+    Alimentation 12\,V 36\,W (Hama)        & Stock       & $\approx$\,25\,CHF & --- \\
+    Convertisseur 12$\to$5\,V LM2596       & Stock       & $\approx$\,4\,CHF  & --- \\
+    Interrupteur, connecteurs, capteur capot & Stock     & $\approx$\,15\,CHF & --- \\
+    PCB dédié (fabrication)                & Stock       & $\approx$\,15\,CHF & --- \\
+    Matière (PLA, panneau MDF, visserie)   & Stock       & $\approx$\,30\,CHF & --- \\
+    \midrule
+    \textbf{Total estimé (prix de marché)} & & \textbf{$\approx$\,450\,CHF} & \\
+    \bottomrule
+  \end{tabular}
+  \caption{Nomenclature des pièces et estimation des prix. Les prix « Stock » sont estimés au prix de marché ; ils n'entrent pas dans le coût réel pour l'école.}
+  \label{tab:budget-bom}
+\end{table}
+
+\subsection{Coût réel pour l'école}
+
+Les heures de travail ne sont pas facturées et les moyens de fabrication du
+MakeLab ne génèrent pas de dépense supplémentaire. Le coût réellement engagé
+se limite aux deux commandes passées pour le projet, dont les quittances
+figurent dans les annexes.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{8cm}r@{}}
+    \toprule
+    \textbf{Commande} & \textbf{Montant (TTC)} \\
+    \midrule
+    DigiKey --- laser ligne VLM-520-56          & 77.08\,CHF \\
+    Galaxus --- caméras USB et adaptateurs       & 56.75\,CHF \\
+    \midrule
+    \textbf{Coût réel total}                     & \textbf{133.83\,CHF} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Coût réel engagé pour le projet (quittances en annexe).}
+  \label{tab:budget-reel}
+\end{table}
+
+Le coût réel de \textbf{133.83\,CHF} respecte largement l'objectif
+budgétaire \textbf{O5} (\(\leq\) 300\,CHF). Même en valorisant l'ensemble
+des composants au prix de marché ($\approx$\,450\,CHF,
+\autoref{tab:budget-bom}), le coût matériel reste du même ordre de grandeur
+que l'objectif, l'écart provenant essentiellement de l'écran tactile et du
+Raspberry Pi, qui pourraient être mutualisés ou remplacés par des variantes
+moins coûteuses dans une version optimisée.

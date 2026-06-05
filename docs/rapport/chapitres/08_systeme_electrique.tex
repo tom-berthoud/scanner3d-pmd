@@ -70,26 +70,24 @@ pendant un cycle de scan.
     Écran tactile 7 pouces & 5\,V & À mesurer & Fonctionnel en test \\
     Laser ligne         & 5\,V   & À mesurer & Commande fonctionnelle \\
     Moteur NEMA\,17 + DM320T & 12\,V & Dépend du réglage courant driver & Rotation fonctionnelle \\
-    Caméra USB prévue   & 5\,V   & À mesurer & À intégrer si retenue \\
+    Caméra USB          & 5\,V   & À mesurer & Intégrée \\
     \bottomrule
   \end{tabular}
-  \caption{Bilan de consommation intermédiaire.}
+  \caption{Bilan de consommation du système.}
   \label{tab:conso}
 \end{table}
 
-\subsection{Validation intermédiaire}
+\subsection{Validation}
 
-Les validations réalisées à ce stade sont fonctionnelles : le système
-peut être alimenté, lancer un scan réel, commander le moteur et le laser,
-acquérir des images et produire un résultat de reconstruction. Les mesures
-électriques détaillées restent à effectuer avant la version finale.
+Les validations réalisées sont fonctionnelles : le système est alimenté,
+lance un scan réel à deux caméras, commande le moteur et le laser, acquiert
+les images et produit un résultat de reconstruction. La coupure du laser sur
+erreur et à l'ouverture du capot est opérationnelle. Les mesures électriques
+détaillées (courants en charge) restent à relever pour documentation.
 
 \begin{itemize}
-  \item Vérifier que l'alimentation reste stable pendant un scan complet.
-  \item Valider la coupure du laser en cas d'erreur et lors de
-        l'ouverture du capot.
-  \item Confirmer la marge d'alimentation si une deuxième caméra USB est
-        ajoutée.
+  \item Relever les courants en charge pendant un scan complet.
+  \item Vérifier la stabilité de l'alimentation avec les deux caméras.
 \end{itemize}
 
 \subsection{Limites identifiées et actions prévues}

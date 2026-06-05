@@ -22,24 +22,27 @@ package "Orchestration" {
 }
 
 package "Pipeline de traitement" {
-  [Acquisition] as acq
+  [Acquisition\n(2 caméras)] as acq
   [Extraction ligne laser] as line
-  [Triangulation] as tri
-  [Reconstruction\n(fusion + filtrage)] as recon
+  [Triangulation\npar caméra] as tri
+  [Fusion\n(2 caméras + demi-tour)] as fuse
+  [Reconstruction\n(Poisson + filtrage)] as recon
   [Export STL/OBJ] as export
 }
 
 package "Calibration" {
   [Intrinsèque caméra] as calib_cam
   [Plan laser] as calib_laser
+  [Extrinsèques\n(repère plateau)] as calib_ext
   [Plateforme] as calib_plat
 }
 
 package "Abstraction matérielle" {
-  [Caméra] as hw_cam
+  [Caméra Pi (CSI)] as hw_cam
+  [Caméra USB] as hw_usb
   [Moteur pas-à-pas] as hw_motor
   [Laser] as hw_laser
-  [LEDs] as hw_led
+  [Capteur capot] as hw_door
   [Mock (dev)] as hw_mock
 }
 
@@ -55,16 +58,20 @@ scan --> acq
 acq --> hw_motor
 acq --> hw_laser
 acq --> hw_cam
+acq --> hw_usb
 acq --> line : frames
 line --> tri : pixels
-tri --> recon : points 3D
-recon --> export : nuage
-fsm --> hw_led : signalisation
+tri --> fuse : points 3D / caméra
+fuse --> recon : nuage fusionné
+recon --> export : maillage
+hw_door --> fsm : ouverture -> laser OFF
 calib_cam ..> cfg
 calib_laser ..> cfg
+calib_ext ..> cfg
 calib_plat ..> cfg
 tri ..> cfg : lecture seule
 hw_cam .[#gray].> hw_mock : fallback
+hw_usb .[#gray].> hw_mock : fallback
 hw_motor .[#gray].> hw_mock : fallback
 hw_laser .[#gray].> hw_mock : fallback
 
