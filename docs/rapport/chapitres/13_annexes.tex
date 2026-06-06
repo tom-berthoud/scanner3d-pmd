@@ -1,5 +1,27 @@
 \section{Annexes}
 
+\newcommand{\annexepdf}[2][]{%
+  \includepdf[
+    pages=-,
+    pagecommand={\thispagestyle{rapport}},
+    width=.9\paperwidth,
+    height=.78\paperheight,
+    keepaspectratio,
+    #1
+  ]{#2}%
+}
+
+\newcommand{\annexepdfpaysage}[1]{%
+  \includepdf[
+    pages=-,
+    pagecommand={\thispagestyle{rapport}},
+    width=.9\paperheight,
+    height=.9\paperwidth,
+    keepaspectratio,
+    landscape=true
+  ]{#1}%
+}
+
 \subsection{Planning du projet}
 \label{annexe:planning}
 
@@ -7,7 +29,8 @@ Le planning ci-dessous présente la répartition détaillée des tâches entre
 les membres de l'équipe, leur ordonnancement sur les 16 semaines du projet
 et le temps effectivement consommé (361\,heures au total).
 
-\includepdf[pages=-,pagecommand={},fitpaper=true]{assets/Planning.pdf}
+\clearpage
+\annexepdfpaysage{assets/Planning.pdf}
 
 \subsection{Quittances}
 \label{annexe:quittances}
@@ -15,5 +38,6 @@ et le temps effectivement consommé (361\,heures au total).
 Les deux commandes passées pour le projet sont justifiées par les quittances
 suivantes (cf. \autoref{tab:budget-reel}).
 
-\includepdf[pages=-,pagecommand={},fitpaper=true]{assets/facturelaser.pdf}
-\includepdf[pages=-,pagecommand={},fitpaper=true]{assets/Galaxus_Ticket de caisse_187172040.pdf}
+\clearpage
+\annexepdfpaysage{assets/facturelaser.pdf}
+\annexepdf{assets/Galaxus_Ticket de caisse_187172040.pdf}

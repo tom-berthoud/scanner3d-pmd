@@ -81,3 +81,35 @@ sont :
 Le projet valide la faisabilité d'un scanner 3D à triangulation laser
 pédagogique, à bas coût et open-source, et livre une base fonctionnelle sur
 laquelle les améliorations futures pourront s'appuyer.
+
+% ---- Signatures -----------------------------------------------
+\subsection*{Signatures}
+
+\newcommand{\signature}[2]{%
+  \begin{minipage}[b]{0.3\textwidth}
+    \centering
+    \includegraphics[height=2cm]{images/#1}\\[-10pt]
+    \rule{0.85\textwidth}{0.4pt}\\[2pt]
+    {\small #2}
+  \end{minipage}%
+}
+\newcommand{\signaturevide}[1]{%
+  \begin{minipage}[b]{0.3\textwidth}
+    \centering
+    \vspace*{2cm}\par
+    \rule{0.85\textwidth}{0.4pt}\\[2pt]
+    {\small #1}
+  \end{minipage}%
+}
+
+\vspace{1cm}
+\noindent
+\signaturevide{Luc Marchand}\hfill
+\signaturevide{Tim Stamm}\hfill
+\signaturevide{Jason Weber}
+
+\vspace{1.6cm}
+\noindent\hspace*{0.175\textwidth}%
+\signature{signaturehadrien.jpg}{Hadrien Fuentes}%
+\hspace{0.05\textwidth}%
+\signature{signaturetom.jpg}{Tom Berthoud}\hfill
