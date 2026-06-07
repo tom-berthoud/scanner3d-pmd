@@ -118,7 +118,7 @@ La seconde page du schéma centralise le Raspberry Pi 4, qui fait office de nœu
 
 Pour permettre une utilisation et une maintenance aisées du scanner une fois le boîtier fermé, des déportations de connectiques ont été intégrées via des passes-cloisons :
 \begin{itemize}
-    \item \textbf{Liaison Réseau (RJ45) :} Un câble réseau part du Raspberry Pi vers une carte Ethernet, dont la sortie finale au format USB-C est fixée sur un passe-cloison. Cela permet une connexion filaire rapide à l'interface du scanner.
+    \item \textbf{Liaison Réseau (RJ45) :} Un câble réseau part du Raspberry Pi vers une carte Ethernet, dont la sortie finale au format USB-C est fixée sur un passe-cloison. Le Raspberry Pi utilise l'adresse fixe \texttt{192.168.55.1} et exécute un serveur DHCP qui attribue automatiquement une adresse IP au PC connecté. L'interface du scanner est ainsi accessible directement par une liaison filaire, sans configuration réseau manuelle du PC.
     \item \textbf{Port de stockage (USB) :} Un second câble USB est relié du Raspberry Pi à un passe-cloison femelle, offrant un accès direct pour brancher une clé USB externe (exportation des scans).
 \end{itemize}
 
@@ -193,7 +193,7 @@ nominale de 24\,W, mais la marge disponible est limitée à environ 2,6\,W.
     Cette architecture offre plusieurs avantages majeurs pour la maintenance et l'évolutivité de la machine :
     \begin{itemize}
         \item \textbf{Maintenance simplifiée :} Toutes les tensions et tous les signaux convergent sur cette carte. Si un élément doit être inspecté ou remplacé (comme le capteur de porte ou le laser), il suffit de le débrancher de son connecteur dédié sur le PCB sans avoir à manipuler les broches du Raspberry Pi. De même, le Raspberry Pi peut être isolé du système en débranchant seulement deux connecteurs (\texttt{J3} et \texttt{J5}).
-        \item \textbf{Évolutivité (Ports de réserve) :} La carte intègre 5 connecteurs de réserve (\texttt{J6} à \texttt{J10}). Chaque bloc de réserve distribue toutes les ressources nécessaires à l'ajout futur d'un capteur ou d'un actionneur : une ligne 5\,Vdc, une ligne 3,3\,Vdc, une masse (GND) et une ligne GPIO dédiée.
+        \item \textbf{Évolutivité (Ports de réserve) :} La carte intègre 5 connecteurs de réserve (\texttt{J6} à \texttt{J10}). Chaque bloc distribue les ressources nécessaires à la connexion d'un capteur ou d'un actionneur : une ligne 5\,Vdc, une ligne 3,3\,Vdc, une masse (GND) et une ligne GPIO dédiée.
         \item \textbf{Intégration et compacité (Technologie CMS) :} Afin d'optimiser l'espace, la carte utilise les deux faces du circuit. L'empreinte centrale traversante \texttt{U1} accueille directement le module convertisseur Buck LM2596 soudé sur la face avant (face composants). En contrepartie, les transistors MOSFET et leurs résistances de polarisation associés au laser et au moteur sont des composants montés en surface (CMS) brasés sur la face arrière (face pistes), évitant ainsi le perçage de trous superflus.
     \end{itemize}
 

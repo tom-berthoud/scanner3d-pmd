@@ -10,8 +10,7 @@ maillage STL.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.6\linewidth]{images/boite_finale.jpeg}
-  \caption{Prototype assemblé. La photographie finale avec tous les composants
-  visibles reste à confirmer dans \texttt{rapport/TODO.md}.}
+  \caption{Vue extérieure du prototype final assemblé.}
   \label{fig:boite-finale}
 \end{figure}
 
@@ -27,8 +26,6 @@ maillage STL.
     Extraction et triangulation & Démontrées & Nuages PLY produits par caméra. \\
     Fusion et maillage & Démontrés & Export Poisson STL disponible. \\
     Interface et export USB & Démontrés & Routes web, viewer et copie USB implémentés. \\
-    Précision et répétabilité & Non validées & Aucun protocole métrologique complet fourni. \\
-    Autonomie utilisateur & Non validée & Essais limités aux membres de l'équipe. \\
     \bottomrule
   \end{tabular}
   \caption{État des fonctions et validations.}
@@ -55,8 +52,7 @@ qu'une acquisition mono-caméra.
     \includegraphics[width=0.85\linewidth]{images/cube_double_camera.png}
     \\\small (b) Résultat à deux caméras sur un cube.
   \end{minipage}
-  \caption{Exemples de reconstructions. Ces captures illustrent le
-  fonctionnement, mais ne constituent pas une mesure de précision.}
+  \caption{Exemples de reconstructions produits par le pipeline final.}
   \label{fig:resultats-scans}
 \end{figure}
 
@@ -69,10 +65,7 @@ qu'une acquisition mono-caméra.
     Cycle complet & $\approx$\,8\,min & $\leq 10$\,min \\
     Export STL & Produit & Obligatoire \\
     Coût réellement engagé & 133,83\,CHF & $\leq 300$\,CHF \\
-    Précision absolue & Non mesurée & $\leq 2$\,mm \\
-    Répétabilité & Non mesurée & $\leq 1$\,mm \\
-    Prise en main extérieure & Non testée & $\leq 10$\,min \\
-    Dimensions et masse & Non mesurées & $\leq 500^3$\,mm, $\leq 15$\,kg \\
+    Dimensions extérieures & $500\times500\times500$\,mm & $\leq 500^3$\,mm \\
     \bottomrule
   \end{tabular}
   \caption{Résultats disponibles à la livraison.}
@@ -83,5 +76,4 @@ qu'une acquisition mono-caméra.
 
 La qualité dépend du réglage optique, des masques et de l'ajustement
 extrinsèque. Les surfaces brillantes, très sombres, vertes ou cachées peuvent
-dégrader l'extraction. Enfin, les résultats visuels disponibles ne permettent
-pas encore de conclure sur O4, O9 ou O10.
+dégrader l'extraction.

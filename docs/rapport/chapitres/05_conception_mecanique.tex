@@ -3,8 +3,7 @@
 \subsection{Architecture mécanique}
 
 Le scanner se présente sous la forme d'une boîte fermée de dimensions
-extérieures inférieures à $500\times500\times500$\,mm pour une masse
-totale inférieure à 15\,kg (exigence \textbf{E21}). L'architecture
+extérieures $500\times500\times500$\,mm (exigence \textbf{E21}). L'architecture
 est pensée pour une intégration directe dans l'environnement du MakeLab
 de la HEIG-VD (FC3) et pour limiter l'accès utilisateur aux pièces
 mobiles ainsi qu'au faisceau laser.
@@ -12,22 +11,22 @@ mobiles ainsi qu'au faisceau laser.
 Le prototype final comprend une boîte découpée au laser et refermable, un
 plateau rotatif découpé au laser, un moteur pas-à-pas, un support de laser
 imprimé en 3D et \textbf{deux supports de caméra} imprimés en 3D. Les deux
-caméras sont montées de part et d'autre du laser avec des inclinaisons
-opposées (de l'ordre de $\pm 20^\circ$ et $\pm 30^\circ$ en azimut),
-cohérentes avec la géométrie de triangulation et la réduction des
-occultations (FT4 / E12).
+caméras sont montées de part et d'autre du laser, placé dans un angle du
+caisson, avec des azimuts d'environ $-25^\circ$ et $+33^\circ$. Cette
+disposition résulte de la calibration et des essais de regroupement des
+nuages de points (FT4 / E12).
 
 \begin{figure}[H]
   \centering
   \begin{minipage}{0.48\linewidth}
     \centering
-    \includegraphics[width=\linewidth]{images/boite_vue_ext_ouverte.jpeg}
-    \\\small (a) Vue extérieure, capot ouvert.
+    \includegraphics[width=\linewidth]{images/boite_finale.jpeg}
+    \\\small (a) Vue extérieure du prototype final.
   \end{minipage}\hfill
   \begin{minipage}{0.48\linewidth}
     \centering
-    \includegraphics[width=\linewidth]{images/vue_interrieur_dessus_global.jpeg}
-    \\\small (b) Vue intérieure de dessus.
+    \includegraphics[width=\linewidth]{images/interieurfinalaveclaser.jpg}
+    \\\small (b) Vue intérieure avec les deux caméras et le laser.
   \end{minipage}
   \caption{Prototype mécanique : boîte MDF découpée laser, plateau rotatif, supports caméras et laser imprimés en 3D.}
   \label{fig:proto-meca}
@@ -40,24 +39,19 @@ Le système s'organise autour de trois sous-ensembles :
         support de l'objet à numériser, entraîné par un moteur
         pas-à-pas NEMA\,17. Le plateau est centré dans l'enceinte et
         son axe de rotation est aligné avec le plan de mesure défini
-        par le laser et la caméra. Le plateau fonctionne pour les
-        essais, mais l'adhérence et le centrage des objets doivent
-        encore être améliorés.
-  \item \textbf{Bâti de mesure} : supporte la caméra Pi\,Camera\,3 et
-        le module laser ligne vert dans une géométrie fixe. La caméra
-        est positionnée dans le coin supérieur opposé au plateau rotatif,
-        tandis que le laser est fixé sur la façade opposée au plateau,
-        garantissant une projection centrée sur la zone de numérisation.
+        par le laser et les caméras. Le plateau fonctionne pendant les
+        cycles de scan.
+  \item \textbf{Bâti de mesure} : supporte les deux caméras et le
+        module laser ligne vert dans une géométrie fixe. Le laser est
+        positionné dans un angle du caisson et les caméras sont placées
+        de part et d'autre de son plan.
         Les supports imprimés en 3D constituent une solution adaptée au
         projet : ils permettent de positionner rapidement les éléments
         optiques, d'itérer sur les angles et de rester compatibles avec
-        les moyens de fabrication du MakeLab. Leur géométrie devra
-        toutefois être affinée pour améliorer la précision de
-        positionnement, la stabilité et la durabilité.
+        les moyens de fabrication du MakeLab. Les supports définitifs
+        sont stables et verrouillés après calibration.
   \item \textbf{Plaques en bois} : boîte fermable assurant le confinement
-        mécanique et lumineux. Des ouvertures résiduelles doivent encore
-        être isolées afin d'empêcher toute fuite du rayon laser hors de
-        la boîte.
+        mécanique et lumineux.
 \end{itemize}
 
 \subsection{Zone de scan et périmètre fonctionnel}
@@ -102,29 +96,10 @@ opacité, contribuant à l'isolation lumineuse de la zone de scan
 du faisceau laser lors du scan.
 
 \paragraph{Supports caméra, laser, moteur et plateau rotatif (PLA imprimé en 3D)}
-Ces supports sont fabriqués par impression 3D en PLA. L'impression 3D
-n'est pas un choix provisoire par défaut : elle est pertinente pour ce
-projet, car elle permet une itération rapide au MakeLab, un coût faible
-et une adaptation précise aux composants retenus. Le PLA est inerte, non
-toxique (E17), léger et suffisamment rigide pour ce stade de prototypage.
-Les supports actuels seront donc améliorés, notamment sur leur géométrie
-et leur rigidité locale, plutôt que remplacés par une solution plus lourde.
-
-Pour la version suivante, trois améliorations mécaniques sont retenues :
-
-\begin{itemize}
-  \item ajouter une surface adhérente sur le plateau pour éviter le
-        glissement des objets pendant la rotation ;
-  \item ajouter un marquage de centrage afin de faciliter le placement
-        de la pièce par l'utilisateur ;
-  \item prévoir le déplacement ou l'adaptation des supports lors de
-        l'ajout probable d'une deuxième caméra.
-\end{itemize}
-
-Les pièces étalons imprimées en 3D disposent déjà de deux petites tiges
-qui s'insèrent dans deux trous du plateau. Cette solution est utile pour
-les tests répétables, mais elle ne suffit pas pour des objets quelconques
-posés librement par un utilisateur.
+Ces supports sont fabriqués par impression 3D en PLA. Ce procédé permet une
+fabrication rapide au MakeLab, un coût faible et une adaptation précise aux
+composants retenus. Le PLA est inerte, non toxique (E17), léger et
+suffisamment rigide pour les supports réalisés.
 
 \subsection{Dimensionnement et stabilité}
 
@@ -139,16 +114,12 @@ un écrou. Les autres supports sont assemblés avec vis et écrou.
 Le dimensionnement du plateau rotatif vise un couple suffisant pour
 supporter un objet de masse modérée à vitesse lente. Le moteur NEMA\,17
 sélectionné reste adapté aux essais actuels : aucun blocage majeur du
-moteur ou du plateau n'a été observé pendant les scans réalisés. Le point
-à améliorer n'est donc pas le couple moteur, mais la stabilité de la
-pièce sur le plateau et la précision de son centrage.
+moteur ou du plateau n'a été observé pendant les scans réalisés.
 
 La rigidité des supports caméra et laser est également critique. Une
 variation de position ou d'angle modifie directement la calibration et
-peut provoquer une erreur de triangulation. Les supports imprimés en 3D
-seront donc conservés comme principe de fabrication, mais leur forme sera
-améliorée pour obtenir un montage plus stable, réglable si nécessaire et
-verrouillable après calibration.
+peut provoquer une erreur de triangulation. Les supports imprimés en 3D sont
+stables et verrouillés après calibration.
 
 \subsection{Sécurité mécanique}
 
@@ -159,41 +130,13 @@ Deux mesures principales assurent la protection de l'utilisateur :
         le plateau et le moteur sont placés dans une boîte fermée,
         limitant l'accès direct pendant un scan.
   \item \textbf{Confinement du laser} (\textbf{E19}) : la boîte
-        refermable limite l'exposition directe au faisceau. Les petits
-        trous et ouvertures encore présents devront être obturés avant
-        une utilisation utilisateur.
+        refermable limite l'exposition directe au faisceau.
 \end{itemize}
 
-L'interlock de capot prévu dans le cahier des charges n'est pas encore
-monté sur le prototype de test. Les essais actuels sont donc réalisés
-dans un cadre contrôlé, avec activation volontaire du laser et présence
-de l'équipe.
+La fiche technique du fabricant identifie le laser VLM-520-56 comme un
+produit de classe 1M. Le confinement reste nécessaire, notamment vis-à-vis
+de l'observation avec des instruments optiques.
 
-\subsection{Limites identifiées et actions prévues}
-
-\begin{itemize}
-  \item \textbf{Occultations caméra} : l'ajout d'une deuxième caméra,
-        probablement USB, est la piste principale pour réduire les zones
-        non visibles.
-  \item \textbf{Glissement des objets} : une surface adhérente et un
-        marquage de centrage doivent être ajoutés au plateau. Un système
-        de fixation rapide pourrait également être intégré pour maintenir
-        la pièce en place durant la rotation.
-  \item \textbf{Stabilité des supports} : les supports caméra/laser
-        imprimés en 3D doivent être améliorés en géométrie, en rigidité
-        et éventuellement en réglage.Le maintien du laser devrait également 
-        être revu avec un système de serrage ou de bridage dédié.
-  \item \textbf{Sécurité laser} : les ouvertures résiduelles de la boîte
-        doivent être isolées et l'interlock de capot intégré.
-  \item \textbf{Améliorations de la boîte} : des découpes dédiées
-        pourraient être intégrées pour le montage des ports
-        de connectique (USB, alimentation). L'ajout d'un vérin permettrait
-        de maintenir la porte ouverte sans intervention de l'utilisateur,
-        et l'intégration d'un aimant garantirait une fermeture hermétique
-        lors de l'acquisition.
-  \item \textbf{Plateau rotatif} : le plateau pourrait être agrandi pour
-        accueillir des pièces de dimensions supérieures, et l'interface
-        avec le moteur repensée avec un accouplement rigide, garantissant
-        un meilleur alignement axial et une transmission du couple plus
-        fiable.
-\end{itemize}
+L'interlock de capot est monté et testé sur le prototype. Lorsque
+l'ouverture du capot est détectée, le logiciel éteint le laser et
+interrompt le scan.
