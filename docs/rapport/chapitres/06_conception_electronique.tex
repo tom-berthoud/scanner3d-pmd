@@ -129,6 +129,42 @@ Pour permettre une utilisation et une maintenance aisées du scanner une fois le
     \label{fig:sch_rpi}
 \end{figure}
 
+\subsection{Mesures électriques et consommation}
+\label{subsec:mesures_electriques}
+
+Des mesures de tension et de courant ont été effectuées sur le prototype afin
+de vérifier le dimensionnement de l'alimentation et du convertisseur. Les
+valeurs au repos et les valeurs maximales observées pendant un scan sont
+regroupées dans le tableau~\ref{tab:mesures_electriques}.
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabular}{@{}p{5.1cm}c c c@{}}
+        \toprule
+        \textbf{Point mesuré} & \textbf{Tension} &
+        \textbf{Courant au repos} & \textbf{Maximum en scan} \\
+        \midrule
+        Sortie du convertisseur logique & 5,5\,V & 1,55\,A & 1,80\,A \\
+        Branche du moteur & 23,5\,V & 0,12\,A & 0,45\,A \\
+        Alimentation principale complète & 23,5\,V & 0,55\,A & 0,91\,A \\
+        \bottomrule
+    \end{tabular}
+    \caption{Tensions et courants mesurés sur le prototype.}
+    \label{tab:mesures_electriques}
+\end{table}
+
+La sortie du convertisseur a été réglée à 5,5\,V afin de compenser les chutes
+de tension dans les câbles d'alimentation. Avec un réglage initial à 5\,V, le
+Raspberry Pi affichait un avertissement de sous-tension. L'augmentation à
+5,5\,V en sortie du convertisseur a permis de supprimer cet avertissement
+pendant le fonctionnement du scanner.
+
+Le rendement du convertisseur est estimé à environ 82,8\,\%. À la consommation
+maximale observée, l'alimentation principale délivre environ
+$23{,}5\times0{,}91=21{,}4$\,W. Cette valeur reste inférieure à sa puissance
+nominale de 24\,W, mais la marge disponible est limitée à environ 2,6\,W.
+
 
 
 \subsection{Réalisation et Intégration}
@@ -231,4 +267,3 @@ Pour permettre une utilisation et une maintenance aisées du scanner une fois le
         \caption{Guide-câble sur mesure réalisé en impression 3D pour le maintien des nappes et conducteurs.}
         \label{fig:goulotte_3d}
     \end{figure}
-
