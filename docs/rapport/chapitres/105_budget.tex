@@ -41,9 +41,9 @@ correspondent au temps machine, estimé séparément.
     Mécanicien           & 47\,h  & 80\,CHF/h  & 3\,760\,CHF \\
     Impression 3D        & 15\,h  & 40\,CHF/h  & 600\,CHF \\
     Découpe laser        & 2\,h   & 50\,CHF/h  & 100\,CHF \\
-    Pièces achetées      & ---    & ---        & $\approx$\,450\,CHF \\
+    Pièces achetées      & ---    & ---        & $\approx$\,500\,CHF \\
     \midrule
-    \textbf{Total estimé} & & & $\approx$\,\textbf{52\,010\,CHF} \\
+    \textbf{Total estimé} & & & $\approx$\,\textbf{52\,060\,CHF} \\
     \bottomrule
   \end{tabular}
   \caption{Estimation du coût de développement du prototype, tarifs HES.}
@@ -68,7 +68,7 @@ l'estimation du prototype.
     \textbf{Composant} & \textbf{Origine} & \textbf{Prix} & \textbf{Réf.} \\
     \midrule
     Laser ligne vert VLM-520-56 (520\,nm) & Commandé    & 77.08\,CHF & DigiKey \\
-    2$\times$ caméra USB OV9726 (720p)     & Commandé    & 17.60\,CHF & Galaxus \\
+    2$\times$ caméra USB OV9726 (720p)\textsuperscript{*} & Commandé & 17.60\,CHF & Galaxus \\
     Adaptateur Gigabit Ethernet USB-C      & Commandé    & 8.90\,CHF  & Galaxus \\
     Adaptateur encastrable USB-C BU-BU     & Commandé    & 15.90\,CHF & Galaxus \\
     Adaptateur de panneau USB-A f-f        & Commandé    & 13.70\,CHF & Galaxus \\
@@ -76,21 +76,29 @@ l'estimation du prototype.
     \midrule
     Raspberry Pi 4 Model B                 & Stock       & $\approx$\,65\,CHF & --- \\
     Pi Camera Module 3                     & Stock       & $\approx$\,35\,CHF & --- \\
+    Caméra USB Arducam IMX586              & Prêt        & $\approx$\,50\,CHF & --- \\
     Raspberry Pi Touch Display 2           & Stock       & $\approx$\,70\,CHF & --- \\
     Moteur pas à pas NEMA 17 (17HS3401)    & Stock       & $\approx$\,12\,CHF & --- \\
     Driver moteur DM320T                   & Stock       & $\approx$\,45\,CHF & --- \\
-    Alimentation 12\,V 36\,W (Hama)        & Stock       & $\approx$\,25\,CHF & --- \\
-    Convertisseur 12$\to$5\,V LM2596       & Stock       & $\approx$\,4\,CHF  & --- \\
+    Alimentation 24\,V 24\,W (Hama)        & Stock       & $\approx$\,25\,CHF & --- \\
+    Convertisseur 24$\to$5\,V LM2596       & Stock       & $\approx$\,4\,CHF  & --- \\
     Interrupteur, connecteurs, capteur capot & Stock     & $\approx$\,15\,CHF & --- \\
     PCB dédié (fabrication)                & Stock       & $\approx$\,15\,CHF & --- \\
     Matière (PLA, panneau MDF, visserie)   & Stock       & $\approx$\,30\,CHF & --- \\
     \midrule
-    \textbf{Total estimé (prix de marché)} & & \textbf{$\approx$\,450\,CHF} & \\
+    \textbf{Total estimé (prix de marché)} & & \textbf{$\approx$\,500\,CHF} & \\
     \bottomrule
   \end{tabular}
   \caption{Nomenclature des pièces et estimation des prix. Les prix « Stock » sont estimés au prix de marché ; ils n'entrent pas dans le coût réel pour l'école.}
   \label{tab:budget-bom}
 \end{table}
+
+\textsuperscript{*}\,Les deux caméras USB OV9726 ont bien été commandées et
+payées (elles figurent donc dans le coût réel), mais n'ont \emph{pas} pu être
+utilisées : leur angle d'ouverture, non précisé à la commande, s'est avéré trop
+étroit ($\approx 40^\circ$) pour couvrir la zone de scan. La seconde caméra du
+montage final est une \textbf{Arducam IMX586} prêtée par l'école, qui n'a donc
+engendré aucune dépense.
 
 \subsection{Coût réel pour l'école}
 
@@ -117,7 +125,7 @@ figurent dans les annexes.
 
 Le coût réel de \textbf{133.83\,CHF} respecte largement l'objectif
 budgétaire \textbf{O5} (\(\leq\) 300\,CHF). Même en valorisant l'ensemble
-des composants au prix de marché ($\approx$\,450\,CHF,
+des composants au prix de marché ($\approx$\,500\,CHF,
 \autoref{tab:budget-bom}), le coût matériel reste du même ordre de grandeur
 que l'objectif, l'écart provenant essentiellement de l'écran tactile et du
 Raspberry Pi, qui pourraient être mutualisés ou remplacés par des variantes

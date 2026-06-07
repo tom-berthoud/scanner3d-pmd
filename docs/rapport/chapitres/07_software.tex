@@ -107,7 +107,7 @@ au mieux les zones cachées :
   \item \textbf{caméra droite} : Raspberry Pi Camera Module 3 (bus CSI),
         placée à environ $-25^\circ$ en azimut par rapport à l'axe laser et
         inclinée d'environ $20^\circ$ vers le bas ;
-  \item \textbf{caméra gauche} : caméra USB (capteur OV9726, bus USB),
+  \item \textbf{caméra gauche} : caméra USB Arducam (capteur IMX586, bus USB),
         placée à environ $+33^\circ$ en azimut et inclinée d'environ
         $20^\circ$ vers le haut ;
   \item laser, moteur et plateau inchangés.
@@ -154,6 +154,27 @@ Le diagnostic clé consiste à comparer les nuages \texttt{right} et
 doivent rester faibles devant la précision visée. Si les deux nuages sont
 décalés, c'est la calibration extrinsèque qu'il faut corriger avant de
 régler le maillage.
+
+L'ensemble de ces étapes est piloté depuis le mode ingénierie de l'interface
+web, avec une page dédiée par famille de paramètres et une sélection explicite
+de la caméra à calibrer.
+
+\begin{figure}[H]
+  \centering
+  \begin{minipage}{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{images/ui_calibration_intrinseque_laser.png}
+    \\\small (a) Calibration intrinsèque (damier) et plan laser.
+  \end{minipage}\hfill
+  \begin{minipage}{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{images/ui_calibration_extrinseque.png}
+    \\\small (b) Réglage des extrinsèques vers le repère plateau.
+  \end{minipage}
+  \caption{Pages de calibration de l'interface : intrinsèques et plan laser par
+  caméra (a), puis extrinsèques vers le repère plateau commun (b).}
+  \label{fig:ui-calibration}
+\end{figure}
 
 \paragraph{Calibration de l'exposition automatique.}
 Avant chaque scan, une routine ajuste itérativement le temps d'exposition de
@@ -256,18 +277,43 @@ mécanique du caisson.
 
 L'interface web Flask permet de lancer un scan, de suivre son état en temps
 réel (SSE), de visualiser les images, de télécharger le résultat et
-d'afficher le STL dans un viewer Three.js. La version finale a été retravaillée
-pour un usage au MakeLab : thème clair, \textbf{assets servis hors-ligne}
-(aucune dépendance Internet sur le Raspberry Pi), animations de progression,
-et un \textbf{mode ingénierie} séparant les outils de calibration et de
-commande manuelle de l'usage courant. L'écran local complète l'interface web
+d'afficher le STL dans un viewer Three.js. La version finale a été entièrement
+retravaillée pour un usage au MakeLab : thème clair, \textbf{assets servis
+hors-ligne} (aucune dépendance Internet sur le Raspberry Pi), animations de
+progression, et une séparation nette entre un \textbf{usage courant} (page
+d'accueil de type borne) et un \textbf{mode ingénierie} regroupant les outils
+de calibration et de commande manuelle. L'écran local complète l'interface web
 pour indiquer l'état du système.
+
+\paragraph{Page d'accueil (usage courant).}
+La page principale est pensée comme une borne : l'utilisateur pose sa pièce,
+lance le scan et suit la progression en direct, puis télécharge le STL ou le
+copie sur une clé USB. Les outils techniques sont verrouillés par défaut pour
+éviter toute fausse manipulation~; ils ne sont accessibles qu'après
+déverrouillage du mode ingénierie.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.8\linewidth]{images/screen_interface.png}
-  \caption{Interface web : lancement d'un scan et suivi en temps réel.}
+  \includegraphics[width=0.85\linewidth]{images/ui_accueil_verrouille.png}
+  \caption{Interface web finale — page d'accueil : suivi du scan en temps réel,
+  aperçu de la ligne laser et résultat téléchargeable.}
   \label{fig:interface}
+\end{figure}
+
+\paragraph{Mode ingénierie.}
+Le mode ingénierie réunit les pages \emph{Scan}, \emph{Calibration},
+\emph{Extrinsèque}, \emph{Cam Config} et \emph{Manuel}. La page manuelle donne
+un retour vidéo \textbf{des deux caméras} (droite Pi et gauche Arducam USB),
+permet de tester les seuils d'extraction et les masques par caméra, et offre
+une commande directe du laser et du moteur pour le diagnostic. Le laser n'y
+est activable que volontairement et reste coupé par défaut.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{images/ui_manuel.png}
+  \caption{Mode ingénierie — page manuelle : retour des deux caméras, réglage
+  des seuils par caméra et commandes manuelles laser/moteur.}
+  \label{fig:ui-manuel}
 \end{figure}
 
 \subsection{Choix techniques}

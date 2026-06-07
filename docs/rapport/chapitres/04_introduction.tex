@@ -7,7 +7,7 @@ Ce projet s'inscrit dans le cadre de l'unité d'enseignement
 réaliser un scanner 3D destiné au \emph{MakeLab} de l'école, afin de
 mettre à disposition des étudiants, collaborateurs et enseignants un
 outil simple pour numériser des objets physiques en modèles 3D
-exploitables (STL ou OBJ).
+exploitables.
 
 \subsection{État de l'art}
 
@@ -27,10 +27,13 @@ l'architecture est très proche de la nôtre, et \textbf{Ciclop} (logiciel
 classique du domaine. Ces projets démontrent la viabilité d'une numérisation
 laser à bas coût, mais reposent typiquement sur une \emph{seule} caméra et
 restent donc sensibles aux occultations sur les pièces anguleuses.
+Par ailleurs, les solutions logicielles associées sont souvent limitées à une
+reconstruction de surface par fusion de points, sans étapes de calibration
+d'exposition, de fusion calibrée ou de reconstruction de Poisson, qui sont pourtant des étapes clés pour garantir une qualité de mesure exploitable.
 
 La valeur ajoutée de l'approche retenue tient à trois points : un coût
 contenu sous 300\,CHF, une intégration pensée pour un usage pédagogique
-(interface web, retour LED et écran, prise en main rapide) et une
+(interface web, retour écran, prise en main rapide) et une
 architecture ouverte permettant d'expliquer, modifier et améliorer chaque
 étape de la chaîne de mesure.
 
@@ -129,7 +132,7 @@ fermée découpée au laser, plateau motorisé, laser monté sur support imprim�
 en 3D, \textbf{deux caméras} inclinées de manière complémentaire,
 électronique d'alimentation et de commande sur PCB dédié, capteur de capot,
 écran tactile et interface web. Un cycle de scan complet peut être lancé
-depuis l'interface et produit un fichier STL ou OBJ livrable.
+depuis l'interface et produit un fichier STL exploitables.
 
 Par rapport au rapport intermédiaire, l'évolution majeure est le passage à une
 configuration à deux caméras, qui réduit fortement les occultations sur les

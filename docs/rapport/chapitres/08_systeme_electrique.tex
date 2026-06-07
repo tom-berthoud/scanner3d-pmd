@@ -4,14 +4,14 @@
 
 Le scanner est alimenté depuis le secteur 230\,V\textsubscript{AC}
 (exigence \textbf{E20}) par une alimentation externe qui fournit le bus
-principal basse tension. Un convertisseur abaisseur dérive le 5\,V
-nécessaire au Raspberry Pi et à l'électronique logique. L'architecture
-deux-rails sépare la partie puissance, principalement le moteur et le
-laser, de la partie commande.
+principal en 24\,V. Un convertisseur abaisseur dérive le 5\,V nécessaire au
+Raspberry Pi et à l'électronique logique. L'architecture deux-rails sépare la
+partie puissance (24\,V, moteur via DM320T) de la partie commande
+(5\,V : Raspberry Pi, écran, laser).
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth,page=1]{assets/Schema_electrique_Scan3D.pdf}
+  \includegraphics[width=\linewidth,page=1]{assets/Schéma électrique Scan3D_V02.pdf}
   \caption{Schéma électrique — étage d'alimentation.}
   \label{fig:sch-alim}
 \end{figure}
@@ -24,8 +24,8 @@ laser, de la partie commande.
     \toprule
     \textbf{Rail} & \textbf{Source} & \textbf{Charges} \\
     \midrule
-    12\,V\textsubscript{DC} & Alimentation externe & Moteur pas-à-pas via DM320T, laser \\
-    5\,V\textsubscript{DC}  & Convertisseur DC/DC & Raspberry Pi 4, écran, logique \\
+    24\,V\textsubscript{DC} & Alimentation externe & Moteur pas-à-pas via DM320T \\
+    5\,V\textsubscript{DC}  & Convertisseur DC/DC & Raspberry Pi 4, écran, laser, logique \\
     3{,}3\,V                & Régulateur interne Pi & GPIO, capteur de porte prévu \\
     GND                     & Commun                & Tous les sous-systèmes \\
     \bottomrule
@@ -69,8 +69,8 @@ pendant un cycle de scan.
     Raspberry Pi 4      & 5\,V   & À mesurer en charge & Fonctionnel en test \\
     Écran tactile 7 pouces & 5\,V & À mesurer & Fonctionnel en test \\
     Laser ligne         & 5\,V   & À mesurer & Commande fonctionnelle \\
-    Moteur NEMA\,17 + DM320T & 12\,V & Dépend du réglage courant driver & Rotation fonctionnelle \\
-    Caméra USB          & 5\,V   & À mesurer & Intégrée \\
+    Moteur NEMA\,17 + DM320T & 24\,V & Dépend du réglage courant driver & Rotation fonctionnelle \\
+    Caméra USB Arducam  & 5\,V   & À mesurer & Intégrée \\
     \bottomrule
   \end{tabular}
   \caption{Bilan de consommation du système.}
