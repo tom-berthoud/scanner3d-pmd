@@ -135,7 +135,8 @@
 
   \vfill
   \small
-  \textbf{\'{E}quipe :} Luc Marchand, Tim Stamm, Jason Weber, Hadrien Fuentes, Tom Berthoud\\
+  \textbf{\'{E}quipe :} Luc Marchand (EAI), Tim Stamm (ROCM), Jason Weber (EAI), Hadrien Fuentes (EAI), Tom Berthoud (EAI)\\[0.15cm]
+  \textbf{Professeur encadrant :} C\'{e}dric Bornand\\[0.15cm]
   \textbf{Projet multidisciplinaire} -- HEIG-VD, semestre 4 -- 7 juin 2026
 \end{frame}
 }
@@ -147,7 +148,7 @@
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.56\textwidth}
       \begin{itemize}
-        \item \textbf{Le besoin :} num\'{e}riser un objet physique pour obtenir un fichier 3D (\textbf{STL/OBJ}) directement imprimable.
+        \item \textbf{Le besoin :} num\'{e}riser un objet physique pour obtenir un fichier 3D (\textbf{STL}) directement imprimable.
         \item \textbf{Pour le MakeLab} de la HEIG-VD : un outil simple, autonome et open-source.
         \item \textbf{Le principe :} l'objet tourne sous une ligne laser, une cam\'{e}ra filme, le logiciel reconstruit le volume.
       \end{itemize}
@@ -166,11 +167,9 @@
     \end{column}
     \begin{column}{0.42\textwidth}
       \hspace{0.4cm}
-      \includegraphics[width=\linewidth,height=5.8cm,keepaspectratio]{vue_ext_ferme.jpeg}
+      \includegraphics[width=\linewidth,height=5.8cm,keepaspectratio]{boitefinalexterieur.jpg}
     \end{column}
   \end{columns}
-
-  \speaker{Tom}{Chef de projet}
 \end{frame}
 
 % ============================================================
@@ -192,8 +191,6 @@
       \input{schemas/triangulation.tex}
     \end{column}
   \end{columns}
-
-  \speaker{Tom}{Du r\'{e}el au mod\`{e}le 3D}
 \end{frame}
 
 % ============================================================
@@ -211,12 +208,12 @@
     \end{column}
     \begin{column}{0.48\textwidth}
       \centering
-      \includegraphics[width=\linewidth,height=5.3cm,keepaspectratio]{vue_interrieur_dessus_global.jpeg}\\
-      \scriptsize Int\'{e}rieur : plateau, laser et cam\'{e}ras
+      \includegraphics[width=\linewidth,height=2.75cm,keepaspectratio]{boite_vue_ext_ouverte.jpeg}\\[-0.02cm]
+      {\scriptsize Caisson ouvert}\\[0.18cm]
+      \includegraphics[width=\linewidth,height=2.75cm,keepaspectratio]{vue_int_finale.jpeg}\\[-0.02cm]
+      {\scriptsize Int\'{e}rieur : supports imprim\'{e}s, cam\'{e}ras et laser}
     \end{column}
   \end{columns}
-
-  \speaker{Tim}{Conception m\'{e}canique \& impression 3D}
 \end{frame}
 
 % ============================================================
@@ -235,12 +232,10 @@
     \end{column}
     \begin{column}{0.48\textwidth}
       \centering
-      \includegraphics[width=\linewidth,height=5.3cm,keepaspectratio]{electronique.jpeg}\\
-      \scriptsize C\^{a}blage et carte de commande
+      \includegraphics[width=\linewidth,height=5.3cm,keepaspectratio]{photo_composants.jpg}\\
+      \scriptsize C\^{a}blage, moteur et carte de commande
     \end{column}
   \end{columns}
-
-  \speaker{Luc \& Hadrien}{C\^{a}blage \& alimentation -- PCB}
 \end{frame}
 
 % ============================================================
@@ -268,8 +263,6 @@
       \scriptsize Zone \'{e}clair\'{e}e mais invisible pour la cam\'{e}ra
     \end{column}
   \end{columns}
-
-  \speaker{Hadrien}{Acquisition \& traitement -- 1\textsuperscript{re} cam\'{e}ra}
 \end{frame}
 
 % ============================================================
@@ -294,18 +287,16 @@
       \scriptsize STL double cam\'{e}ra : couverture nettement am\'{e}lior\'{e}e.
     \end{column}
   \end{columns}
-
-  \speaker{Jason}{Algorithmes de fusion \& reconstruction -- 2\textsuperscript{e} cam\'{e}ra}
 \end{frame}
 
 % ============================================================
-% SLIDE 8 : RESULTATS, INTERFACE & CONCLUSION  (Tom -- ~40 s)
+% SLIDE 8 : RESULTATS, INTERFACE & CONCLUSION  (Tom -- ~20 s, puis vid\'eo)
 % ============================================================
 \begin{frame}{R\'{e}sultats \& bilan}{Un scanner fonctionnel de bout en bout}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.50\textwidth}
       \centering
-      \includegraphics[width=\linewidth,height=3.6cm,keepaspectratio]{screen_interface.png}\\
+      \includegraphics[width=\linewidth,height=3.6cm,keepaspectratio]{ui_accueil_deverrouille.png}\\
       \scriptsize Interface web : lancer un scan en quelques clics
     \end{column}
     \begin{column}{0.48\textwidth}
@@ -314,7 +305,7 @@
         \toprule
         Scan complet & $\sim$8 min \quad\textcolor{lasergreen}{OK} \\
         Export STL/OBJ & \textcolor{lasergreen}{OK} \\
-        Budget & $\leq 300$ CHF \quad\textcolor{lasergreen}{OK} \\
+        Budget & 133.83 CHF \quad\textcolor{lasergreen}{OK} \\
         Interface web & \textcolor{lasergreen}{OK} \\
         Pr\'{e}cision $\leq 2$ mm & \textcolor{heigred}{\`{a} affiner} \\
         \bottomrule
@@ -324,8 +315,58 @@
       \validbox{De la pi\`{e}ce pos\'{e}e au fichier STL : le scanner est livrable et am\'{e}liorable.}
     \end{column}
   \end{columns}
-
-  \speaker{Tom}{Interface \& d\'{e}monstration -- Merci ! Questions ?}
 \end{frame}
+
+% ============================================================
+% SLIDE 9 : VIDEO DE DEMONSTRATION  (Tom -- 30 s, lecture externe)
+% Le fichier .mp4 est lanc\'e en plein \'ecran depuis le lecteur :
+% on s'arr\^ete sur cette slide, on bascule sur la vid\'eo, puis on revient
+% pour le "Merci / Questions ?".
+% ============================================================
+{
+\setbeamertemplate{footline}{}
+\begin{frame}[plain]
+  \begin{tikzpicture}[remember picture,overlay]
+    % image plein cadre
+    \node[anchor=center,inner sep=0pt] at (current page.center)
+      {\includegraphics[width=\paperwidth,height=\paperheight]{boitefinal.jpeg}};
+    % voile sombre pour la lisibilit\'e
+    \fill[deepblue,opacity=0.62] (current page.south west) rectangle (current page.north east);
+    % pastille "play"
+    \draw[white,line width=1.6pt,fill=white,fill opacity=0.12]
+      ($(current page.center)+(0,0.75)$) circle (0.95);
+    \fill[white]
+         ($(current page.center)+(-0.30,1.18)$)
+      -- ($(current page.center)+(-0.30,0.32)$)
+      -- ($(current page.center)+(0.48,0.75)$) -- cycle;
+    % l\'egende
+    \node[anchor=north,text=white,align=center]
+      at ($(current page.center)+(0,-0.55)$)
+      {{\Large\bfseries D\'{e}monstration}\\[0.22cm]
+       {\normalsize Le scanner en action --- 30\,s}};
+  \end{tikzpicture}
+\end{frame}
+}
+
+% ============================================================
+% SLIDE 10 : MERCI / QUESTIONS  (Tom -- 5 s)
+% ============================================================
+{
+\setbeamertemplate{footline}{}
+\begin{frame}[plain]
+  \vfill
+  \centering
+  %{\large\itshape\textcolor{deepblue}{\og\,Un objet r\'{e}el, un fichier imprimable ---\\[0.1cm]
+  %en 8 minutes et pour 134\,CHF.\,\fg}}\\[0.8cm]
+  {\usebeamerfont{title}\textcolor{deepblue}{Merci !}}\\[0.3cm]
+  {\usebeamerfont{subtitle}\textcolor{mutedgray}{Des questions ?}}\\[0.55cm]
+  \begin{tikzpicture}
+    \fill[heigred] (0,0) rectangle (1.1,0.08);
+    \fill[deepblue] (1.18,0) rectangle (5.8,0.08);
+  \end{tikzpicture}
+  \vfill
+  {\small\textcolor{mutedgray}{Scanner 3D \`{a} triangulation laser --- HEIG-VD, PMD 2026}}
+\end{frame}
+}
 
 \end{document}
