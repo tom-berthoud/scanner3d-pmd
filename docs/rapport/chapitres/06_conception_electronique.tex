@@ -1,45 +1,33 @@
-\newpage
-\section{Conception Électronique}
+\section{Conception électronique et alimentation}
 \label{sec:conception_electronique}
 
-Cette section présente la conception et la réalisation de la partie électronique du scanner 3D. 
-L'objectif principal de cette l'architecture est d'assurer la distribution de l'alimentation électrique, de piloter les différents actionneurs avec précision et de centraliser l'acquisition des données des capteurs.
-La démarche présentée va du choix des composants à leur intégration physique, en passant par la conception des schémas électriques et la réalisation de circuits imprimés dédiés, tout en intégrant les éléments de sécurité indispensables à l'utilisation du système.
-
-
-\subsection{Choix des composants et spécifications}
-\label{subsec:composants}
-
-Le choix des composants électroniques a été principalement guidé par les spécifications techniques du cahier des charges (précision, dimension de la pièce, durée du scan) ainsi que par la disponibilité des pièces au sein du \textit{MakeLab} de la HEIG-VD, permettant ainsi d'optimiser les coûts et les délais de livraison.
-Le tableau~\ref{tab:bom_finale} dresse l'inventaire complet du matériel sélectionné.
+\subsection{Composants}
 
 \begin{table}[H]
-    \centering
-    \begin{tabular}{l p{5.5cm} l}
-        \toprule
-        \textbf{Fonction} & \textbf{Composant / Référence} & \textbf{Interface} \\
-        \midrule
-        Unité centrale & Raspberry Pi 4 Model B & --- \\
-        Acquisition optique (CSI) & Pi Camera Module 3 & Connecteur CSI \\
-        Acquisition optique (USB) & Arducam IMX586 & Port USB 3.0 \\
-        Éclairage structuré & Laser ligne vert VLM-520-56 LPO-D45-F40 & GPIO (via PCB) \\
-        Actionneur rotatif & Moteur pas à pas NEMA 17 & Liaison mécanique \\
-        Contrôle moteur & Driver industriel Leadshine DM320T & Signaux impulsionnels \\
-        Interface utilisateur & Raspberry Pi Touch Display 2 (7 pouces) & Connecteur nappe DSI \\
-        Alimentation principale & Bloc secteur 24\,Vdc (1\,A / 24\,W) & Connecteur DC \\
-        Régulation logique & Convertisseur Buck DC-DC LM2596 (HW-411) & Ligne 5\,Vdc \\
-        Sécurité physique & Interrupteur fin de course (125-250\,V) & Contact sec (GPIO) \\
-        Mise sous tension & Interrupteur à bascule KCD1-101 & Ligne 24\,Vdc \\
-        \bottomrule
-    \end{tabular}
-    \caption{Nomenclature et interfaces des composants électroniques du scanner 3D.}
-    \label{tab:bom_finale}
+  \centering
+  \small
+  \begin{tabular}{@{}p{4cm}p{6cm}p{4cm}@{}}
+    \toprule
+    \textbf{Fonction} & \textbf{Composant} & \textbf{Interface} \\
+    \midrule
+    Calcul & Raspberry Pi 4 Model B & GPIO, CSI, USB, réseau \\
+    Caméra droite & Pi Camera Module 3 & CSI \\
+    Caméra gauche & Arducam IMX586 & USB 3.0 \\
+    Éclairage & VLM-520-56 LPO-D45-F40, 520\,nm & 5\,V, MOSFET \\
+    Rotation & NEMA 17 17HS3401 et DM320T & STEP, DIR, ENABLE \\
+    Interface locale & Raspberry Pi Touch Display 2, 7 pouces & DSI \\
+    Alimentation & Bloc 24\,V et convertisseur LM2596 & 24\,V / 5\,V \\
+    Sécurité & Microswitch de capot & GPIO \\
+    \bottomrule
+  \end{tabular}
+  \caption{Composants électroniques du prototype final.}
+  \label{tab:bom_finale}
 \end{table}
 
-\subsubsection{Unité de calcul et de traitement}
-Le choix s'est porté sur un \textbf{Raspberry Pi 4 Model B}. 
-Les tests préliminaires ayant démontré qu'une version antérieure (Raspberry Pi 3) offrait des performances CPU insuffisantes pour traiter les algorithmes de reconstruction 3D dans un temps acceptable, le modèle 4 s'est imposé. 
-De plus, sa compatibilité native avec les modules caméras et l'écran tactile du MakeLab a facilité l'intégration logicielle.
+Le Raspberry Pi exécute l'interface et le traitement tout en pilotant les
+actionneurs. La caméra Pi fournit une image de $640\times480$ pixels. La caméra
+USB est configurée en $1920\times1080$ au format YUYV. Leur acquisition est
+séquentielle à chaque position du plateau.
 
 \subsubsection{Système de double vision}
 Afin de limiter les phénomènes d'occultation lors de la numérisation, deux caméras sont utilisées simultanément :
@@ -97,15 +85,19 @@ La distribution de cette énergie est configurée ainsi :
 \end{itemize}
 
 \begin{figure}[H]
-    \centering
-    \includegraphics[width=1\linewidth,page=1]{assets/Schéma électrique Scan3D_V02.pdf}
-    \caption{Schéma électrique — Page 1 : Étage d'alimentation générale et distribution de la puissance.}
-    \label{fig:sch_alim}
+  \centering
+  \includegraphics[width=0.78\linewidth]{images/photo_composants.jpg}
+  \caption{Principaux composants intégrés au scanner.}
+  \label{fig:photo_composants}
 \end{figure}
 
-\subsubsection{Interconnexions de la logique et des actionneurs (Page 2)}
+\subsection{Distribution électrique}
 
-La seconde page du schéma centralise le Raspberry Pi 4, qui fait office de nœud de commande pour l'ensemble des périphériques.
+Le bloc secteur fournit le rail principal de 24\,V au driver DM320T. Un
+convertisseur LM2596 alimente le Raspberry Pi, les caméras, l'écran et le laser.
+Les GPIO 3,3\,V ne fournissent pas directement le courant des charges. Une
+carte à MOSFET réalise la commutation côté masse du laser et l'adaptation des
+signaux destinés aux entrées optocouplées du DM320T.
 
 \begin{itemize}
     \item \textbf{Commande du laser et commutation \textit{Low-Side} :} Le module laser \texttt{VLM-520} est alimenté par le rail 5\,Vdc issu du convertisseur Buck. Sa ligne de masse (0\,V) passe à travers le PCB MOSFET. Lorsque le GPIO du Raspberry Pi s'active, le transistor effectue une mise à la masse (\textit{pull to 0V}), fermant le circuit et allumant le laser.
@@ -123,10 +115,10 @@ Pour permettre une utilisation et une maintenance aisées du scanner une fois le
 \end{itemize}
 
 \begin{figure}[H]
-    \centering
-    \includegraphics[width=1\linewidth,page=2]{assets/Schéma électrique Scan3D_V02.pdf}
-    \caption{Schéma électrique — Page 2 : Câblage du Raspberry Pi, des capteurs, des caméras et commande des actionneurs via MOSFET.}
-    \label{fig:sch_rpi}
+  \centering
+  \includegraphics[width=\linewidth,page=1]{assets/Schéma électrique Scan3D_V02.pdf}
+  \caption{Distribution de l'alimentation 24\,V et conversion du rail logique.}
+  \label{fig:sch-alim}
 \end{figure}
 
 

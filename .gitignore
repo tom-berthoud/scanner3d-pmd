@@ -52,6 +52,7 @@ docs/**/*.synctex.gz
 docs/**/*.toc
 docs/**/*.vrb
 docs/**/*.xdv
+docs/rapport/main.pdf
 .codex
 
 

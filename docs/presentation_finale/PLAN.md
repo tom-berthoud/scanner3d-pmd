@@ -21,7 +21,7 @@ Objectif : repartir de zéro, faire comprendre le projet vite et bien, montrer u
 | 5 | L'électronique | **Luc** (+ Hadrien) | ~50 s | Raspberry Pi, pilotage moteur/laser, alimentation, câblage, PCB, sécurité laser. |
 | 6 | Le logiciel : une caméra | **Hadrien** | ~50 s | Pipeline acquisition→export ; ça marche sur les formes rondes, mais occultation = trous sur les formes anguleuses. |
 | 7 | La solution : deux caméras | **Jason** | ~50 s | Deux points de vue, fusion des nuages, nettoyage → couverture améliorée. |
-| 8 | Résultats & bilan | **Tom** | ~20 s | Interface web, scan ~8 min, STL/OBJ, **budget 133.83 CHF**, précision à affiner. |
+| 8 | Résultats & bilan | **Tom** | ~20 s | Interface web, scan ~8 min, STL, **budget 133.83 CHF**, précision à affiner. |
 | 9 | **Vidéo de démonstration** | **Tom** | **30 s** | Caisson final, matériel (caméra/laser), assemblage, reconstruction en direct. Lecture **externe** (le .mp4 est à côté du PDF). |
 | 10 | Merci / Questions | **Tom** | ~5 s | « Merci, des questions ? ». |
 

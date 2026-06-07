@@ -1,0 +1,34 @@
+name: Rapport PDF
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile LaTeX report
+        uses: xu-cheng/latex-action@v3
+        with:
+          working_directory: docs/rapport
+          root_file: main.tex
+
+      - name: Prepare release asset
+        run: cp docs/rapport/main.pdf rapport-scanner3d-latest.pdf
+
+      - name: Publish latest report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view rapport-latest >/dev/null 2>&1 || \
+            gh release create rapport-latest \
+              --title "Dernière version compilée du rapport" \
+              --notes "PDF compilé automatiquement à chaque push."
+          gh release upload rapport-latest rapport-scanner3d-latest.pdf --clobber

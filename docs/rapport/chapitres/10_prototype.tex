@@ -1,91 +1,64 @@
-\section{Prototype}
+\section{Prototype et résultats}
 
-\subsection{État final}
+\subsection{État livré}
 
-Le projet aboutit à un prototype complet et fonctionnel de bout en bout :
-une boîte fermée découpée au laser, un plateau motorisé, un laser ligne monté
-sur support imprimé en 3D, \textbf{deux caméras} (Pi Camera et USB) inclinées
-de manière complémentaire, l'électronique d'alimentation et de commande sur
-PCB dédié, le capteur de capot, l'écran tactile et l'interface web. Un cycle
-de scan complet peut être lancé depuis l'interface et produit un fichier STL
-ou OBJ livrable.
+Le prototype réunit le caisson, le plateau motorisé, le laser, les deux
+caméras, le PCB de commande, le capteur de capot, l'écran tactile et
+l'interface web. Le pipeline réel produit des nuages PLY intermédiaires et un
+maillage STL.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.6\linewidth]{images/boite_finale.jpeg}
-  \caption{Prototype final fermé, prêt pour un scan au MakeLab.}
+  \caption{Prototype assemblé. La photographie finale avec tous les composants
+  visibles reste à confirmer dans \texttt{rapport/TODO.md}.}
   \label{fig:boite-finale}
 \end{figure}
 
 \begin{table}[H]
   \centering
-  \begin{tabular}{@{}p{3.8cm}p{3cm}p{7.5cm}@{}}
+  \small
+  \begin{tabular}{@{}p{4.1cm}p{3cm}p{7cm}@{}}
     \toprule
-    \textbf{Sous-système} & \textbf{Maturité} & \textbf{État} \\
+    \textbf{Fonction} & \textbf{Statut} & \textbf{Justification} \\
     \midrule
-    Mécanique & Fonctionnelle & Boîte fermée, plateau, supports caméras/laser fabriqués et alignés. \\
-    Électronique & Fonctionnelle & Alimentation, laser, moteur, caméras, écran et capteur de capot sur PCB dédié. \\
-    Acquisition & Fonctionnelle & Scan réel deux caméras lancé depuis l'interface web. \\
-    Extraction laser & Fonctionnelle & Ligne détectée et largeur stabilisée par calibration d'exposition. \\
-    Fusion deux caméras & Fonctionnelle & Nuages calibrés et fusionnés dans un repère plateau commun. \\
-    Reconstruction STL & Fonctionnelle & Maillage Poisson fermé, nettoyé et capé. \\
-    Interface web & Fonctionnelle & Lancement, suivi, téléchargement, viewer 3D et mode ingénierie. \\
-    Validation métrique & Partielle & Dimensions cohérentes ; précision absolue à quantifier formellement. \\
+    Acquisition à deux caméras & Démontrée & Pipeline matériel et captures par position. \\
+    Interlock et arrêt laser & Testés & Capteur monté, contrôles avant activation. \\
+    Extraction et triangulation & Démontrées & Nuages PLY produits par caméra. \\
+    Fusion et maillage & Démontrés & Export Poisson STL disponible. \\
+    Interface et export USB & Démontrés & Routes web, viewer et copie USB implémentés. \\
+    Précision et répétabilité & Non validées & Aucun protocole métrologique complet fourni. \\
+    Autonomie utilisateur & Non validée & Essais limités aux membres de l'équipe. \\
     \bottomrule
   \end{tabular}
-  \caption{État de maturité des sous-systèmes à la livraison.}
+  \caption{État des fonctions et validations.}
   \label{tab:maturite}
 \end{table}
 
-\subsection{Fonctionnalités démontrées}
-
-\begin{itemize}
-  \item lancement d'un scan depuis l'interface web ;
-  \item calibration automatique de l'exposition avant scan ;
-  \item rotation pas à pas du plateau et commande du laser ;
-  \item capture synchronisée des deux caméras à chaque pas ;
-  \item extraction de la ligne laser et triangulation par caméra ;
-  \item fusion des deux nuages dans un repère plateau commun ;
-  \item reconstruction d'un maillage fermé et export STL / OBJ ;
-  \item retour utilisateur via interface web et écran local ;
-  \item sécurité laser : coupure au démarrage, sur erreur et à l'ouverture du capot.
-\end{itemize}
-
-Le temps d'un cycle complet, de la pièce posée jusqu'à l'export, est de
-l'ordre de \textbf{8\,minutes}. La contrainte de scan inférieur à 10\,minutes
-(O3) est donc respectée.
-
-\subsection{Résultats observés}
+\subsection{Résultats}
 \label{sec:prototype-resultats}
 
-L'apport principal de la version finale est la \textbf{réduction des
-occultations} grâce à la seconde caméra. Sur une forme anguleuse, les zones
-masquées à une caméra sont récupérées par l'autre, et le maillage présente une
-couverture nettement améliorée par rapport au montage mono-caméra.
+Un cycle complet, depuis le lancement jusqu'à l'export, a été chronométré à
+environ 8 minutes. L'objectif O3 est donc atteint pour la configuration testée.
+Les deux points de vue récupèrent davantage de zones sur les formes anguleuses
+qu'une acquisition mono-caméra.
 
 \begin{figure}[H]
   \centering
   \begin{minipage}{0.45\linewidth}
     \centering
     \includegraphics[width=0.85\linewidth]{images/screen_cylindre_stl.png}
-    \\\small (a) Cylindre : maillage cohérent.
+    \\\small (a) Maillage d'un cylindre.
   \end{minipage}\hfill
   \begin{minipage}{0.45\linewidth}
     \centering
     \includegraphics[width=0.85\linewidth]{images/cube_double_camera.png}
-    \\\small (b) Cube (double caméra) : couverture des faces.
+    \\\small (b) Résultat à deux caméras sur un cube.
   \end{minipage}
-  \caption{Résultats finaux sur formes ronde et anguleuse.}
+  \caption{Exemples de reconstructions. Ces captures illustrent le
+  fonctionnement, mais ne constituent pas une mesure de précision.}
   \label{fig:resultats-scans}
 \end{figure}
-
-Les dimensions en largeur et profondeur sont cohérentes lors de contrôles
-manuels. La déformation en hauteur observée à mi-parcours a été atténuée par
-la découpe du plan supérieur et la fermeture du fond, qui suppriment les
-artefacts de reconstruction. Les mesures de précision absolue et de
-répétabilité restent à quantifier formellement sur un jeu de pièces étalon.
-
-\subsection{Performances}
 
 \begin{table}[H]
   \centering
@@ -93,28 +66,22 @@ répétabilité restent à quantifier formellement sur un jeu de pièces étalon
     \toprule
     \textbf{Indicateur} & \textbf{Résultat} & \textbf{Cible} \\
     \midrule
-    Temps d'un cycle complet & $\approx$\,8\,min & $\leq 10$\,min \\
-    Largeur / profondeur & Cohérentes & --- \\
-    Hauteur & Corrigée (clipping + cap) & --- \\
-    Répétabilité & À quantifier & $\leq 1$\,mm \\
-    Précision absolue & À quantifier & $\leq 2$\,mm \\
-    Export STL / OBJ & Fonctionnel & Fichier livrable \\
-    Budget réel & 133.83\,CHF & $\leq 300$\,CHF \\
+    Cycle complet & $\approx$\,8\,min & $\leq 10$\,min \\
+    Export STL & Produit & Obligatoire \\
+    Coût réellement engagé & 133,83\,CHF & $\leq 300$\,CHF \\
+    Précision absolue & Non mesurée & $\leq 2$\,mm \\
+    Répétabilité & Non mesurée & $\leq 1$\,mm \\
+    Prise en main extérieure & Non testée & $\leq 10$\,min \\
+    Dimensions et masse & Non mesurées & $\leq 500^3$\,mm, $\leq 15$\,kg \\
     \bottomrule
   \end{tabular}
-  \caption{Performances mesurées et objectifs.}
+  \caption{Résultats disponibles à la livraison.}
   \label{tab:perf-attendues}
 \end{table}
 
-\subsection{Limites résiduelles}
+\subsection{Limites}
 
-\begin{itemize}
-  \item la précision absolue et la répétabilité doivent être quantifiées sur
-        pièces étalon ;
-  \item la qualité finale dépend de la calibration extrinsèque des deux
-        caméras, sensible et à protocoliser ;
-  \item les cavités fermées et les contre-dépouilles marquées restent hors
-        périmètre (O11) ;
-  \item l'ergonomie de l'interface, fonctionnelle, peut encore être simplifiée
-        pour un usage en pleine autonomie.
-\end{itemize}
+La qualité dépend du réglage optique, des masques et de l'ajustement
+extrinsèque. Les surfaces brillantes, très sombres, vertes ou cachées peuvent
+dégrader l'extraction. Enfin, les résultats visuels disponibles ne permettent
+pas encore de conclure sur O4, O9 ou O10.

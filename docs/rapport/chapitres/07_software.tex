@@ -1,351 +1,204 @@
-\section{Software}
+\section{Logiciel et traitement}
 
-\subsection{Principe général}
+\subsection{Architecture}
 
-Le logiciel pilote le scanner et transforme une série d'images du plan
-laser déformé par l'objet en un modèle 3D exportable (STL ou OBJ),
-conformément aux exigences \textbf{E6} et \textbf{E13}. Le traitement suit
-un pipeline linéaire :
-\textbf{Acquisition} $\rightarrow$ \textbf{Extraction} $\rightarrow$
-\textbf{Triangulation} $\rightarrow$ \textbf{Fusion} $\rightarrow$
-\textbf{Reconstruction} $\rightarrow$ \textbf{Export}.
-
-Par rapport au prototype mono-caméra présenté à mi-parcours, la version
-finale a évolué sur deux axes majeurs. D'une part, le scanner exploite
-désormais \textbf{deux caméras} observant la même ligne laser depuis des
-points de vue complémentaires, ce qui réduit fortement les occultations
-sur les pièces anguleuses. D'autre part, la chaîne de traitement a été
-fiabilisée de bout en bout : calibration de l'exposition automatique avant
-chaque scan, fusion calibrée des deux nuages dans un repère commun, et
-reconstruction du maillage par une méthode de Poisson assortie d'un
-nettoyage géométrique. Le logiciel produit aujourd'hui un fichier STL
-livrable depuis l'interface web sur l'ensemble de la chaîne réelle.
-
-\subsection{Géométrie de la triangulation}
-
-Le principe de mesure repose sur la \textbf{triangulation laser}. Le laser
-projette un plan lumineux vertical passant par l'axe de rotation du plateau~;
-ce plan se déforme en une ligne sur la surface de l'objet. Chaque caméra,
-décalée latéralement par rapport au plan laser, observe cette ligne sous un
-angle~: la position d'un point laser dans l'image dépend alors directement de
-sa distance à l'axe. 
-
-
-\begin{figure}[H]
-  \centering
-  \resizebox{0.62\linewidth}{!}{\input{schemas/vue_dessus.tex}}
-  \caption{Géométrie caméra / laser / plateau, vue de dessus~: les deux caméras
-  encadrent le plan laser sous des angles dissymétriques ($25^\circ$ pour la
-  caméra Pi, $33^\circ$ pour la caméra USB), ce qui maximise la couverture des
-  zones cachées.}
-  \label{fig:geo-triangulation}
-\end{figure}
-
-Cette double observation est précisément ce qui distingue le montage de la
-plupart des scanners laser open-source mono-caméra~: la seconde caméra, placée
-de l'autre côté du plan laser, voit les facettes occultées pour la première
-(cf.~\autoref{fig:occultation-camera}).
-
-\subsection{Architecture logicielle}
-
-L'architecture est modulaire : chaque responsabilité est isolée dans un
-sous-paquet Python exposant une API stable. Cette séparation a permis de
-développer d'abord en mode \emph{mock}, puis de transférer le pipeline sur
-le matériel réel, et enfin d'ajouter une seconde caméra sans réécrire
-l'ensemble du système.
+Le logiciel Python sépare le matériel, la calibration, l'acquisition, le
+traitement, la reconstruction, l'export, l'orchestration et l'interface. Les
+mêmes interfaces sont utilisées avec le matériel réel ou avec le mock de
+développement.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{diagrams/architecture_composants.png}
-  \caption{Architecture logicielle — vue des composants et flux de données.}
+  \caption{Architecture logicielle et flux de données.}
   \label{fig:archi-composants}
 \end{figure}
 
 \begin{table}[H]
   \centering
-  \begin{tabular}{@{}p{3.5cm}p{10.5cm}@{}}
+  \small
+  \begin{tabular}{@{}p{3.4cm}p{10.6cm}@{}}
     \toprule
-    \textbf{Module} & \textbf{Responsabilité} \\
+    \textbf{Module} & \textbf{Responsabilité active} \\
     \midrule
-    \texttt{hardware}       & Abstraction du moteur, laser, écran, capteur de capot et des deux caméras (driver Pi Camera et driver USB OpenCV), avec mode \emph{mock}. \\
-    \texttt{acquisition}    & Séquence moteur, laser, capture des images des deux caméras et sauvegarde. \\
-    \texttt{processing}     & Extraction de la ligne laser et triangulation pixel $\rightarrow$ point 3D par caméra. \\
-    \texttt{reconstruction} & Fusion des profils (deux caméras et demi-tour), filtrage et détection du plan supérieur. \\
-    \texttt{export}         & Reconstruction du maillage (Poisson, Open3D) et export STL / OBJ / nuage brut. \\
-    \texttt{orchestration}  & Machine d'états et workflow de scan complet. \\
-    \texttt{calibration}    & Intrinsèques caméra, plan laser, extrinsèques vers le repère plateau et calibration multi-caméras. \\
-    \texttt{interface}      & Serveur web Flask, SSE, viewer 3D, mode ingénierie, commandes manuelles et écran local. \\
+    \texttt{hardware} & Caméras Pi/USB, moteur, laser, porte et mock. \\
+    \texttt{acquisition} & Rotation, contrôle de porte, laser et captures séquentielles. \\
+    \texttt{calibration} & Intrinsèques, plan laser global et extrinsèques. \\
+    \texttt{processing} & Extraction de ligne et triangulation vers le repère plateforme. \\
+    \texttt{reconstruction} & Fusion, filtrage, détection de plan et caps. \\
+    \texttt{export} & Nuages PLY et maillages Poisson STL. \\
+    \texttt{orchestration} & Pipeline complet et machine d'états. \\
+    \texttt{interface} & Flask, SSE, viewer Three.js, calibration et export USB. \\
     \bottomrule
   \end{tabular}
-  \caption{Modules logiciels et responsabilités.}
+  \caption{Responsabilités des modules logiciels.}
   \label{tab:modules}
 \end{table}
 
-\subsection{D'une à deux caméras}
+\subsection{Géométrie et calibration}
 
-\paragraph{Le problème à résoudre.}
-Le montage mono-caméra fonctionne sur les formes rondes mais perd la ligne
-laser sur les pièces anguleuses : le laser éclaire une zone de l'objet,
-mais cette zone est masquée à la caméra par une autre face
-(\autoref{fig:occultation-camera}). Aucun réglage de seuil ne permet de
-récupérer un point qui n'est pas visible dans l'image ; la limite est
-\emph{physique}.
+Chaque pixel détecté définit un rayon dans le repère de sa caméra. Les
+intrinsèques corrigent la projection et la distorsion; les extrinsèques
+transforment ensuite ce rayon dans le repère plateforme. Son intersection avec
+le plan laser global donne un point 3D, qui est enfin déroté selon l'angle du
+plateau.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.7\linewidth]{images/vue_obsturction_laser.jpeg}
-  \caption{Occultation en configuration mono-caméra : le laser éclaire une face de la pièce, mais celle-ci est masquée du point de vue de la caméra.}
-  \label{fig:occultation-camera}
+  \resizebox{0.62\linewidth}{!}{\input{schemas/vue_dessus.tex}}
+  \caption{Disposition des caméras autour du plan laser, vue de dessus.}
+  \label{fig:geo-triangulation}
 \end{figure}
 
-\paragraph{La solution retenue.}
-Une seconde caméra est ajoutée pour observer la même ligne laser depuis une
-direction opposée. La disposition mécanique est dissymétrique afin de couvrir
-au mieux les zones cachées :
+Les paramètres utilisés par le code sont:
 
 \begin{itemize}
-  \item \textbf{caméra droite} : Raspberry Pi Camera Module 3 (bus CSI),
-        placée à environ $-25^\circ$ en azimut par rapport à l'axe laser et
-        inclinée d'environ $20^\circ$ vers le bas ;
-  \item \textbf{caméra gauche} : caméra USB Arducam (capteur IMX586, bus USB),
-        placée à environ $+33^\circ$ en azimut et inclinée d'environ
-        $20^\circ$ vers le haut ;
-  \item laser, moteur et plateau inchangés.
+  \item une calibration intrinsèque par caméra, obtenue avec un damier OpenCV;
+  \item un plan laser commun exprimé dans le repère plateforme;
+  \item une pose extrinsèque par caméra, définie par sa position et ses angles;
+  \item l'axe de rotation et son origine dans le repère plateforme.
 \end{itemize}
 
-Le mode mono-caméra reste conservé pour le débogage, la non-régression et un
-fonctionnement dégradé. L'ajout d'une caméra USB sur le Raspberry Pi a
-nécessité l'intégration d'adaptateurs dédiés (cf. budget,
-\autoref{tab:budget-bom}).
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.7\linewidth]{images/montage_2_cameras.jpeg}
-  \caption{Montage des deux caméras de part et d'autre du laser, avec inclinaisons opposées.}
-  \label{fig:montage-2-cam}
-\end{figure}
-
-\paragraph{Le vrai enjeu : un repère commun.}
-Capturer deux images ne suffit pas. Chaque caméra doit produire ses points
-dans un \textbf{même repère plateau}, sans quoi deux nuages individuellement
-corrects se superposent avec un décalage et déforment le STL final. Le code
-évolue donc vers une configuration \texttt{cameras:} décrivant les caméras
-\texttt{right} et \texttt{left}, une capture séquentielle par pas moteur
-(moteur, laser ON, caméra droite, caméra gauche, laser OFF) et une
-calibration séparée par caméra.
-
-\subsection{Calibration}
-
-Le pipeline s'appuie sur quatre familles de paramètres, calibrés par caméra
-et stockés dans des fichiers YAML \emph{immuables au moment du scan} :
-
-\begin{enumerate}
-  \item \textbf{intrinsèques} (matrice caméra et distorsion), obtenus par
-        damier OpenCV ou mire ChArUco ;
-  \item \textbf{plan laser} dans le repère de chaque caméra ;
-  \item \textbf{extrinsèques} de chaque caméra vers le repère plateau, point
-        le plus sensible : une petite erreur angulaire produit un décalage
-        visible entre les deux nuages ;
-  \item \textbf{géométrie de la plateforme} (axe de rotation).
-\end{enumerate}
-
-Le diagnostic clé consiste à comparer les nuages \texttt{right} et
-\texttt{left} \emph{avant} fusion : leurs erreurs moyenne, RMS et maximale
-doivent rester faibles devant la précision visée. Si les deux nuages sont
-décalés, c'est la calibration extrinsèque qu'il faut corriger avant de
-régler le maillage.
-
-L'ensemble de ces étapes est piloté depuis le mode ingénierie de l'interface
-web, avec une page dédiée par famille de paramètres et une sélection explicite
-de la caméra à calibrer.
+La configuration fournit une pose mécanique initiale pour chaque caméra. Lors
+du traitement, l'option active \texttt{auto\_cheat\_extrinsics} optimise encore
+les deux poses afin de réduire la distance entre les nuages. Ce mécanisme
+améliore leur superposition, mais montre aussi qu'un protocole extrinsèque
+reproductible reste à consolider. Les fichiers de calibration sont lus pendant
+le scan; ils ne sont pas modifiés par le pipeline.
 
 \begin{figure}[H]
   \centering
   \begin{minipage}{0.48\linewidth}
     \centering
     \includegraphics[width=\linewidth]{images/ui_calibration_intrinseque_laser.png}
-    \\\small (a) Calibration intrinsèque (damier) et plan laser.
+    \\\small (a) Calibration intrinsèque et laser.
   \end{minipage}\hfill
   \begin{minipage}{0.48\linewidth}
     \centering
     \includegraphics[width=\linewidth]{images/ui_calibration_extrinseque.png}
-    \\\small (b) Réglage des extrinsèques vers le repère plateau.
+    \\\small (b) Réglage extrinsèque.
   \end{minipage}
-  \caption{Pages de calibration de l'interface : intrinsèques et plan laser par
-  caméra (a), puis extrinsèques vers le repère plateau commun (b).}
+  \caption{Pages de calibration. Leur correspondance avec l'interface finale
+  doit être vérifiée avant publication.}
   \label{fig:ui-calibration}
 \end{figure}
 
-\paragraph{Calibration de l'exposition automatique.}
-Avant chaque scan, une routine ajuste itérativement le temps d'exposition de
-chaque caméra pour viser une largeur médiane de ligne laser cible (de l'ordre
-de 6\,pixels), à une tolérance d'environ 1\,pixel près. La routine échantillonne
-quelques angles, mesure la largeur de la ligne, corrige l'exposition dans une
-plage bornée (200 à 60\,000\,$\mu$s) et converge en quelques itérations. Une
-ligne trop large sature et fausse le centroïde ; une ligne trop fine
-disparaît par endroits. Cette étape garde le laser éteint par défaut et le
-coupe en cas d'erreur.
+\subsection{Acquisition}
 
-\subsection{Chaîne de traitement complète}
+La configuration active demande 100 positions sur un tour. Le moteur comporte
+200 pas physiques par tour et le driver utilise 16 micro-pas, soit 3200
+micro-pas. Chaque acquisition est donc séparée de 32 micro-pas, ou
+$3{,}6^\circ$.
 
-Pour chaque pas du plateau, les deux caméras capturent une image de la ligne
-laser. Le traitement enchaîne ensuite :
+Avant le scan, une boucle ajuste séparément l'exposition des caméras. Elle
+capture trois angles par itération, mesure la largeur médiane des pixels verts
+dépassant le seuil et vise une largeur de 6 pixels, avec une tolérance de
+1 pixel. L'exposition reste bornée entre 200 et 60\,000\,$\mu$s.
+
+Pour chaque position, la séquence active est:
 
 \begin{enumerate}
-  \item extraction de la ligne laser dans chaque image (seuillage sur la
-        composante verte $G-R$, puis centroïde sous-pixel par colonne) ;
-  \item triangulation des pixels en points 3D dans le repère de chaque
-        caméra, à l'aide du plan laser correspondant ;
-  \item transformation des points vers le repère plateau via les
-        extrinsèques de chaque caméra ;
-  \item dérotation des points selon l'angle courant du plateau ;
-  \item fusion de tous les profils (deux caméras puis demi-tour) ;
-  \item filtrage des points aberrants (k plus proches voisins, KDTree SciPy)
-        et détection du plan supérieur ;
-  \item reconstruction du maillage et export STL / OBJ.
+  \item vérifier que le capot est fermé;
+  \item avancer le moteur de 32 micro-pas;
+  \item allumer le laser et vérifier à nouveau le capot;
+  \item capturer successivement la caméra Pi et la caméra USB;
+  \item éteindre le laser et sauvegarder les aperçus JPEG.
 \end{enumerate}
 
-Le plateau est échantillonné sur 100 positions pour un tour complet
-(moteur NEMA 17, 200\,pas/tour, $1{,}8^\circ$/pas).
+L'extinction est également exécutée dans les chemins d'erreur.
 
-\subsection{Fusion des nuages}
+\subsection{Extraction et triangulation}
 
-La fusion est l'opération qui conditionne la qualité géométrique du résultat.
-Deux mécanismes complémentaires sont mis en \oe uvre.
+L'algorithme actif n'utilise pas la différence $G-R$. Il lit uniquement le
+canal vert de l'image BGR, applique le seuil propre à la caméra, puis retire
+les zones exclues par des masques rectangulaires ou polygonaux. La résolution
+de traitement peut être réduite par les pas d'échantillonnage configurés.
 
-\paragraph{Fusion des deux caméras.}
-Dans les zones vues par une seule caméra, tous les points calibrés sont
-conservés : c'est là que la seconde caméra apporte de la couverture. Dans les
-zones de recouvrement, la fusion est volontairement \emph{conservatrice} :
-les points proches sont moyennés plutôt que dupliqués, afin d'éviter une
-double surface qui épaissirait le maillage.
+Pour chaque ligne d'image contenant des pixels actifs, l'abscisse retournée est
+la moyenne des colonnes actives. Le résultat contient donc au plus un point
+par ligne. Le paramètre historique \texttt{subpixel} est conservé dans l'API,
+mais le code utilise toujours cette moyenne flottante. Une détection est
+rejetée si elle contient moins de quatre lignes dans la configuration active.
 
-\paragraph{Fusion demi-tour.}
-Un profil acquis à un angle $\theta$ et son symétrique à $\theta+180^\circ$
-observent partiellement la même matière. Les profils en doublon sont
-détectés (tolérance d'un pas) puis moyennés localement, ce qui réduit le
-bruit et le dédoublement de surface sans perdre de couverture.
+La triangulation transforme ensuite les pixels en rayons, applique les
+extrinsèques, intersecte le plan laser et compense la rotation du plateau.
+Chaque caméra produit ainsi des profils dans le même repère.
 
-\subsection{Reconstruction du maillage}
+\subsection{Fusion et reconstruction}
 
-Le passage du nuage de points au maillage fermé est le point logiciel le plus
-délicat. La solution finale repose sur la reconstruction de \textbf{Poisson}
-(Open3D), précédée d'une estimation des normales et suivie d'un nettoyage
-géométrique :
+Les profils opposés d'un demi-tour peuvent être rapprochés et moyennés lorsque
+leur distance est inférieure à la tolérance configurée. Pour une même
+position, les profils des deux caméras sont projetés sur leur axe principal:
+les zones proches sont moyennées, tandis que les points divergents sont
+conservés pour ne pas écraser une géométrie visible par une seule caméra.
 
-\begin{itemize}
-  \item estimation des normales orientées de manière cohérente ;
-  \item reconstruction de Poisson (profondeur d'octree configurable, 8 par
-        défaut) ;
-  \item suppression des sommets de faible densité, qui correspondent aux
-        extrapolations de Poisson hors du nuage réel ;
-  \item \textbf{détection et découpe du plan supérieur} : une bande planaire
-        dense est détectée au sommet du modèle et le maillage est coupé par
-        ce plan pour supprimer les artefacts en « dôme » caractéristiques de
-        Poisson sur un nuage ouvert ;
-  \item \textbf{fermeture du fond} par un cap plat horizontal dans le repère
-        monde, l'axe vertical du plateau servant de référence.
-\end{itemize}
+Les profils fusionnés sont concaténés puis filtrés avec un KDTree SciPy. Un
+filtre statistique rejette les points dont la distance moyenne aux voisins est
+anormalement grande. Le logiciel exporte les nuages de chaque caméra et le
+nuage combiné au format PLY.
 
-Cette approche remplace la simple enveloppe convexe utilisée initialement et
-donne un maillage fermé et étanche, exploitable pour l'impression 3D.
+Le maillage final est produit par Open3D:
 
-\subsection{Orchestration et machine d'états}
+\begin{enumerate}
+  \item dédoublonnage et estimation des normales;
+  \item orientation cohérente des normales;
+  \item reconstruction de Poisson, profondeur 8 par défaut;
+  \item détection éventuelle du plan supérieur depuis la caméra droite;
+  \item découpe du maillage par ce plan et fermeture de la coupe;
+  \item ajout de caps plats et nettoyage du maillage;
+  \item export STL selon la configuration.
+\end{enumerate}
 
-La machine d'états centralise les transitions légales et déclenche les
-effets de bord associés : progression de l'interface, signalisation et
-surtout sécurité laser. Les états
-\texttt{IDLE}, \texttt{CALIBRATING}, \texttt{SCANNING},
-\texttt{PROCESSING}, \texttt{EXPORTING}, \texttt{COMPLETE} et
-\texttt{ERROR} couvrent l'ensemble du cycle de vie.
+Ces opérations améliorent la fermeture du maillage, mais ne constituent pas
+une preuve de précision dimensionnelle.
+
+\subsection{Orchestration et sécurité}
+
+La machine d'états couvre l'attente et la calibration
+(\texttt{IDLE}, \texttt{CALIBRATING}), le cycle de scan
+(\texttt{SCANNING}, \texttt{PROCESSING}, \texttt{EXPORTING}) et ses issues
+(\texttt{COMPLETE}, \texttt{ERROR}). Elle refuse les transitions non prévues.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\linewidth]{diagrams/machine_etats.png}
-  \caption{Machine d'états du scanner — transitions et signalisation.}
+  \includegraphics[width=0.78\linewidth]{diagrams/machine_etats.png}
+  \caption{Machine d'états du scanner.}
   \label{fig:fsm}
 \end{figure}
 
-\paragraph{Sécurité laser.}
-Le logiciel désactive le laser au démarrage, lors d'un passage en état
-\texttt{ERROR} et \textbf{immédiatement à l'ouverture du capot}, détectée par
-un capteur dédié. Un verrou logiciel empêche par ailleurs le lancement de
-deux scans concurrents. Cette sécurité logicielle complète l'isolation
-mécanique du caisson.
+Le serveur empêche deux scans concurrents. Lors d'une erreur, l'orchestration
+éteint le laser avant de demander l'état \texttt{ERROR}. L'interlock vérifie
+le capot avant et juste après la mise sous tension du laser. Il s'agit d'un
+contrôle synchrone, et non d'une interruption surveillée en continu. Les
+commandes manuelles disposent également d'une action de mise en sécurité.
 
-\subsection{Interface utilisateur}
+\subsection{Interface}
 
-L'interface web Flask permet de lancer un scan, de suivre son état en temps
-réel (SSE), de visualiser les images, de télécharger le résultat et
-d'afficher le STL dans un viewer Three.js. La version finale a été entièrement
-retravaillée pour un usage au MakeLab : thème clair, \textbf{assets servis
-hors-ligne} (aucune dépendance Internet sur le Raspberry Pi), animations de
-progression, et une séparation nette entre un \textbf{usage courant} (page
-d'accueil de type borne) et un \textbf{mode ingénierie} regroupant les outils
-de calibration et de commande manuelle. L'écran local complète l'interface web
-pour indiquer l'état du système.
+L'interface Flask permet de lancer ou réinitialiser un scan, suivre sa
+progression par SSE, consulter les captures, afficher les nuages PLY et le
+maillage, télécharger le résultat et le copier sur une clé USB. Les
+bibliothèques front-end sont servies localement.
 
-\paragraph{Page d'accueil (usage courant).}
-La page principale est pensée comme une borne : l'utilisateur pose sa pièce,
-lance le scan et suit la progression en direct, puis télécharge le STL ou le
-copie sur une clé USB. Les outils techniques sont verrouillés par défaut pour
-éviter toute fausse manipulation~; ils ne sont accessibles qu'après
-déverrouillage du mode ingénierie.
+Le mode ingénierie ajoute les pages de calibration, de réglage des caméras,
+d'extrinsèques et de commande manuelle. Ces outils sont masqués dans le mode
+d'utilisation courant.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\linewidth]{images/ui_accueil_verrouille.png}
-  \caption{Interface web finale — page d'accueil : suivi du scan en temps réel,
-  aperçu de la ligne laser et résultat téléchargeable.}
+  \includegraphics[width=0.86\linewidth]{images/ui_accueil_verrouille.png}
+  \caption{Page principale de l'interface web en mode utilisateur.}
   \label{fig:interface}
 \end{figure}
 
-\paragraph{Mode ingénierie.}
-Le mode ingénierie réunit les pages \emph{Scan}, \emph{Calibration},
-\emph{Extrinsèque}, \emph{Cam Config} et \emph{Manuel}. La page manuelle donne
-un retour vidéo \textbf{des deux caméras} (droite Pi et gauche Arducam USB),
-permet de tester les seuils d'extraction et les masques par caméra, et offre
-une commande directe du laser et du moteur pour le diagnostic. Le laser n'y
-est activable que volontairement et reste coupé par défaut.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\linewidth]{images/ui_manuel.png}
-  \caption{Mode ingénierie — page manuelle : retour des deux caméras, réglage
-  des seuils par caméra et commandes manuelles laser/moteur.}
-  \label{fig:ui-manuel}
-\end{figure}
-
-\subsection{Choix techniques}
-
-\begin{table}[H]
-  \centering
-  \begin{tabular}{@{}p{4cm}p{4cm}p{6cm}@{}}
-    \toprule
-    \textbf{Besoin} & \textbf{Choix} & \textbf{Justification} \\
-    \midrule
-    Traitement d'image      & OpenCV          & Extraction de ligne, calibration caméra et driver USB. \\
-    Calcul numérique        & NumPy           & Standard scientifique Python, adapté au Pi. \\
-    Filtrage de nuage       & SciPy KDTree    & Solution légère pour filtrer les points aberrants. \\
-    Reconstruction maillée  & Open3D (Poisson) & Maillage fermé depuis le nuage, avec estimation des normales. \\
-    Interface web           & Flask + SSE     & Simple, réactive, suffisante pour le suivi temps réel. \\
-    Viewer 3D               & Three.js        & Visualisation directe du STL dans le navigateur, hors-ligne. \\
-    Tests                   & pytest          & Validation des modules de traitement et de la machine d'états. \\
-    \bottomrule
-  \end{tabular}
-  \caption{Bibliothèques et justifications.}
-  \label{tab:choix-tech}
-\end{table}
-
-\subsection{Limites résiduelles}
+\subsection{Limites logicielles}
 
 \begin{itemize}
-  \item \textbf{Sensibilité des extrinsèques} : la qualité de la fusion
-        dépend directement de la calibration extrinsèque ; un protocole de
-        calibration reproductible reste le principal levier de précision.
-  \item \textbf{Cavités profondes} : la double caméra réduit les occultations
-        mais ne résout pas les cavités fermées, hors périmètre (O11).
-  \item \textbf{Validation métrique} : la précision absolue et la
-        répétabilité doivent être quantifiées sur pièces étalon
-        (cf. \autoref{sec:prototype-resultats}).
+  \item la fusion dépend fortement des extrinsèques et de leur ajustement;
+  \item le seuillage du canal vert peut retenir des surfaces vertes ou des
+        reflets dans les zones non masquées;
+  \item Poisson extrapole une surface dans les zones peu observées;
+  \item les cavités invisibles pour le laser et les deux caméras restent
+        impossibles à reconstruire;
+  \item les performances d'Open3D sur la cible Raspberry Pi doivent rester
+        surveillées sur des nuages volumineux.
 \end{itemize}

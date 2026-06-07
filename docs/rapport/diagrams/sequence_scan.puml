@@ -13,31 +13,37 @@ actor Utilisateur as U
 participant "Web\n(Flask)" as W
 participant "FSM" as F
 participant "Acquisition" as A
-participant "Matériel\n(moteur/laser/caméra)" as H
+participant "Matériel\n(moteur/laser/porte)" as H
+participant "Caméras\nPi + USB" as C
 participant "Processing" as P
 participant "Reconstruction" as R
 participant "Export" as E
 
 U -> W : POST /scan/start
 W -> F : transition SCANNING
-loop 200 pas (1 tour)
-  A -> H : motor_step()
+W -> A : calibration exposition
+loop 100 positions (1 tour)
+  A -> H : vérifier capot
+  A -> H : motor_step(32 micro-pas)
   A -> H : laser_set(ON)
-  A -> H : camera_capture()
+  A -> H : vérifier capot
+  A -> C : capture Pi puis USB
   A -> H : laser_set(OFF)
-  A -> A : sauvegarder frame
+  A -> A : sauvegarder aperçus JPEG
   A --> W : progression (SSE)
 end
 F -> F : transition PROCESSING
-loop par frame
-  P -> P : extract_laser_line()
-  P -> P : triangulate()
+loop par caméra et image
+  P -> P : seuil vert + masque + moyenne par ligne
+  P -> P : triangulation dans le repère plateforme
 end
+P -> P : ajuster extrinsèques
+P -> R : fusion caméras + demi-tour
+R -> R : filtrage + caps + plan supérieur
 F -> F : transition EXPORTING
-R -> R : merge_profiles()
-R -> R : filter_outliers()
-E -> E : export_stl() / export_obj()
+E -> E : export PLY
+E -> E : Poisson puis STL / OBJ
 F -> F : transition COMPLETE
-W --> U : STL disponible (viewer Three.js)
+W --> U : nuages et maillage disponibles
 
 @enduml

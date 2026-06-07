@@ -4,6 +4,12 @@ Scanner 3D à triangulation laser — Projet étudiant HEIG-VD, semestre 4, modu
 
 Le système capture des profils d'un objet en rotation sous un laser ligne, reconstruit un nuage de points 3D, et exporte un fichier STL ou OBJ. Tout se passe dans une boîte fermée pilotée par un Raspberry Pi, accessible via une interface web ou un petit écran local.
 
+## Rapport
+
+La dernière version compilée du rapport est publiée automatiquement à chaque
+push :
+[télécharger le PDF](https://github.com/tom-berthoud/scanner3d-pmd/releases/download/rapport-latest/rapport-scanner3d-latest.pdf).
+
 ---
 
 ## Comment ça fonctionne
