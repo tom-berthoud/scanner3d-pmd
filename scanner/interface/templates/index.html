@@ -190,6 +190,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const ph = document.getElementById('viewer-placeholder');
     const cvs = document.getElementById('stl-canvas');
     if (!ph || !cvs) return null;
+    // On certain GPUs (e.g. NVIDIA Optimus on Linux) Chrome cannot create a
+    // hardware WebGL context. Remember the failure and let the caller fall
+    // back to the Canvas-2D renderer instead of throwing on every artifact.
+    if (_v === 'NO_WEBGL') return null;
     ph.style.display = 'none';
     cvs.style.display = 'block';
 
@@ -197,7 +201,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const width = cvs.parentElement ? cvs.parentElement.clientWidth : 640;
 
     if (!_v) {
-      const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+      } catch (e) {
+        console.warn('viewer: WebGL indisponible, bascule en rendu 2D', e);
+        _v = 'NO_WEBGL';
+        return null;
+      }
       renderer.setSize(width, height);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setClearColor(0xeaf0f6);
@@ -276,31 +287,41 @@ document.addEventListener('DOMContentLoaded', function() {
       if (vs) vs.textContent = 'CHARGEMENT 3D…';
 
       const { THREE, STLLoader, PLYLoader, OrbitControls } = await loadModules();
+
+      // Parse geometry first so the Canvas-2D fallback can reuse it when WebGL
+      // is unavailable.
+      const isMesh = (mediaType !== 'model/ply');
+      const geo = isMesh ? new STLLoader().parse(buf) : new PLYLoader().parse(buf);
+      if (isMesh) geo.computeVertexNormals();
+      geo.computeBoundingBox();
+      const size = new THREE.Vector3();
+      geo.boundingBox.getSize(size);
+      if (isMesh && kind === 'mesh' && typeof window.setResultGeometry === 'function') {
+        window.setResultGeometry([size.x, size.y, size.z], buf.byteLength);
+      }
+
       const viewer = ensureViewer(THREE, OrbitControls);
-      if (!viewer) return;
+      if (!viewer) {
+        // WebGL not available — draw a rotating 2D projection instead.
+        render2DFallback(geo, isMesh);
+        if (vs) vs.textContent = 'PRÊT (2D)';
+        return;
+      }
+
       const { renderer, scene, camera, ctrl } = viewer;
       const canvas = document.getElementById('stl-canvas');
       clearScene(scene);
 
-      if (mediaType === 'model/ply') {
-        const geo = new PLYLoader().parse(buf);
+      if (!isMesh) {
         frameGeometry(THREE, geo, camera, ctrl, renderer, canvas);
         scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
           color: 0x0284c7, size: 1.8, sizeAttenuation: true
         })));
       } else {
-        const geo = new STLLoader().parse(buf);
-        geo.computeVertexNormals();
-        geo.computeBoundingBox();
-        const size = new THREE.Vector3();
-        geo.boundingBox.getSize(size);
         frameGeometry(THREE, geo, camera, ctrl, renderer, canvas);
         scene.add(new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
           color: 0x059669, specular: 0x003311, shininess: 90, side: THREE.DoubleSide
         })));
-        if (kind === 'mesh' && typeof window.setResultGeometry === 'function') {
-          window.setResultGeometry([size.x, size.y, size.z], buf.byteLength);
-        }
       }
       if (vs) vs.textContent = 'PRÊT';
     } catch (err) {
@@ -308,6 +329,157 @@ document.addEventListener('DOMContentLoaded', function() {
       if (vs) vs.textContent = 'ERREUR';
     }
   };
+
+  // ----- Canvas-2D fallback (no WebGL) ------------------------------------
+  // Orthographic software renderer used when the browser cannot create a WebGL
+  // context. A mesh is drawn as solid shaded faces (painter's algorithm), a
+  // point cloud as depth-shaded dots. The view is orbited with the mouse
+  // (drag = rotate, wheel = zoom) — no auto-rotation.
+  function render2DFallback(geo, isMesh) {
+    const old = document.getElementById('stl-canvas');
+    if (!old) return;
+    // Replace the canvas to drop any failed WebGL context attempt and any
+    // listeners from a previous artifact.
+    const cvs = old.cloneNode(false);
+    old.parentNode.replaceChild(cvs, old);
+    const ph = document.getElementById('viewer-placeholder');
+    if (ph) ph.style.display = 'none';
+    cvs.style.display = 'block';
+    cvs.style.cursor = 'grab';
+
+    const ctx = cvs.getContext('2d');
+    const parent = cvs.parentElement;
+    const W = (parent && parent.clientWidth) || 640;
+    const H = (parent && parent.clientHeight) || 400;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cvs.width = Math.round(W * dpr);
+    cvs.height = Math.round(H * dpr);
+    ctx.scale(dpr, dpr);
+
+    const pos = geo.attributes.position.array;
+    const bb = geo.boundingBox;
+    const cx3 = (bb.min.x + bb.max.x) / 2;
+    const cy3 = (bb.min.y + bb.max.y) / 2;
+    const cz3 = (bb.min.z + bb.max.z) / 2;
+    const ext = Math.max(
+      bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z
+    ) || 1;
+    const radius = ext / 2;
+    const scaleBase = (0.75 * Math.min(W, H)) / ext;
+
+    // Decimated draw lists.
+    let triList = null, ptList = null;
+    if (isMesh) {
+      const ntri = Math.floor(pos.length / 9);
+      const maxT = 24000;
+      const stride = Math.max(1, Math.ceil(ntri / maxT));
+      triList = [];
+      for (let t = 0; t < ntri; t += stride) triList.push(t * 9);
+    } else {
+      const n = Math.floor(pos.length / 3);
+      const maxP = 22000;
+      const stride = Math.max(1, Math.ceil(n / maxP));
+      ptList = [];
+      for (let i = 0; i < n; i += stride) ptList.push(i * 3);
+    }
+
+    // View state (start from a pleasant iso angle).
+    let yaw = 0.6, pitch = 0.5, zoom = 1;
+    const lx = 0.42, ly = 0.66, lz = 0.62;  // light direction (normalised-ish)
+    const ln = Math.hypot(lx, ly, lz);
+
+    function rot(x, y, z) {
+      const cy = Math.cos(yaw), sy = Math.sin(yaw);
+      const xr = x * cy + z * sy;
+      const zr = -x * sy + z * cy;
+      const cp = Math.cos(pitch), sp = Math.sin(pitch);
+      const yr = y * cp - zr * sp;
+      const zr2 = y * sp + zr * cp;
+      return [xr, yr, zr2];
+    }
+
+    function render() {
+      const s = scaleBase * zoom, ox = W / 2, oy = H / 2;
+      ctx.fillStyle = '#eaf0f6';
+      ctx.fillRect(0, 0, W, H);
+
+      if (isMesh) {
+        const faces = [];
+        for (let k = 0; k < triList.length; k++) {
+          const b = triList[k];
+          const A = rot(pos[b] - cx3, pos[b + 1] - cy3, pos[b + 2] - cz3);
+          const B = rot(pos[b + 3] - cx3, pos[b + 4] - cy3, pos[b + 5] - cz3);
+          const C = rot(pos[b + 6] - cx3, pos[b + 7] - cy3, pos[b + 8] - cz3);
+          const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2];
+          const vx = C[0] - A[0], vy = C[1] - A[1], vz = C[2] - A[2];
+          let nx = uy * vz - uz * vy;
+          let ny = uz * vx - ux * vz;
+          let nz = ux * vy - uy * vx;
+          const nl = Math.hypot(nx, ny, nz) || 1;
+          nx /= nl; ny /= nl; nz /= nl;
+          if (nz <= 0) continue;  // back-face cull (viewer looks down +Z)
+          const diff = Math.max(0, (nx * lx + ny * ly + nz * lz) / ln);
+          const shade = 0.34 + 0.66 * diff;
+          faces.push({
+            d: (A[2] + B[2] + C[2]),
+            s: shade,
+            x0: ox + A[0] * s, y0: oy - A[1] * s,
+            x1: ox + B[0] * s, y1: oy - B[1] * s,
+            x2: ox + C[0] * s, y2: oy - C[1] * s,
+          });
+        }
+        faces.sort((p, q) => p.d - q.d);  // far first
+        for (let k = 0; k < faces.length; k++) {
+          const f = faces[k];
+          ctx.fillStyle = 'rgb(' +
+            Math.round(20 + 30 * f.s) + ',' +
+            Math.round(70 + 150 * f.s) + ',' +
+            Math.round(55 + 95 * f.s) + ')';
+          ctx.beginPath();
+          ctx.moveTo(f.x0, f.y0);
+          ctx.lineTo(f.x1, f.y1);
+          ctx.lineTo(f.x2, f.y2);
+          ctx.closePath();
+          ctx.fill();
+        }
+      } else {
+        for (let k = 0; k < ptList.length; k++) {
+          const b = ptList[k];
+          const P = rot(pos[b] - cx3, pos[b + 1] - cy3, pos[b + 2] - cz3);
+          const shade = 0.55 + 0.45 * Math.max(-1, Math.min(1, P[2] / radius));
+          ctx.fillStyle = 'rgb(' +
+            Math.round(2 * shade + 200 * (1 - shade)) + ',' +
+            Math.round(132 * shade + 215 * (1 - shade)) + ',' +
+            Math.round(199 * shade + 225 * (1 - shade)) + ')';
+          ctx.fillRect(ox + P[0] * s, oy - P[1] * s, 1.7, 1.7);
+        }
+      }
+    }
+
+    // Mouse / touch orbit + zoom.
+    let drag = false, px = 0, py = 0;
+    cvs.addEventListener('pointerdown', function (e) {
+      drag = true; px = e.clientX; py = e.clientY; cvs.style.cursor = 'grabbing';
+      if (cvs.setPointerCapture) cvs.setPointerCapture(e.pointerId);
+    });
+    cvs.addEventListener('pointerup', function () { drag = false; cvs.style.cursor = 'grab'; });
+    cvs.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      yaw += (e.clientX - px) * 0.01;
+      pitch += (e.clientY - py) * 0.01;
+      pitch = Math.max(-1.45, Math.min(1.45, pitch));
+      px = e.clientX; py = e.clientY;
+      render();
+    });
+    cvs.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      zoom *= (e.deltaY < 0 ? 1.12 : 0.89);
+      zoom = Math.max(0.25, Math.min(8, zoom));
+      render();
+    }, { passive: false });
+
+    render();
+  }
 
   window._loadModel = function () {
     window._loadArtifact('mesh', 'model/stl');

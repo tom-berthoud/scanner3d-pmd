@@ -7,10 +7,12 @@ camera hardware.
 
 import logging
 import math
+import os
 import time
 from typing import Optional
 
 import numpy as np
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -18,57 +20,106 @@ logger = logging.getLogger(__name__)
 # Mock geometry constants
 # --------------------------------------------------------------------------- #
 
-_CUBE_HALF_MM = 35.0        # virtual cube half-side length
-
 _IMAGE_WIDTH = 640
 _IMAGE_HEIGHT = 480
 
-# Laser / camera geometry — must match config/laser_plane.yaml and
-# config/camera_intrinsics.yaml (reference resolution 640×480).
-_LASER_A = 0.5
-_LASER_C = 0.866
-_LASER_D = -259.8   # plane: 0.5·x + 0.866·z = 259.8
-_TURNTABLE_Z = 300.0  # object centre Z in camera frame (mm)
-_REF_W = 640.0
-_REF_H = 480.0
-_REF_FX = 800.0
+# Half-thickness (mm) of the laser sheet used to select illuminated points.
+_LASER_SLICE_MM = 0.7
+# Virtual cube standing on the turntable, centred on the rotation axis.
+_CUBE_HALF_MM = 30.0      # half side length
+_CUBE_HEIGHT_MM = 60.0    # base at y=0, top face at y=60
+_CUBE_STEP_MM = 0.8       # surface sampling resolution
+
+
+def _build_surface() -> np.ndarray:
+    """Tessellate a cube standing on the turntable as an ``(N, 3)`` array.
+
+    The object frame is the turntable-fixed frame used by ``triangulate`` after
+    un-rotation: ``+Y`` is the vertical rotation axis. The cube base sits at
+    ``y = 0`` and is centred on the axis. The four vertical faces and the top
+    face are sampled (the bottom rests on the turntable and is never seen).
+    """
+    h = _CUBE_HALF_MM
+    top = _CUBE_HEIGHT_MM
+    n = max(2, int(round((2.0 * h) / _CUBE_STEP_MM)) + 1)
+    ny = max(2, int(round(top / _CUBE_STEP_MM)) + 1)
+    u = np.linspace(-h, h, n)
+    yv = np.linspace(0.0, top, ny)
+
+    parts = []
+    # Top face (y = top).
+    gx, gz = np.meshgrid(u, u)
+    parts.append(np.stack([gx.ravel(), np.full(gx.size, top), gz.ravel()], axis=1))
+    # Four vertical faces.
+    gy, gt = np.meshgrid(yv, u)
+    gy = gy.ravel()
+    gt = gt.ravel()
+    parts.append(np.stack([np.full(gy.size, h), gy, gt], axis=1))    # x = +h
+    parts.append(np.stack([np.full(gy.size, -h), gy, gt], axis=1))   # x = -h
+    parts.append(np.stack([gt, gy, np.full(gy.size, h)], axis=1))    # z = +h
+    parts.append(np.stack([gt, gy, np.full(gy.size, -h)], axis=1))   # z = -h
+    return np.vstack(parts).astype(np.float64)
 
 
 class MockCamera:
-    """Simulated Pi Camera Module 3.
+    """Simulated camera with a geometrically exact synthetic laser line.
 
-    Generates synthetic BGR images with a geometrically correct green laser
-    line on a virtual **cube** placed on a turntable. The geometry is fully
-    consistent with the triangulation pipeline.
+    Renders the green laser line as the **forward projection** of a virtual
+    cube: for the current turntable angle, the points of the cube that
+    lie on the laser plane are projected through the camera's real calibration
+    (intrinsics + distortion + extrinsics). This is the exact inverse of
+    :func:`scanner.processing.triangulation.triangulate`, so accumulating the
+    frames over a full rotation reconstructs the piece in the platform frame —
+    and the two configured cameras agree on a single shared object.
+
+    When no usable per-camera calibration is available (e.g. a bare
+    ``MockCamera(config)`` without ``camera_id``), it falls back to a simple
+    synthetic frame so the API never breaks.
 
     Args:
-        config: Camera configuration dict. The ``mock_shape`` key is accepted
-            for API parity but the mock always renders a cube.
+        config: Camera configuration dict (resolution, exposure …).
+        camera_id: Camera id used to load the matching calibration.
+        full_config: Full settings dict, required to load the camera model.
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(
+        self,
+        config: dict,
+        camera_id: Optional[str] = None,
+        full_config: Optional[dict] = None,
+    ) -> None:
         res = config.get("resolution", [_IMAGE_WIDTH, _IMAGE_HEIGHT])
         self._width: int = int(res[0])
         self._height: int = int(res[1])
         self._exposure_us: int = int(config.get("exposure_us", 5000))
         self._gain: float = float(config.get("gain", 1.0))
-        # Only the cube is supported; kept for API parity / get_info reporting.
         self._shape: str = "cube"
-        # Shared angle reference — updated by MockMotor via hardware.__init__
+        self._camera_id: Optional[str] = str(camera_id) if camera_id is not None else None
+        self._full_config: Optional[dict] = full_config
         self._rotation_angle_rad: float = 0.0
+
+        # Lazily-loaded geometric model (calibration + virtual surface).
+        self._model_loaded: bool = False
+        self._geometric: bool = False
+        self._K: Optional[np.ndarray] = None
+        self._dist: Optional[np.ndarray] = None
+        self._R: Optional[np.ndarray] = None
+        self._t: Optional[np.ndarray] = None
+        self._plane: Optional[np.ndarray] = None
+        self._axis: np.ndarray = np.zeros(3, dtype=np.float64)
+        self._surface: Optional[np.ndarray] = None
+
         logger.debug(
-            "MockCamera initialised (%dx%d, shape=cube, exposure=%d µs)",
+            "MockCamera initialised (%dx%d, id=%s, exposure=%d µs)",
             self._width,
             self._height,
+            self._camera_id,
             self._exposure_us,
         )
 
+    # ------------------------------------------------------------------ API
     def set_rotation_angle(self, angle_rad: float) -> None:
-        """Set the current rotation angle used for laser line simulation.
-
-        Args:
-            angle_rad: Rotation angle in radians.
-        """
+        """Set the current turntable rotation angle used for the laser profile."""
         self._rotation_angle_rad = angle_rad
 
     def set_exposure(self, exposure_us: int, gain: Optional[float] = None) -> None:
@@ -108,95 +159,144 @@ class MockCamera:
             },
         }
 
-    def capture(self) -> np.ndarray:
-        """Generate a synthetic BGR image with a geometrically correct laser line.
+    # ------------------------------------------------------------- rendering
+    def _ensure_model(self) -> None:
+        """Load this camera's calibration and the virtual surface (once)."""
+        if self._model_loaded:
+            return
+        self._model_loaded = True
+        if self._full_config is None or self._camera_id is None:
+            logger.info(
+                "MockCamera %s: no calibration context, using flat fallback render",
+                self._camera_id,
+            )
+            return
+        try:
+            from scanner.calibration import load_camera_model
 
-        For each image column, casts a ray through the laser plane to find the
-        3-D surface point of the virtual cube, then projects the bright green
-        laser reflection onto the image. The geometry is fully consistent with
-        ``triangulate()``: accumulated over the rotation steps it reconstructs
-        the cube in world space. The cube rotates on the turntable, so the
-        visible laser profile changes with ``_rotation_angle_rad``.
+            K, dist, plane, R, t = load_camera_model(self._full_config, self._camera_id)
+            self._K = np.asarray(K, dtype=np.float64)
+            self._dist = np.asarray(dist, dtype=np.float64).reshape(-1)
+            self._R = np.asarray(R, dtype=np.float64)
+            self._t = np.asarray(t, dtype=np.float64).reshape(3)
+            self._plane = np.asarray(plane, dtype=np.float64).reshape(4)
+            self._axis = self._load_axis_point()
+            self._surface = _build_surface()
+            self._geometric = True
+            logger.info("MockCamera %s: geometric render enabled", self._camera_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "MockCamera %s: calibration unavailable (%s), using flat fallback",
+                self._camera_id,
+                exc,
+            )
+
+    def _load_axis_point(self) -> np.ndarray:
+        """Read the turntable rotation-axis point from config/platform.yaml."""
+        here = os.path.dirname(__file__)
+        path = os.path.join(here, "..", "..", "config", "platform.yaml")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    data = yaml.safe_load(fh) or {}
+                ap = data.get("rotation_axis_point_mm")
+                if ap is not None:
+                    return np.asarray(ap, dtype=np.float64).reshape(3)
+            except Exception:  # pragma: no cover - defensive
+                pass
+        return np.zeros(3, dtype=np.float64)
+
+    def capture(self) -> np.ndarray:
+        """Generate a synthetic BGR frame with the laser line on the virtual piece.
 
         Returns:
             BGR image of shape (H, W, 3), dtype uint8.
         """
-        frame = np.zeros((self._height, self._width, 3), dtype=np.uint8)
-        noise = np.random.randint(0, 8, (self._height, self._width, 3), dtype=np.uint8)
-        frame += noise
+        self._ensure_model()
+        height, width = self._height, self._width
+        frame = np.random.randint(0, 8, (height, width, 3), dtype=np.uint8)
 
-        # Camera intrinsics scaled to actual resolution (reference: 800 @ 640×480)
-        fx = _REF_FX * (self._width / _REF_W)
-        fy = _REF_FX * (self._height / _REF_H)
-        img_cx = self._width / 2.0
-        img_cy = self._height / 2.0
+        if not self._geometric:
+            return self._fallback_render(frame)
 
-        theta = self._rotation_angle_rad  # current turntable angle
+        assert self._surface is not None and self._plane is not None
+        assert self._R is not None and self._t is not None and self._K is not None
 
-        for u_px in range(self._width):
-            x_n = (u_px - img_cx) / fx
-            # t = depth to laser plane (b=0 ⟹ independent of y_n)
-            denom = _LASER_A * x_n + _LASER_C
-            if abs(denom) < 1e-9:
-                continue
-            t = -_LASER_D / denom
-            if t <= 0.0:
-                continue
-            x_cam = t * x_n
-            z_cam = t
+        theta = float(self._rotation_angle_rad)
+        cos_t, sin_t = math.cos(theta), math.sin(theta)
+        # P_platform = axis + Ry(-theta) @ P_object  (inverse of triangulate)
+        ry_t = np.array(
+            [[cos_t, 0.0, -sin_t], [0.0, 1.0, 0.0], [sin_t, 0.0, cos_t]],
+            dtype=np.float64,
+        )
+        p_platform = self._axis + (ry_t @ self._surface.T).T
 
-            y_cam = self._surface_y(x_cam, z_cam, theta)
-            if y_cam is None:
-                continue
+        # Keep only points lying within the thin laser sheet.
+        normal = self._plane[:3]
+        residual = p_platform @ normal + self._plane[3]
+        in_sheet = np.abs(residual) < _LASER_SLICE_MM
+        p_platform = p_platform[in_sheet]
+        if p_platform.shape[0] == 0:
+            return frame
 
-            v_f = fy * (y_cam / z_cam) + img_cy
-            row = int(round(v_f))
-            if 0 <= row < self._height:
-                for dr in range(-3, 4):
-                    r = row + dr
-                    if 0 <= r < self._height:
-                        intensity = int(220 * math.exp(-0.5 * (dr / 1.5) ** 2))
-                        frame[r, u_px, 1] = min(255, intensity)
+        # Project into the camera frame: P_cam = R^T (P_platform - t).
+        p_cam = (self._R.T @ (p_platform - self._t).T).T
+        front = p_cam[:, 2] > 1e-3
+        p_cam = p_cam[front]
+        if p_cam.shape[0] == 0:
+            return frame
+
+        import cv2  # type: ignore[import]
+
+        uv, _ = cv2.projectPoints(
+            p_cam.reshape(-1, 1, 3),
+            np.zeros(3, dtype=np.float64),
+            np.zeros(3, dtype=np.float64),
+            self._K,
+            self._dist,
+        )
+        uv = uv.reshape(-1, 2)
+        depth = p_cam[:, 2]
+
+        cols = np.round(uv[:, 0]).astype(np.int64)
+        rows = uv[:, 1]
+        valid = (cols >= 0) & (cols < width) & (rows >= -4.0) & (rows < height + 4.0)
+        cols, rows, depth = cols[valid], rows[valid], depth[valid]
+
+        # Occlusion: keep the nearest surface point per image column (front face).
+        nearest: dict[int, float] = {}
+        nearest_depth: dict[int, float] = {}
+        for u_px, v_px, d in zip(cols.tolist(), rows.tolist(), depth.tolist()):
+            if u_px not in nearest_depth or d < nearest_depth[u_px]:
+                nearest_depth[u_px] = d
+                nearest[u_px] = v_px
+
+        for u_px, v_px in nearest.items():
+            row = int(round(v_px))
+            for dr in range(-3, 4):
+                r = row + dr
+                if 0 <= r < height:
+                    intensity = int(220 * math.exp(-0.5 * (dr / 1.5) ** 2))
+                    frame[r, u_px, 1] = min(255, max(int(frame[r, u_px, 1]), intensity))
 
         logger.debug(
-            "MockCamera.capture() → frame %dx%d shape=cube angle=%.3f rad",
-            self._width,
-            self._height,
+            "MockCamera.capture() id=%s → %d lit columns at angle=%.3f rad",
+            self._camera_id,
+            len(nearest),
             theta,
         )
         return frame
 
-    def _surface_y(self, x_cam: float, z_cam: float, theta: float) -> Optional[float]:
-        """Return the upper-surface Y coordinate (mm) of the cube at a laser-plane point.
-
-        The point (x_cam, ?, z_cam) lies on the laser plane. This method finds
-        the Y value of the cube surface at that (X, Z) position in world
-        coordinates (after un-rotating the turntable by *theta*).
-
-        Args:
-            x_cam: X coordinate of the laser-plane point in camera frame (mm).
-            z_cam: Z coordinate of the laser-plane point in camera frame (mm).
-            theta: Current turntable rotation angle (radians).
-
-        Returns:
-            Y coordinate (mm, top face) or ``None`` if the laser ray misses the
-            cube at this column.
-        """
-        # Un-rotate from camera frame to object/world frame.
-        # P_world = R(−θ) @ (P_cam − T)  where T = [0, 0, _TURNTABLE_Z]
-        cos_t = math.cos(theta)
-        sin_t = math.sin(theta)
-        dx = x_cam
-        dz = z_cam - _TURNTABLE_Z
-        x_w = cos_t * dx + sin_t * dz
-        z_w = -sin_t * dx + cos_t * dz
-
-        # Cube (half-side H, centred at world origin, aligned with axes).
-        # Top face at y = H; sides appear when the laser crosses an edge.
-        H = _CUBE_HALF_MM
-        if abs(x_w) > H or abs(z_w) > H:
-            return None  # outside cube footprint
-        return H
+    def _fallback_render(self, frame: np.ndarray) -> np.ndarray:
+        """Simple horizontal laser line when no calibration is available."""
+        row = self._height // 2
+        for u_px in range(self._width):
+            for dr in range(-3, 4):
+                r = row + dr
+                if 0 <= r < self._height:
+                    intensity = int(200 * math.exp(-0.5 * (dr / 1.5) ** 2))
+                    frame[r, u_px, 1] = min(255, intensity)
+        return frame
 
 
 class MockMotor:

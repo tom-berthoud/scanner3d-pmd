@@ -101,7 +101,8 @@ def init_hardware(config: dict) -> None:
             }
             _failed_camera_configs = {}
             _camera_instances = {
-                camera_id: MockCamera(cam_cfg) for camera_id, cam_cfg in _camera_configs.items()
+                camera_id: MockCamera(cam_cfg, camera_id=camera_id, full_config=config)
+                for camera_id, cam_cfg in _camera_configs.items()
             }
             _motor_instance = MockMotor(config.get("motor", {}))
             _laser_instance = MockLaser(config.get("laser", {}))
