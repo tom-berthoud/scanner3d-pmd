@@ -10,9 +10,9 @@ mobiles ainsi qu'au faisceau laser.
 
 Le prototype final comprend une boîte découpée au laser et refermable, un
 plateau rotatif découpé au laser, un moteur pas-à-pas, un support de laser
-imprimé en 3D et \textbf{deux supports de caméra} imprimés en 3D. Les deux
-caméras sont montées de part et d'autre du laser, placé dans un angle du
-caisson, avec des azimuts d'environ $-25^\circ$ et $+33^\circ$. Cette
+imprimé en 3D et deux supports de caméra imprimés en 3D. Les deux
+caméras sont montées de part et d'autre du laser, placé dans un angle de
+la boîte, avec des azimuts d'environ $-25^\circ$ et $+33^\circ$. Cette
 disposition résulte de la calibration et des essais de regroupement des
 nuages de points (FT4 / E12).
 
@@ -43,7 +43,7 @@ Le système s'organise autour de trois sous-ensembles :
         cycles de scan.
   \item \textbf{Bâti de mesure} : supporte les deux caméras et le
         module laser ligne vert dans une géométrie fixe. Le laser est
-        positionné dans un angle du caisson et les caméras sont placées
+        positionné dans un angle de la boîte et les caméras sont placées
         de part et d'autre de son plan.
         Les supports imprimés en 3D constituent une solution adaptée au
         projet : ils permettent de positionner rapidement les éléments
@@ -63,25 +63,6 @@ nécessaire pour accueillir la pièce, les distances optiques requises
 pour la triangulation, le placement des composants électroniques et la
 contrainte de taille raisonnable pour le MakeLab (E21).
 
-Conformément au périmètre fonctionnel \textbf{E23}, le système cible
-les pièces simples :
-
-\begin{itemize}
-  \item sans cavité fermée ou profonde non accessible par les lignes de
-        vue caméra/laser ;
-  \item sans contre-dépouille supérieure à $45^\circ$ par rapport à
-        l'axe de rotation ;
-  \item avec une surface suffisamment visible par la caméra et la ligne
-        laser.
-\end{itemize}
-
-Les essais sur pièce rectangulaire montrent une limite importante de la
-configuration mono-caméra : lorsque le laser passe sur un angle, la
-surface éclairée peut être masquée par une face de l'objet. Dans ce cas,
-la caméra ne voit plus la ligne laser, même si le laser atteint bien la
-pièce. Cette limite est physique et ne peut pas être corrigée uniquement
-par logiciel.
-
 \subsection{Choix des matériaux et fabrication}
 
 Le prototype utilise principalement deux types de matériaux et procédés de
@@ -100,6 +81,43 @@ Ces supports sont fabriqués par impression 3D en PLA. Ce procédé permet une
 fabrication rapide au MakeLab, un coût faible et une adaptation précise aux
 composants retenus. Le PLA est inerte, non toxique (E17), léger et
 suffisamment rigide pour les supports réalisés.
+
+\subsection{Gravure et marquages}
+
+La face avant de la boîte a été gravée au laser lors de la découpe des
+panneaux MDF. Ces marquages, réalisés dans le même procédé que la
+découpe, ne nécessitent aucune pièce supplémentaire et restent durables
+dans le temps. Ils remplissent deux rôles : l'identification du projet et
+le guidage de l'utilisateur.
+
+\begin{itemize}
+  \item \textbf{Logos} : les logos de la HEIG-VD et de la HES-SO sont
+        gravés sur la face avant afin d'identifier l'origine du projet.
+  \item \textbf{Avertissement laser} : un pictogramme de danger laser est
+        gravé pour signaler la présence du faisceau et compléter les
+        mesures de sécurité (\textbf{E19}).
+  \item \textbf{Bouton d'alimentation général} : un marquage indique le
+        bouton de mise sous et hors tension de l'ensemble du système.
+  \item \textbf{Emplacement de la clé USB} : un repère gravé indique
+        l'endroit où insérer la clé USB pour récupérer les fichiers
+        exportés.
+  \item \textbf{Connexion au réseau} : un marquage indique l'adresse ou
+        l'emplacement permettant de se connecter au réseau du scanner
+        pour accéder à l'interface web.
+\end{itemize}
+
+Ces gravures rendent le prototype directement utilisable sans
+documentation externe : l'utilisateur identifie d'un coup d'\oe il les
+points d'interaction (alimentation, clé USB, réseau) ainsi que la
+consigne de sécurité liée au laser.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\linewidth]{images/boitefinalexterieur.jpg}
+  \caption{Face avant de la boîte avec les gravures laser : logos,
+  avertissement laser et repères des points d'interaction.}
+  \label{fig:gravure}
+\end{figure}
 
 \subsection{Dimensionnement et stabilité}
 
