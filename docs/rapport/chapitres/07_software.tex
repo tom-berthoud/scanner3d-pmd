@@ -179,9 +179,10 @@ La machine d'états couvre l'attente et la calibration
 
 Le serveur empêche deux scans concurrents. Lors d'une erreur, l'orchestration
 éteint le laser avant de demander l'état \texttt{ERROR}. L'interlock vérifie
-le capot avant et juste après la mise sous tension du laser. Il s'agit d'un
-contrôle synchrone, et non d'une interruption surveillée en continu. Les
-commandes manuelles disposent également d'une action de mise en sécurité.
+le capot avant et juste après la mise sous tension du laser. Un watchdog
+logiciel interroge également le capteur toutes les 100\,ms et force
+l'extinction du laser lorsque le capot est ouvert. Les commandes manuelles
+disposent également d'une action de mise en sécurité.
 
 \subsection{Interface}
 
@@ -200,6 +201,46 @@ d'utilisation courant.
   \caption{Page principale de l'interface web en mode utilisateur.}
   \label{fig:interface}
 \end{figure}
+
+\subsection{Intégration au Raspberry Pi et services}
+
+Le logiciel est installé sur Raspberry Pi OS 64 bits dans le dépôt du projet.
+Ses dépendances Python sont isolées dans un environnement virtuel
+\texttt{.venv}. Le point d'entrée de production est la commande
+\texttt{python -m scanner.interface.web}, exécutée avec l'interpréteur de cet
+environnement. Au démarrage, l'application charge
+\texttt{config/settings.yaml}, initialise les pilotes matériels, construit la
+machine d'états et démarre le watchdog du capteur de capot.
+
+Le lancement automatique est assuré par une unité \texttt{systemd} nommée
+\texttt{scanner}. Elle démarre l'application après l'initialisation du réseau,
+utilise le dossier du projet comme répertoire de travail et relance le
+processus en cas d'échec. L'activation dans la cible
+\texttt{multi-user.target} rend l'interface disponible après le démarrage du
+Raspberry Pi. Le service est redémarré et inspecté avec \texttt{systemctl};
+ses journaux sont accessibles avec \texttt{journalctl}. Le \texttt{Makefile}
+regroupe ces opérations dans les commandes \texttt{pi-restart},
+\texttt{pi-status} et \texttt{pi-logs}.
+
+Le serveur Flask écoute sur toutes les interfaces réseau
+(\texttt{0.0.0.0}) au port 5000. Il sert localement les pages, les feuilles de
+style, Three.js et les autres ressources front-end, ce qui permet une
+utilisation hors ligne. Sur la liaison Ethernet directe, le Raspberry Pi
+utilise l'adresse fixe \texttt{192.168.55.1}. Son service DHCP attribue
+automatiquement une adresse au PC connecté, qui accède ensuite à l'interface
+sur \texttt{http://192.168.55.1:5000}.
+
+Une demande de scan crée un thread de travail séparé: le serveur reste
+disponible pour transmettre l'état, la progression et les artefacts par SSE
+pendant que l'orchestration pilote le matériel et le traitement.
+
+En exploitation, seules les fonctions utilisateur sont accessibles. Les pages
+de calibration, d'extrinsèques, de configuration des caméras et de commande
+manuelle sont protégées par un verrou logiciel. Le script
+\texttt{scripts/scanner-eng.sh} crée ou supprime un fichier sentinelle dans
+\texttt{/tmp}; la modification est prise en compte sans redémarrer le service.
+Comme ce fichier temporaire disparaît au redémarrage du Raspberry Pi,
+l'interface revient automatiquement au mode utilisateur.
 
 \subsection{Limites logicielles}
 

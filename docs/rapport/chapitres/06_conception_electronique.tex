@@ -1,9 +1,9 @@
 \newpage
-\section{Conception Électronique}
+\section{Conception électrique et électronique}
 \label{sec:conception_electronique}
 
-Cette section présente la conception et la réalisation de la partie électronique du scanner 3D. 
-L'objectif principal de cette l'architecture est d'assurer la distribution de l'alimentation électrique, de piloter les différents actionneurs avec précision et de centraliser l'acquisition des données des capteurs.
+Cette section présente la conception et la réalisation des parties électrique et électronique du scanner 3D. 
+L'objectif principal de cette architecture est d'assurer la distribution de l'alimentation électrique, de piloter les différents actionneurs avec précision et de centraliser l'acquisition des données des capteurs.
 La démarche présentée va du choix des composants à leur intégration physique, en passant par la conception des schémas électriques et la réalisation de circuits imprimés dédiés, tout en intégrant les éléments de sécurité indispensables à l'utilisation du système.
 
 
@@ -49,12 +49,17 @@ Afin de limiter les phénomènes d'occultation lors de la numérisation, deux ca
 \end{itemize}
 
 \subsubsection{Éclairage structuré et motorisation}
-Le choix de la source lumineuse s'est arrêté sur le laser \textbf{VLM-520-56 LPO-D45-F40}. 
-Sa longueur d'onde de 520\,nm (spectre vert) offre un avantage métrologique majeur. 
-Comme le montre la courbe de réponse spectrale du capteur de la caméra (figure~\ref{fig:sensibilite_spectrale}), le canal vert atteint son maximum absolu de sensibilité précisément autour de cette longueur d'onde. 
-Cette adéquation parfaite permet d'obtenir un excellent contraste et simplifie grandement l'étape logicielle d'extraction de la ligne laser au milieu du bruit visuel. 
+Le choix de la source lumineuse s'est arrêté sur le laser
+\textbf{VLM-520-56 LPO-D45-F40}. La fiche du fabricant classe la variante LPO
+de cette série en classe 1M et indique une longueur d'onde comprise entre 515
+et 530\,nm~\cite{quarton_vlm52056}. Cette émission verte correspond à une zone
+de forte sensibilité du canal vert de la caméra, comme l'illustre la
+figure~\ref{fig:sensibilite_spectrale}. Cette association fournit un contraste
+élevé et facilite l'extraction logicielle de la ligne laser.
 
-De plus, ce module laser intègre nativement une lentille de focalisation réglable, ce qui garantit une ligne fine et nette à la distance de travail spécifique du scanner.
+Le module utilise des lentilles en verre pour la collimation et la génération
+de la ligne. Sa focalisation à 40\,cm est adaptée à la distance de travail du
+scanner et permet d'obtenir une ligne suffisamment fine pour la détection.
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.6\linewidth]{images/sensibilite_capteur.png}
@@ -64,7 +69,7 @@ De plus, ce module laser intègre nativement une lentille de focalisation régla
 
 Pour la partie motrice, le couple formé par le moteur \textbf{NEMA 17} et le driver \textbf{Leadshine DM320T} (disponibles au MakeLab) répond aux exigences de couple nécessaires pour faire tourner le plateau sans glissement, tout en offrant la précision angulaire requise grâce aux réglages des micro-pas sur le driver.
 
-\subsubsection{Interface utilisateur (Ecran tactile)}
+\subsubsection{Interface utilisateur (Écran tactile)}
 L'affichage local est confié au \textbf{Raspberry Pi Touch Display 2} de 7 pouces. Sa diagonale offre une surface d'affichage idéale pour présenter l'ensemble des menus de contrôle et les retours d'état du scanner. La dalle tactile capacitive est d'une sensibilité suffisante pour assurer une navigation fluide à travers les différentes pages de l'interface utilisateur.
 
 \subsubsection{Alimentation et organes de sécurité}
@@ -110,7 +115,7 @@ La seconde page du schéma centralise le Raspberry Pi 4, qui fait office de nœu
 \begin{itemize}
     \item \textbf{Commande du laser et commutation \textit{Low-Side} :} Le module laser \texttt{VLM-520} est alimenté par le rail 5\,Vdc issu du convertisseur Buck. Sa ligne de masse (0\,V) passe à travers le PCB MOSFET. Lorsque le GPIO du Raspberry Pi s'active, le transistor effectue une mise à la masse (\textit{pull to 0V}), fermant le circuit et allumant le laser.
     \item \textbf{Commande du driver moteur \texttt{DM320T} :} Les signaux de commande angulaire (\textit{Pulse}, \textit{Direction}, \textit{Enable}) utilisent le même principe de commutation par MOSFET tirant au 0\,V. Du côté du driver, les broches d'entrées optocouplées (\texttt{OPTO}) sont reliées en permanence au rail 5\,Vdc. Cette configuration garantit un signal net et franc pour le déclenchement des optocoupleurs internes du driver, tout en protégeant les sorties du Raspberry Pi. Les 4 fils de phase du moteur \texttt{NEMA 17} sont quant à eux raccordés directement sur les sorties de puissance du \texttt{DM320T}.
-    \item \textbf{Boucle du capteur de capot :} Le microswitch de sécurité est câblé de manière directe et minimale. Un fil est connecté à une broche d'alimentation 3,3\,Vdc du Raspberry Pi, et le second retourne directement sur une broche GPIO configurée en entrée. L'état logique de la ligne permet ainsi de détecter instantanément l'ouverture de la porte.
+    \item \textbf{Boucle du capteur de capot :} Le microswitch de sécurité est câblé de manière directe et minimale. Un fil est connecté à une broche d'alimentation 3,3\,Vdc du Raspberry Pi, et le second retourne directement sur une broche GPIO configurée en entrée. L'état logique de la ligne permet ainsi de détecter l'ouverture de la porte. Le logiciel vérifie le capteur avant l'activation du laser et un watchdog le surveille toutes les 100\,ms pendant le fonctionnement.
     \item \textbf{Acquisition et affichage :} Le système de vision (nappe de la Pi Camera, câble de la caméra Arducam USB) ainsi que la nappe DSI de l'écran tactile de 7 pouces sont connectés directement sur leurs ports natifs respectifs du Raspberry Pi.
 \end{itemize}
 
@@ -130,7 +135,7 @@ Pour permettre une utilisation et une maintenance aisées du scanner une fois le
 \end{figure}
 
 
-\subsection{Réalisation et Intégration}
+\subsection{Réalisation et intégration}
 \label{subsec:integration}
 
     \subsubsection{Conception des circuits imprimés (PCB)}
@@ -218,7 +223,7 @@ Pour permettre une utilisation et une maintenance aisées du scanner une fois le
     \paragraph{Gestion et guidage des câbles}
     Les nappes plates d'affichage (DSI) et de caméra (CSI) étant particulièrement fragiles et sensibles aux rayons de courbure trop faibles, un système de fixation dédié a été développé. Des goulottes de guidage ont été conçues sur mesure et réalisées en impression 3D (voir figure~\ref{fig:goulotte_3d}).
 
-    Ces canaux sur mesure remplissent trois fonctions essentielles :
+    Ces canaux sur mesure remplissent deux fonctions essentielles :
     \begin{itemize}
         \item \textbf{Sécurité mécanique :} Ils confinent les câbles d'alimentation et de signaux contre les parois, éliminant tout risque qu'un fil ne vienne s'enrouler autour de l'axe du moteur ou ne bloque le plateau rotatif en mouvement.
         \item \textbf{Esthétique et clarté :} Le rendu final (visible sur la vue d'ensemble de la figure~\ref{fig:photo_composants}) offre un espace de travail propre, indispensable pour faciliter les interventions de maintenance.
