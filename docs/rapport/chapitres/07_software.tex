@@ -21,6 +21,31 @@ reconstruction du maillage par une méthode de Poisson assortie d'un
 nettoyage géométrique. Le logiciel produit aujourd'hui un fichier STL
 livrable depuis l'interface web sur l'ensemble de la chaîne réelle.
 
+\subsection{Géométrie de la triangulation}
+
+Le principe de mesure repose sur la \textbf{triangulation laser}. Le laser
+projette un plan lumineux vertical passant par l'axe de rotation du plateau~;
+ce plan se déforme en une ligne sur la surface de l'objet. Chaque caméra,
+décalée latéralement par rapport au plan laser, observe cette ligne sous un
+angle~: la position d'un point laser dans l'image dépend alors directement de
+sa distance à l'axe. 
+
+
+\begin{figure}[H]
+  \centering
+  \resizebox{0.62\linewidth}{!}{\input{schemas/vue_dessus.tex}}
+  \caption{Géométrie caméra / laser / plateau, vue de dessus~: les deux caméras
+  encadrent le plan laser sous des angles dissymétriques ($25^\circ$ pour la
+  caméra Pi, $33^\circ$ pour la caméra USB), ce qui maximise la couverture des
+  zones cachées.}
+  \label{fig:geo-triangulation}
+\end{figure}
+
+Cette double observation est précisément ce qui distingue le montage de la
+plupart des scanners laser open-source mono-caméra~: la seconde caméra, placée
+de l'autre côté du plan laser, voit les facettes occultées pour la première
+(cf.~\autoref{fig:occultation-camera}).
+
 \subsection{Architecture logicielle}
 
 L'architecture est modulaire : chaque responsabilité est isolée dans un

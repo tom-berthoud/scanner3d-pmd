@@ -1,0 +1,42 @@
+% Vue de dessus de la géométrie caméra / laser / plateau.
+% Adapté de la présentation intermédiaire (schemas/deux_cameras.tex) à la
+% configuration finale : deux caméras présentes, aux azimuts réels mesurés.
+\begin{tikzpicture}[scale=0.72, every node/.style={font=\scriptsize}]
+  \draw[fill=softblue,draw=linegray] (0,0) rectangle (7.0,5.0);
+  \node[deepblue,font=\small\bfseries] at (3.5,4.65) {vue de dessus};
+
+  % Plateau rotatif.
+  \draw[fill=white,draw=mutedgray,thick] (3.5,2.45) circle (1.25);
+  \node[mutedgray,font=\tiny] at (3.5,1.00) {plateau};
+
+  % Objet anguleux sur le plateau (vu de dessus).
+  \begin{scope}[shift={(3.5,2.45)},rotate=28]
+    \draw[fill=white,draw=deepblue,thick] (-0.42,-0.42) rectangle (0.42,0.42);
+  \end{scope}
+
+  \coordinate (O) at (3.5,2.45);
+  \coordinate (cam1) at ($(O)+(155:2.05)$);
+  \coordinate (cam2) at ($(O)+(213:2.05)$);
+
+  % Source laser et plan laser passant par l'axe (côté gauche).
+  \draw[fill=white,draw=lasergreen,thick] (0.30,2.27) rectangle (0.65,2.63);
+  \draw[lasergreen,very thick] (0.65,2.45) -- (3.30,2.45);
+  \draw[lasergreen,very thick,dashed,opacity=0.55] (3.30,2.45) -- (5.30,2.45);
+  \node[lasergreen,font=\scriptsize\bfseries] at (1.05,2.12) {plan laser};
+
+  % Caméra Pi (CSI), -25 deg par rapport au plan laser.
+  \draw[deepblue,very thick,opacity=0.55] (O) -- (cam1);
+  \fill[deepblue] (cam1) circle (0.14);
+  \draw[deepblue,very thick] (cam1) circle (0.21);
+  \node[deepblue,font=\scriptsize\bfseries,anchor=south east] at ($(cam1)+(-0.18,0.05)$) {Caméra Arducam};
+  \draw[deepblue,thick] ($(O)+(180:0.95)$) arc (180:155:0.95);
+  \node[deepblue,font=\tiny] at ($(O)+(168:1.36)$) {$25^\circ$};
+
+  % Caméra USB, +33 deg par rapport au plan laser.
+  \draw[heigred,very thick,opacity=0.55] (O) -- (cam2);
+  \fill[heigred] (cam2) circle (0.14);
+  \draw[heigred,very thick] (cam2) circle (0.21);
+  \node[heigred,font=\scriptsize\bfseries,anchor=north east] at ($(cam2)+(-0.18,-0.05)$) {Caméra PI };
+  \draw[heigred,thick] ($(O)+(180:0.95)$) arc (180:213:0.95);
+  \node[heigred,font=\tiny] at ($(O)+(201:1.42)$) {$33^\circ$};
+\end{tikzpicture}
