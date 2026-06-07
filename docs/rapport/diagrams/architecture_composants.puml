@@ -44,7 +44,6 @@ package "Abstraction matérielle" {
   [Moteur pas-à-pas] as hw_motor
   [Laser] as hw_laser
   [Capteur capot] as hw_door
-  [Mock (dev)] as hw_mock
 }
 
 database "Configuration\n(YAML)" as cfg
@@ -72,9 +71,5 @@ calib_laser ..> cfg
 calib_ext ..> cfg
 calib_plat ..> cfg
 tri ..> cfg : lecture seule
-hw_cam .[#gray].> hw_mock : fallback
-hw_usb .[#gray].> hw_mock : fallback
-hw_motor .[#gray].> hw_mock : fallback
-hw_laser .[#gray].> hw_mock : fallback
 
 @enduml

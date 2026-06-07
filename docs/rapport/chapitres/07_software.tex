@@ -4,8 +4,8 @@
 
 Le logiciel Python sépare le matériel, la calibration, l'acquisition, le
 traitement, la reconstruction, l'export, l'orchestration et l'interface. Les
-mêmes interfaces sont utilisées avec le matériel réel ou avec le mock de
-développement.
+modules échangent des images, des paramètres de calibration, des profils 3D et
+des états explicites.
 
 \begin{figure}[H]
   \centering
@@ -21,7 +21,7 @@ développement.
     \toprule
     \textbf{Module} & \textbf{Responsabilité active} \\
     \midrule
-    \texttt{hardware} & Caméras Pi/USB, moteur, laser, porte et mock. \\
+    \texttt{hardware} & Caméras Pi/USB, moteur, laser et capteur de porte. \\
     \texttt{acquisition} & Rotation, contrôle de porte, laser et captures séquentielles. \\
     \texttt{calibration} & Intrinsèques, plan laser global et extrinsèques. \\
     \texttt{processing} & Extraction de ligne et triangulation vers le repère plateforme. \\
@@ -59,12 +59,13 @@ Les paramètres utilisés par le code sont:
   \item l'axe de rotation et son origine dans le repère plateforme.
 \end{itemize}
 
-La configuration fournit une pose mécanique initiale pour chaque caméra. Lors
-du traitement, l'option active \texttt{auto\_cheat\_extrinsics} optimise encore
-les deux poses afin de réduire la distance entre les nuages. Ce mécanisme
-améliore leur superposition, mais montre aussi qu'un protocole extrinsèque
-reproductible reste à consolider. Les fichiers de calibration sont lus pendant
-le scan; ils ne sont pas modifiés par le pipeline.
+Les azimuts retenus, environ $-25^\circ$ pour la caméra Pi et $+33^\circ$ pour
+l'Arducam, sont issus de la calibration et d'essais visant un bon regroupement
+des deux nuages de points. Ils définissent les poses initiales. Lors du
+traitement, l'option active \texttt{auto\_cheat\_extrinsics} ajuste les deux
+poses autour de ces valeurs afin de réduire la distance entre les nuages. Les
+fichiers de calibration sont lus pendant le scan; ils ne sont pas modifiés par
+le pipeline.
 
 \begin{figure}[H]
   \centering
@@ -78,8 +79,8 @@ le scan; ils ne sont pas modifiés par le pipeline.
     \includegraphics[width=\linewidth]{images/ui_calibration_extrinseque.png}
     \\\small (b) Réglage extrinsèque.
   \end{minipage}
-  \caption{Pages de calibration. Leur correspondance avec l'interface finale
-  doit être vérifiée avant publication.}
+  \caption{Pages de calibration de l'interface finale: intrinsèques, plan laser
+  et réglage extrinsèque.}
   \label{fig:ui-calibration}
 \end{figure}
 
@@ -89,6 +90,11 @@ La configuration active demande 100 positions sur un tour. Le moteur comporte
 200 pas physiques par tour et le driver utilise 16 micro-pas, soit 3200
 micro-pas. Chaque acquisition est donc séparée de 32 micro-pas, ou
 $3{,}6^\circ$.
+
+Les résolutions de capture sont configurables et correspondent aux images
+natives demandées aux pilotes. La configuration active utilise
+$640\times480$ pour la Pi Camera et $1920\times1080$ en YUYV pour l'Arducam
+USB. L'image Arducam n'est pas redimensionnée en 480p.
 
 Avant le scan, une boucle ajuste séparément l'exposition des caméras. Elle
 capture trois angles par itération, mesure la largeur médiane des pixels verts
@@ -109,20 +115,26 @@ L'extinction est également exécutée dans les chemins d'erreur.
 
 \subsection{Extraction et triangulation}
 
-L'algorithme actif n'utilise pas la différence $G-R$. Il lit uniquement le
-canal vert de l'image BGR, applique le seuil propre à la caméra, puis retire
-les zones exclues par des masques rectangulaires ou polygonaux. La résolution
-de traitement peut être réduite par les pas d'échantillonnage configurés.
+L'extraction lit le canal vert des images BGR et applique un seuil propre à
+chaque caméra. Les zones qui ne peuvent pas contenir de mesure utile sont
+retirées par des masques rectangulaires ou polygonaux. Le traitement inspecte
+une colonne sur une et une ligne sur deux pour la Pi Camera; pour l'Arducam, il
+inspecte une colonne sur trois et une ligne sur quatre. Cet échantillonnage
+réduit le nombre de pixels testés sans redimensionner les images.
 
-Pour chaque ligne d'image contenant des pixels actifs, l'abscisse retournée est
-la moyenne des colonnes actives. Le résultat contient donc au plus un point
-par ligne. Le paramètre historique \texttt{subpixel} est conservé dans l'API,
-mais le code utilise toujours cette moyenne flottante. Une détection est
-rejetée si elle contient moins de quatre lignes dans la configuration active.
+Pour chaque ligne échantillonnée qui contient des pixels actifs, l'algorithme
+calcule la moyenne de leurs colonnes. Les pas et les décalages
+d'échantillonnage sont ensuite réappliqués: les coordonnées produites restent
+donc exprimées dans le repère de l'image native, soit $640\times480$ ou
+$1920\times1080$. Une détection est rejetée si elle contient moins de quatre
+lignes.
 
-La triangulation transforme ensuite les pixels en rayons, applique les
-extrinsèques, intersecte le plan laser et compense la rotation du plateau.
-Chaque caméra produit ainsi des profils dans le même repère.
+La triangulation utilise alors les intrinsèques de la caméra pour former les
+rayons, les extrinsèques pour les exprimer dans le repère plateforme et le
+plan laser global pour calculer leurs intersections. L'angle courant du
+plateau ramène enfin chaque profil dans l'orientation de référence. Les deux
+caméras produisent ainsi des points directement comparables dans un même
+repère.
 
 \subsection{Fusion et reconstruction}
 

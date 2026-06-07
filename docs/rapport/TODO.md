@@ -26,25 +26,20 @@ source de vérité pour le fonctionnement logiciel.
   difficultés rencontrées.
 - [ ] Contrôler et documenter l'absence de fuite du faisceau lorsque le caisson
   est fermé.
-- [ ] Mesurer le délai maximal entre une ouverture du capot pendant une capture
-  et l'extinction effective du laser. Le code interroge actuellement le capteur
-  avant et juste après l'activation, sans callback asynchrone continu.
 
 ## Images à vérifier ou remplacer
 
 | Fichier | Problème possible | Action recommandée |
 |---|---|---|
-| `images/boite_vue_ext_ouverte.jpeg` | Photo confirmée obsolète: une seule caméra et câblage intermédiaire. | Ne pas réutiliser comme état final; conserver seulement comme historique explicite. |
-| `images/vue_interrieur_dessus_global.jpeg` | Photo confirmée obsolète: une seule caméra et carte perforée. | Ne pas réutiliser comme état final; conserver seulement comme historique explicite. |
+| `images/boite_vue_ext_ouverte.jpeg` | La photo montre l'étape initiale à une caméra et un câblage non définitif. | Conserver uniquement pour présenter cette étape de fabrication. |
+| `images/vue_interrieur_dessus_global.jpeg` | La photo montre l'étape initiale à une caméra et la carte perforée. | Conserver uniquement pour présenter cette étape de fabrication. |
 | `images/photo_composants.jpg` | Vue des composants, mais pas nécessairement de leur intégration finale. | Conserver comme nomenclature ou remplacer par une photo légendée du câblage monté. |
 | `images/boite_finale.jpeg` | Le terme « finale » ne garantit pas que l'interlock, le PCB et les deux caméras soient visibles. | Vérifier la date et le contenu; reprendre une photo extérieure et une intérieure si nécessaire. |
-| `images/vue_obsturction_laser.jpeg` | Montage historique mono-caméra. | Conserver seulement avec la légende historique actuelle. |
+| `images/vue_obsturction_laser.jpeg` | Essai à une caméra utilisé pour illustrer une occultation. | Conserver avec une légende qui identifie clairement cet essai. |
 | `images/montage_2_cameras.jpeg` | Peut montrer une géométrie antérieure aux extrinsèques configurées. | Comparer au montage livré avant réutilisation. |
 | `images/ui_accueil_verrouille.png` | Capture susceptible de ne plus correspondre aux routes et artefacts actuels. | Refaire après un scan complet avec nuages PLY et maillage disponibles. |
 | `images/ui_accueil_deverrouille.png` | Même risque; image non utilisée actuellement. | Mettre à jour ou supprimer des fichiers du rapport. |
-| `images/ui_calibration_intrinseque_laser.png` | L'interface de calibration a évolué vers un plan laser global. | Refaire une capture montrant clairement le damier et la calibration laser actuelle. |
-| `images/ui_calibration_extrinseque.png` | Doit correspondre aux réglages et à l'ajustement extrinsèque actuels. | Refaire après validation du workflow final. |
-| `images/ui_config_camera.png` | Peut ne pas montrer les résolutions et contrôles actifs. | Vérifier Pi 640x480 et USB 1920x1080. |
+| `images/ui_config_camera.png` | Peut ne pas montrer les résolutions et contrôles actifs. | Vérifier les résolutions natives configurables: Pi 640x480 et USB 1920x1080 YUYV dans la configuration actuelle. |
 | `images/ui_manuel.png` | Doit montrer les deux caméras, masques et seuils actuels. | Refaire si une caméra ou une commande diffère. |
 | `images/screen_cylindre_stl.png` | Résultat ancien possible, sans paramètres ni date. | Associer à un scan final reproductible ou indiquer qu'il s'agit d'une illustration. |
 | `images/cube_double_camera.png` | Ne prouve ni précision ni répétabilité. | Conserver uniquement comme illustration, ou remplacer par une comparaison mono/double caméra issue du pipeline final. |
