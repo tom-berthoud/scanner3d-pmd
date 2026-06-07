@@ -57,10 +57,14 @@ scanner3d-pmd/
 │       └── static/        CSS, JS et assets vendorisés (vendor/ — hors-ligne)
 ├── config/                Paramètres YAML de scan et calibration
 ├── scripts/               Scripts utilitaires (ex. scanner-eng.sh)
-├── docs/                  Documentation technique et images de référence
 ├── tests/                 Tests unitaires et d'intégration
-├── mechanics/             Fichiers CAO (FreeCAD)
-└── electronics/           Schémas électroniques (KiCad)
+└── docs/                  Documentation, rapport et fichiers de fabrication
+    ├── rapport/                 Rapport LaTeX (PDF compilé en Release)
+    ├── cahier_des_charges/      Cahier des charges (LaTeX) + diagramme FAST
+    ├── conception mécanique/    Modèles SolidWorks (.SLDPRT/.SLDASM),
+    │                            DXF de découpe laser et STL d'impression 3D (CAD/)
+    ├── schema/                  PCB et schéma électronique (KiCad)
+    └── connection_procedure.md  Procédure de connexion PC ↔ Raspberry Pi
 ```
 
 ---
@@ -118,15 +122,9 @@ Sur une machine de dev, débloquez d'emblée les pages d'ingénierie en mettant
 `interface.engineering_force: true` dans `config/settings.yaml` (voir
 [Mode ingénierie](#mode-ingénierie--accès-aux-pages-de-configuration)).
 
-**Formes simulées** (`config/settings.yaml` → `camera.mock_shape`) :
-
-| Forme | Description |
-|---|---|
-| `sphere` | Sphère r = 40 mm |
-| `cylinder` | Cylindre r = 35 mm, h = 70 mm |
-| `cube` | Cube demi-côté = 35 mm |
-| `duck` | Canard (corps ellipsoïde + cou + tête + bec) |
-| `mushroom` | Champignon (calotte hémisphérique r = 30 mm + pied) |
+**Forme simulée** (`config/settings.yaml` → `camera.mock_shape`) : un seul
+objet virtuel est disponible, un **`cube`** posé sur le plateau (demi-côté
+30 mm, hauteur 60 mm).
 
 Visualiser les images captées sans lancer un scan complet :
 ```
@@ -158,9 +156,12 @@ pytest tests/ -m integration           # tests nécessitant le vrai hardware
    python -m scanner.interface.web     # écoute sur 0.0.0.0:5000
    ```
    L'interface est alors accessible depuis le PC sur `http://<ip-du-pi>:5000`.
-5. **Mode kiosk** (écran tactile sur le Pi) : ouvrir l'interface avec
-   `?mode=kiosk` → `http://localhost:5000/?mode=kiosk`. L'UI passe en plein
-   écran simplifié (gros bouton de scan, navigation réduite).
+5. **Écran tactile du Pi** : la page de scan (`/`) est elle-même conçue comme
+   une console simplifiée plein écran (gros bouton de scan, navigation
+   réduite). Il n'y a pas de mode kiosk séparé ; les pages techniques restent
+   masquées tant que le
+   [mode ingénierie](#mode-ingénierie--accès-aux-pages-de-configuration)
+   n'est pas déverrouillé.
 
 ### Lancer automatiquement au démarrage (exemple systemd recommandé)
 
