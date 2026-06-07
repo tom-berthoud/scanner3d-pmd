@@ -48,7 +48,7 @@ Afin de limiter les phénomènes d'occultation lors de la numérisation, deux ca
     \item \textbf{Caméra secondaire :} Une caméra USB \textbf{Arducam IMX586} a été ajoutée. Fournie par l'intermédiaire de M. Maulaz, cette caméra présentait une résolution suffisante et un angle d'ouverture adapté pour capturer les zones d'ombre sous un autre axe, tout en étant immédiatement disponible.
 \end{itemize}
 
-\subsubsection{Éclairage structuré et motorisation}
+\subsubsection{Laser lumineux}
 Le choix de la source lumineuse s'est arrêté sur le laser
 \textbf{VLM-520-56 LPO-D45-F40}. La fiche du fabricant classe la variante LPO
 de cette série en classe 1M et indique une longueur d'onde comprise entre 515
@@ -67,6 +67,7 @@ scanner et permet d'obtenir une ligne suffisamment fine pour la détection.
     \label{fig:sensibilite_spectrale}
 \end{figure}
 
+\subsubsection{Système de rotation et contrôle moteur}
 Pour la partie motrice, le couple formé par le moteur \textbf{NEMA 17} et le driver \textbf{Leadshine DM320T} (disponibles au MakeLab) répond aux exigences de couple nécessaires pour faire tourner le plateau sans glissement, tout en offrant la précision angulaire requise grâce aux réglages des micro-pas sur le driver.
 
 \subsubsection{Interface utilisateur (Écran tactile)}
@@ -218,7 +219,7 @@ Pour permettre une utilisation et une maintenance aisées du scanner une fois le
 
     \paragraph{Contraintes d'implantation}
     L'ensemble de l'électronique de commande (Raspberry Pi 4 et le PCB de centralisation) est fixé rigidement sur les parois internes du scanner 3D. 
-    Cet emplacement a été choisi afin d'isoler la logique des vibrations potentielles du moteur pas à pas, mais surtout pour maintenir le champ de vision des caméras totalement libre de tout obstacle visuel. 
+    Cet emplacement est choisi pour maintenir le champ de vision des caméras totalement libre de tout obstacle visuel. 
 
     \paragraph{Gestion et guidage des câbles}
     Les nappes plates d'affichage (DSI) et de caméra (CSI) étant particulièrement fragiles et sensibles aux rayons de courbure trop faibles, un système de fixation dédié a été développé. Des goulottes de guidage ont été conçues sur mesure et réalisées en impression 3D (voir figure~\ref{fig:goulotte_3d}).
@@ -255,7 +256,7 @@ regroupées dans le tableau~\ref{tab:mesures_electriques}.
         \midrule
         Sortie du convertisseur logique & 5,5\,V & 1,55\,A & 1,80\,A \\
         Branche du moteur & 23,5\,V & 0,12\,A & 0,45\,A \\
-        Alimentation principale complète & 23,5\,V & 0,55\,A & 0,91\,A \\
+        Alimentation principale & 23,5\,V & 0,55\,A & 0,91\,A \\
         \bottomrule
     \end{tabular}
     \caption{Tensions et courants mesurés sur le prototype.}
