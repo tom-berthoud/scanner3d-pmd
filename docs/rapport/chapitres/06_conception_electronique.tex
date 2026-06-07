@@ -1,459 +1,114 @@
-\newpage
-\section{Conception Électronique}
+\section{Conception électronique et alimentation}
 \label{sec:conception_electronique}
 
-Cette section présente la conception et la réalisation de la partie électronique du scanner 3D. 
-L'objectif principal de cette l'architecture est d'assurer la distribution de l'alimentation électrique, de piloter les différents actionneurs avec précision et de centraliser l'acquisition des données des capteurs.
-La démarche présentée va du choix des composants à leur intégration physique, en passant par la conception des schémas électriques et la réalisation de circuits imprimés dédiés, tout en intégrant les éléments de sécurité indispensables à l'utilisation du système.
-
-
-\subsection{Choix des composants et spécifications}
-\label{subsec:composants}
-
-Le choix des composants électroniques a été principalement guidé par les spécifications techniques du cahier des charges (précision, dimension de la pièce, durée du scan) ainsi que par la disponibilité des pièces au sein du \textit{MakeLab} de la HEIG-VD, permettant ainsi d'optimiser les coûts et les délais de livraison.
-Le tableau~\ref{tab:bom_finale} dresse l'inventaire complet du matériel sélectionné.
+\subsection{Composants}
 
 \begin{table}[H]
-    \centering
-    \begin{tabular}{l p{5.5cm} l}
-        \toprule
-        \textbf{Fonction} & \textbf{Composant / Référence} & \textbf{Interface} \\
-        \midrule
-        Unité centrale & Raspberry Pi 4 Model B & --- \\
-        Acquisition optique (CSI) & Pi Camera Module 3 & Connecteur CSI \\
-        Acquisition optique (USB) & Arducam IMX586 & Port USB 3.0 \\
-        Éclairage structuré & Laser ligne vert VLM-520-56 LPO-D45-F40 & GPIO (via PCB) \\
-        Actionneur rotatif & Moteur pas à pas NEMA 17 & Liaison mécanique \\
-        Contrôle moteur & Driver industriel Leadshine DM320T & Signaux impulsionnels \\
-        Interface utilisateur & Raspberry Pi Touch Display 2 (7 pouces) & Connecteur nappe DSI \\
-        Alimentation principale & Bloc secteur 24\,Vdc (1\,A / 24\,W) & Connecteur DC \\
-        Régulation logique & Convertisseur Buck DC-DC LM2596 (HW-411) & Ligne 5\,Vdc \\
-        Sécurité physique & Interrupteur fin de course (125-250\,V) & Contact sec (GPIO) \\
-        Mise sous tension & Interrupteur à bascule KCD1-101 & Ligne 24\,Vdc \\
-        \bottomrule
-    \end{tabular}
-    \caption{Nomenclature et interfaces des composants électroniques du scanner 3D.}
-    \label{tab:bom_finale}
+  \centering
+  \small
+  \begin{tabular}{@{}p{4cm}p{6cm}p{4cm}@{}}
+    \toprule
+    \textbf{Fonction} & \textbf{Composant} & \textbf{Interface} \\
+    \midrule
+    Calcul & Raspberry Pi 4 Model B & GPIO, CSI, USB, réseau \\
+    Caméra droite & Pi Camera Module 3 & CSI \\
+    Caméra gauche & Arducam IMX586 & USB 3.0 \\
+    Éclairage & VLM-520-56 LPO-D45-F40, 520\,nm & 5\,V, MOSFET \\
+    Rotation & NEMA 17 17HS3401 et DM320T & STEP, DIR, ENABLE \\
+    Interface locale & Raspberry Pi Touch Display 2, 7 pouces & DSI \\
+    Alimentation & Bloc 24\,V et convertisseur LM2596 & 24\,V / 5\,V \\
+    Sécurité & Microswitch de capot & GPIO \\
+    \bottomrule
+  \end{tabular}
+  \caption{Composants électroniques du prototype final.}
+  \label{tab:bom_finale}
 \end{table}
 
-\subsubsection{Unité de calcul et de traitement}
-Le choix s'est porté sur un \textbf{Raspberry Pi 4 Model B}. 
-Les tests préliminaires ayant démontré qu'une version antérieure (Raspberry Pi 3) offrait des performances CPU insuffisantes pour traiter les algorithmes de reconstruction 3D dans un temps acceptable, le modèle 4 s'est imposé. 
-De plus, sa compatibilité native avec les modules caméras et l'écran tactile du MakeLab a facilité l'intégration logicielle.
+Le Raspberry Pi exécute l'interface et le traitement tout en pilotant les
+actionneurs. La caméra Pi fournit une image de $640\times480$ pixels. La caméra
+USB est configurée en $1920\times1080$ au format YUYV. Leur acquisition est
+séquentielle à chaque position du plateau.
 
-\subsubsection{Système de double vision}
-Afin de limiter les phénomènes d'occultation lors de la numérisation, deux caméras sont utilisées simultanément :
-\begin{itemize}
-    \item \textbf{Caméra principale :} Le module \textbf{Pi Camera Module 3} est connecté via la nappe CSI standard. Ce choix se justifie par sa résolution native et son angle d'ouverture parfaitement adaptés à la distance de focalisation du scanner.
-    \item \textbf{Caméra secondaire :} Une caméra USB \textbf{Arducam IMX586} a été ajoutée. Fournie par l'intermédiaire de M. Maulaz, cette caméra présentait une résolution suffisante et un angle d'ouverture adapté pour capturer les zones d'ombre sous un autre axe, tout en étant immédiatement disponible.
-\end{itemize}
-
-\subsubsection{Éclairage structuré et motorisation}
-Le choix de la source lumineuse s'est arrêté sur le laser \textbf{VLM-520-56 LPO-D45-F40}. 
-Sa longueur d'onde dans le spectre vert (520\,nm) offre un avantage majeur : les capteurs CMOS des caméras possèdent une sensibilité accrue dans cette bande de fréquences (matrice de Bayer comprenant deux fois plus de pixels verts), ce qui simplifie grandement l'étape logicielle d'extraction de la ligne laser.
-De plus, ce dernier intègre directement une lentille de focalisation, ce qui garantit une ligne laser nette et précise à la distance de travail du scanner.
-
-Pour la partie motrice, le couple formé par le moteur \textbf{NEMA 17} et le driver \textbf{Leadshine DM320T} (disponibles au MakeLab) répond aux exigences de couple nécessaires pour faire tourner le plateau sans glissement, tout en offrant la précision angulaire requise grâce aux réglages des micro-pas sur le driver.
-
-\subsubsection{Interface utilisateur (Ecran tactile)}
-L'affichage local est confié au \textbf{Raspberry Pi Touch Display 2} de 7 pouces. Sa diagonale offre une surface d'affichage idéale pour présenter l'ensemble des menus de contrôle et les retours d'état du scanner. La dalle tactile capacitive est d'une sensibilité suffisante pour assurer une navigation fluide à travers les différentes pages de l'interface utilisateur.
-
-\subsubsection{Alimentation et organes de sécurité}
-Le driver du moteur pas à pas nécessitant une tension élevée pour générer le couple nécessaire, le système est alimenté en \textbf{24\,Vdc} par un bloc secteur de 24\,W (1\,A). À partir de ce rail de puissance, un convertisseur abaisseur ajustable (\textit{Buck converter}) basé sur un \textbf{LM2596 (HW-411)} est employé pour abaisser la tension à 5\,Vdc afin d'alimenter proprement le Raspberry Pi, le laser et l'écran tactile. 
-
-La mise sous tension générale est coupée mécaniquement par un interrupteur \textbf{KCD1-101}. Enfin, la détection de la fermeture de la porte est confiée à un interrupteur de fin de course compact (microswitch), faisant office de capteur de sécurité pour le capot.
-
-% Emplacement pour ajouter une photo d'ensemble de tes composants
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.8\linewidth]{images/photo_composants.jpg}
-    \caption{Vue d'ensemble des principaux composants électroniques assemblés dans le scanner 3D.}
-    \label{fig:photo_composants}
-\end{figure}
-
-
-\subsection{Schématique et architecture électrique}
-\label{subsec:schema_electrique}
-
-L'architecture électrique du scanner 3D est structurée en deux étages distincts, répartis sur un schéma complet de deux pages (représentés par les figures~\ref{fig:sch_alim} et~\ref{fig:sch_rpi}). 
-Cette organisation permet de séparer clairement la puissance de la logique de commande.
-
-\subsubsection{Gestion de l'énergie et étage d'alimentation (Page 1)}
-
-Le système est alimenté en périphérie par le bloc secteur délivrant une tension continue de 24\,Vdc. 
-La distribution de cette énergie est configurée ainsi :
-\begin{itemize}
-    \item \textbf{Ligne de puissance :} La tension de 24\,Vdc traverse l'interrupteur principal \texttt{KCD1-101} pour sécuriser l'ensemble de la machine. Une fois l'interrupteur fermé, le rail 24\,Vdc alimente directement l'étage de puissance du driver de moteur pas à pas \texttt{DM320T}.
-    \item \textbf{Ligne logique (Dérivation) :} En dérivation sur ce rail principal, le convertisseur Buck \texttt{LM2596} abaisse la tension à 5\,Vdc. Ce rail 5\,Vdc secondaire est envoyé vers le second étage pour alimenter les composants logiques.
-    \item \textbf{Alimentation du Raspberry Pi :} Contrairement à une utilisation standard via le port USB-C, le 5\,Vdc régulé par le Buck est injecté directement sur les broches physiques (\textit{pins} GPIO) dédiées à l'alimentation du Raspberry Pi 4. Cette méthode permet de centraliser le câblage et d'éviter l'usage de connecteurs grand public.
-\end{itemize}
+Le Touch Display 2 de 7 pouces est physiquement monté. Le dépôt contient aussi
+un pilote pour un ancien afficheur SPI de 3,2 pouces, mais la configuration
+logicielle active désactive actuellement cet afficheur local
+(\texttt{interface.display\_type: none}). L'interface web constitue donc le
+retour logiciel principal documenté dans ce rapport.
 
 \begin{figure}[H]
-    \centering
-    \includegraphics[width=1\linewidth,page=1]{assets/Schéma électrique Scan3D_V02.pdf}
-    \caption{Schéma électrique — Page 1 : Étage d'alimentation générale et distribution de la puissance.}
-    \label{fig:sch_alim}
+  \centering
+  \includegraphics[width=0.78\linewidth]{images/photo_composants.jpg}
+  \caption{Principaux composants intégrés au scanner.}
+  \label{fig:photo_composants}
 \end{figure}
 
-\subsubsection{Interconnexions de la logique et des actionneurs (Page 2)}
+\subsection{Distribution électrique}
 
-La seconde page du schéma centralise le Raspberry Pi 4, qui fait office de nœud de commande pour l'ensemble des périphériques.
+Le bloc secteur fournit le rail principal de 24\,V au driver DM320T. Un
+convertisseur LM2596 alimente le Raspberry Pi, les caméras, l'écran et le laser.
+Les GPIO 3,3\,V ne fournissent pas directement le courant des charges. Une
+carte à MOSFET réalise la commutation côté masse du laser et l'adaptation des
+signaux destinés aux entrées optocouplées du DM320T.
 
-\begin{itemize}
-    \item \textbf{Commande du laser et commutation \textit{Low-Side} :} Le module laser \texttt{VLM-520} est alimenté par le rail 5\,Vdc issu du convertisseur Buck. Sa ligne de masse (0\,V) passe à travers le PCB MOSFET. Lorsque le GPIO du Raspberry Pi s'active, le transistor effectue une mise à la masse (\textit{pull to 0V}), fermant le circuit et allumant le laser.
-    \item \textbf{Commande du driver moteur \texttt{DM320T} :} Les signaux de commande angulaire (\textit{Pulse}, \textit{Direction}, \textit{Enable}) utilisent le même principe de commutation par MOSFET tirant au 0\,V. Du côté du driver, les broches d'entrées optocouplées (\texttt{OPTO}) sont reliées en permanence au rail 5\,Vdc. Cette configuration garantit un signal net et franc pour le déclenchement des optocoupleurs internes du driver, tout en protégeant les sorties du Raspberry Pi. Les 4 fils de phase du moteur \texttt{NEMA 17} sont quant à eux raccordés directement sur les sorties de puissance du \texttt{DM320T}.
-    \item \textbf{Boucle du capteur de capot :} Le microswitch de sécurité est câblé de manière directe et minimale, sans résistance externe. Un fil est connecté à une broche d'alimentation 3,3\,Vdc du Raspberry Pi, et le second retourne directement sur une broche GPIO configurée en entrée. L'état logique de la ligne permet ainsi de détecter instantanément l'ouverture de la porte.
-    \item \textbf{Acquisition et affichage :} Le système de vision (nappe de la Pi Camera, câble de la caméra Arducam USB) ainsi que la nappe DSI de l'écran tactile de 7 pouces sont connectés directement sur leurs ports natifs respectifs du Raspberry Pi.
-\end{itemize}
-
-\subsubsection{Accessibilité externe et connectique de maintenance}
-
-Pour permettre une utilisation et une maintenance aisées du scanner une fois le boîtier fermé, des déportations de connectiques ont été intégrées via des passes-cloisons :
-\begin{itemize}
-    \item \textbf{Liaison Réseau (RJ45) :} Un câble réseau part du Raspberry Pi vers une carte Ethernet, dont la sortie finale au format USB-C est fixée sur un passe-cloison. Cela permet une connexion filaire rapide à l'interface du scanner.
-    \item \textbf{Port de stockage (USB) :} Un second câble USB est relié du Raspberry Pi à un passe-cloison femelle, offrant un accès direct pour brancher une clé USB externe (exportation des scans).
-\end{itemize}
+Une première carte de validation a précédé le PCB final gravé et monté. Cette
+seconde version regroupe les connexions de puissance et de commande afin de
+réduire les faux contacts du prototype câblé.
 
 \begin{figure}[H]
-    \centering
-    \includegraphics[width=1\linewidth,page=2]{assets/Schéma électrique Scan3D_V02.pdf}
-    \caption{Schéma électrique — Page 2 : Câblage du Raspberry Pi, des capteurs, des caméras et commande des actionneurs via MOSFET.}
-    \label{fig:sch_rpi}
+  \centering
+  \includegraphics[width=\linewidth,page=1]{assets/Schéma électrique Scan3D_V02.pdf}
+  \caption{Distribution de l'alimentation 24\,V et conversion du rail logique.}
+  \label{fig:sch-alim}
 \end{figure}
 
-
-
-\subsection{Réalisation et Intégration}
-\label{subsec:integration}
-
-    \subsubsection{Conception des circuits imprimés (PCB)}
-    \label{subsubsec:pcb}
-    % Ici on détaillera tes deux versions de PCB (manuelle puis graveuse).
-
-    \subsubsection{Câblage et implantation physique}
-    \label{subsubsec:cablage}
-    % Ici on parlera de l'organisation dans le boîtier et de la gestion des câbles.
-
-\subsection{Dispositifs de sécurité}
-\label{subsec:securite}
-% Ici on expliquera le fonctionnement du capteur de capot et de l'arrêt du laser.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-% \section{Conception et Intégration Électronique}
-
-% \label{sec:conception_electronique}
-
-% Cette section détaille l'architecture électronique finale du scanner 3D. L'ensemble du système est piloté par une unité de calcul locale qui gère la distribution de la puissance, le contrôle des actionneurs (moteur pas à pas et laser) ainsi que l'acquisition de données via un double système optique.
-
-% \subsection{Architecture Système et Synoptique Descriptif}
-% \label{subsec:architecture_systeme}
-
-% L'organisation générale du système repose sur une répartition claire entre la logique de commande (sous 3,3\,V et 5\,V) et la puissance nécessaire aux actionneurs. 
-
-% % Remplacer "ex_synoptique" par le nom de ton fichier image du synoptique général si tu en as un
-% \begin{figure}[H]
-%     \centering
-%     % \includegraphics[width=0.9\linewidth]{images/synoptique_general.pdf}
-%     \caption{Synoptique général des interconnexions électroniques du scanner 3D.}
-%     \label{fig:synoptique_general}
-% \end{figure}
-
-% Le tableau \ref{tab:interfaces_electroniques} dresse l'inventaire des composants principaux intégrés dans le système ainsi que leurs interfaces logiques respectives.
-
-% \begin{table}[H]
-%     \centering
-%     \begin{tabular}{l p{5cm} l}
-%         \toprule
-%         \textbf{Fonction technique} & \textbf{Composant matériel} & \textbf{Interface / Protocole} \\
-%         \midrule
-%         Unité centrale de calcul & Raspberry Pi 4 Model B (4\,GB) & --- \\
-%         Acquisition optique principale & Pi Camera Module 3 (IMX708) & Port CSI \\
-%         Acquisition optique secondaire & Caméra USB complémentaire & USB 3.0 \\
-%         Éclairage structuré & Laser ligne vert VLM-520 & GPIO (via PCB Mosfet) \\
-%         Motorisation du plateau & Moteur pas à pas NEMA 17 & Signaux DIR/PUL/ENA \\
-%         Contrôle de puissance moteur & Driver industriel DM320T & Entrées optocouplées (5\,V) \\
-%         Interface utilisateur locale & Écran tactile 7 pouces & Port DSI \\
-%         Sécurité physique & Interrupteur fin de course (Capot) & Boucle de sécurité matérielle \\
-%         \bottomrule
-%     \end{tabular}
-%     \caption{Spécifications des composants électroniques finaux et interfaces logiques.}
-%     \label{tab:interfaces_electroniques}
-% \end{table}
-
-% \subsection{Distribution de la Puissance et Énergie}
-% \label{subsec:distribution_puissance}
-
-% La chaîne d'énergie du scanner a été dimensionnée pour répondre aux besoins simultanés de la puissance moteur et de la logique de calcul numérique.
-
-% \subsubsection{Alimentation principale et ligne de puissance (24\,Vdc)}
-% Le choix s'est porté sur une alimentation générale délivrant une tension continue régulée de 24\,Vdc à partir du réseau secteur 230\,Vac. Cette tension élevée est requise pour garantir le couple et la dynamique du moteur NEMA 17 via le driver DM320T. Un interrupteur général en amont sécurise la mise sous tension globale de la machine.
-
-% \subsubsection{Étage d'abaissement de tension (5\,Vdc et 3,3\,Vdc)}
-% Pour alimenter la logique numérique, la tension de 24\,Vdc est abaissée :
-% \begin{itemize}
-%     \item \textbf{Ligne 5\,Vdc :} Un convertisseur abaisseur (\textit{Buck converter}) dédié est utilisé pour générer un rail 5\,V stable. Ce rail alimente directement le Raspberry Pi 4, l'écran tactile de 7 pouces, ainsi que le module laser. Ce choix permet de soutenir l'appel de courant important provoqué par l'ajout de la deuxième caméra USB et de l'écran tactile.
-%     \item \textbf{Ligne 3,3\,Vdc :} Cette tension est régulée et distribuée directement par les circuits internes du Raspberry Pi 4 pour ses propres besoins et pour fixer le niveau logique haut de ses ports GPIO.
-% \end{itemize}
-
-% \subsection{Étage d'adaptation des signaux (Interfaces GPIO)}
-% \label{subsec:etage_adaptation}
-
-% Le Raspberry Pi 4 fonctionnant exclusivement avec des niveaux logiques de 3,3\,Vdc sur ses entrées/sorties (GPIO), un étage d'interface s'avère indispensable pour piloter des éléments nécessitant du 5\,Vdc ou des courants hors de portée de la puce Broadcom.
-
-% \subsubsection{Rôle et fonctionnement du circuit MOSFET (\textit{Low-Side Switching})}
-% Pour la commande du laser et la transmission des signaux vers le contrôleur du moteur, des transistors MOSFET de puissance ont été mis en œuvre. Le montage utilise une configuration en \textit{Low-Side Switching} (commutation du côté de la masse) :
-% \begin{itemize}
-%     \item Lorsqu'un GPIO passe à l'état haut (3,3\,V), la tension Grille-Source ($V_{GS}$) devient suffisante pour rendre le MOSFET pleinement passant (état saturé). La charge connectée au 5\,V voit son circuit se fermer vers la masse.
-%     \item À l'état bas (0\,V), le MOSFET est bloqué, agissant comme un interrupteur ouvert. Une résistance de \textit{pull-down} est placée sur la grille pour éviter tout état flottant au démarrage du système.
-% \end{itemize}
-
-% \subsubsection{Conception et réalisation du PCB dédié}
-% Afin d'assurer la compacité, la robustesse mécanique et d'éviter les mauvais contacts inhérents aux plaques de prototypage, un circuit imprimé (PCB) a été spécifiquement développé pour cet étage de commande :
-% \begin{itemize}
-%     \item \textbf{Version 1 (Prototype) :} Une première mouture a été réalisée manuellement afin de valider le schéma électrique théorique et le comportement dynamique des transistors.
-%     \item \textbf{Version 2 (Finale) :} Conçue sur logiciel de CAO électronique puis usinée à l'aide d'une graveuse mécanique de précision. Cette version finale offre des pistes dimensionnées proprement, des plans de masse optimisés et une intégration directe sous forme de carte d'extension rigide.
-% \end{itemize}
-
-% % Mettre ici les photos ou typons de tes deux versions de PCB
-% \begin{figure}[H]
-%     \centering
-%     % \begin{subfigure}[b]{0.45\linewidth}
-%     %     \centering
-%     %     \includegraphics[width=\linewidth]{images/pcb_v1.jpeg}
-%     %     \caption{Version 1 : Réalisation manuelle.}
-%     %     \label{fig:pcb_v1}
-%     % \end{subfigure}
-%     % \hfill
-%     % \begin{subfigure}[b]{0.45\linewidth}
-%     %     \centering
-%     %     \includegraphics[width=\linewidth]{images/pcb_v2.jpeg}
-%     %     \caption{Version 2 : Gravure finale sur machine.}
-%     %     \label{fig:pcb_v2}
-%     % \end{subfigure}
-%     \caption{Évolution de la carte d'interface MOSFET de l'état de prototype à la carte finale gravée.}
-%     \label{fig:evolution_pcb}
-% \end{figure}
-
-% \subsection{Commande de la Motorisation Pas à Pas}
-% \label{subsec:commande_moteur}
-
-% Le positionnement angulaire précis du plateau rotatif est délégué au couple formé par le moteur NEMA 17 et son driver industriel DM320T. 
-% L'interface se fait via trois signaux logiques isolés par optocoupleurs à l'intérieur du driver :
-% \begin{itemize}
-%     \item \textbf{PUL (Pulse) :} Train d'impulsions généré par le Raspberry Pi déterminant la vitesse de rotation et l'angle parcouru.
-%     \item \textbf{DIR (Direction) :} Signal logique fixant le sens de rotation horaire ou anti-horaire.
-%     \item \textbf{ENA (Enable) :} Signal permettant d'engager ou de relâcher le couple de maintien du moteur.
-% \end{itemize}
-% Ces trois signaux sont adaptés en tension (passés de 3,3\,V à 5\,V) grâce au PCB MOSFET présenté précédemment, ce qui garantit le bon déclenchement des optocoupleurs du DM320T, prévus initialement pour des signaux de commande en 5\,V.
-
-% \subsection{Sécurité Physique et Boucle d'Interlock}
-% \label{subsec:securite_interlock}
-
-% L'utilisation d'un laser ligne vert VLM-520 impose le strict respect de normes de sécurité pour l'utilisateur. La pièce maîtresse de cette sécurité est le capteur de fin de course placé sur le capot de la machine.
-
-% La sécurité est gérée de manière à garantir qu'en cas d'ouverture du boîtier, l'extinction du faisceau soit immédiate et inviolable. L'état du capteur est également lu en parallèle par une entrée GPIO afin de permettre au logiciel d'interrompre le cycle de scan en cours et de remonter une erreur explicite sur l'écran tactile 7 pouces.
-
-% \subsection{Intégration du Système de Double Acquisition Optique}
-% \label{subsec:double_acquisition}
-
-% Pour contrer le phénomène d'occultation (zones d'ombre où le relief de l'objet masque la ligne laser pour une seule caméra), l'architecture finale intègre deux caméras :
-% \begin{enumerate}
-%     \item La \textbf{Pi Camera Module 3}, connectée directement sur le bus CSI natif du Raspberry Pi.
-%     \item Une \textbf{deuxième caméra USB}, connectée sur le contrôleur USB 3.0.
-% \end{enumerate}
-% D'un point de vue électrique, cette configuration sollicite fortement le contrôleur d'alimentation interne du Raspberry Pi. C'est pourquoi le dimensionnement de notre convertisseur Buck externe en amont (rail 5\,V) a été capital pour éviter les chutes de tension (\textit{under-voltage}) lors des phases de capture simultanée.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-% \subsection{Vue d'ensemble}
-
-% L'électronique du scanner repose sur une carte Raspberry\,Pi\,4 qui
-% pilote les actionneurs et capteurs via ses GPIO. Les fonctions techniques
-% adressées sont la capture des images (\textbf{FT4}), le pilotage du
-% plateau rotatif (\textbf{FT7}), la commande du laser et la communication
-% avec l'utilisateur (\textbf{FT2, FT3}).
-
-% Au rapport intermédiaire, l'architecture électronique est définie et les
-% fonctions principales sont opérationnelles en test : alimentation du
-% système, commande du laser, rotation du moteur, acquisition caméra,
-% retour par LEDs et écran. L'intégration de sécurité du
-% capot reste à finaliser.
-
-% \begin{table}[H]
-%   \centering
-%   \begin{tabular}{@{}p{4cm}p{4cm}p{6cm}@{}}
-%     \toprule
-%     \textbf{Fonction} & \textbf{Composant} & \textbf{Interface} \\
-%     \midrule
-%     Unité de calcul        & Raspberry Pi 4 Model B 4\,GB & --- \\
-%     Acquisition image      & Pi Camera Module 3 (IMX708)  & CSI \\
-%     Éclairage structuré    & Laser ligne vert VLM-520     & GPIO via étage de commande \\
-%     Rotation plateau       & Moteur NEMA\,17 + driver DM320T & GPIO via étage de commande \& les signaux \emph{Ena}, \emph{Dir}, \emph{Pull} \\
-%     Interface locale       & Écran tactile 7 pouces       & port DSI \\
-%     Sécurité porte         & Fin de course / interlock à intégrer & GPIO entrée \\
-%     \bottomrule
-%   \end{tabular}
-%   \caption{Composants électroniques principaux et interfaces.}
-%   \label{tab:bom-electronique}
-% \end{table}
-
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=0.85\linewidth]{images/electronique.jpeg}
-%   \caption{Électronique du prototype au rapport intermédiaire : Raspberry Pi 4, écran tactile, driver DM320T, étage de commande sur carte perforée et supports laser/caméra.}
-%   \label{fig:proto-elec}
-% \end{figure}
-
-% \subsection{Alimentation électrique}
-
-% L’alimentation du système est assurée par un module externe convertissant le secteur 230\,V AC en une tension continue de 12\,V.
-% Cette tension constitue la source d’énergie pour l’ensemble de la machine.
-
-% Un interrupteur principal est placé en sortie de l’alimentation afin de permettre la mise sous et hors tension du système en toute sécurité.
-
-% À partir de cette tension 12\,V, un convertisseur abaisseur (\textit{buck converter}) est utilisé pour générer une tension régulée de 5\,V.
-% Cette tension est notamment utilisée pour alimenter les éléments nécessitant un niveau de tension plus faible, comme certaines interfaces logiques ou modules électroniques.
-
-% Cette architecture permet d’assurer une alimentation adaptée à chaque composant tout en garantissant une bonne efficacité énergétique et une séparation claire entre les étages de puissance et de commande.
-
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=\linewidth,page=1]{assets/Schema_electrique_Scan3D.pdf}
-%   \caption{Schéma électrique — étage alimentation électrique.}
-%   \label{fig:sch-alim-elec}
-% \end{figure}
-
-% \subsection{Schéma Raspberry Pi}
-
-% La figure~\ref{fig:sch-rpi} du schéma électronique présente le câblage autour du
-% Raspberry Pi : pilotage du laser et du moteur au travers d'un étage de
-% commande, détection de l'ouverture du capot, connexion de
-% l'écran et de la caméra.
-
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=\linewidth,page=2]{assets/Schema_electrique_Scan3D.pdf}
-%   \caption{Schéma électrique — étage Raspberry Pi, pilotage actionneurs et capteurs.}
-%   \label{fig:sch-rpi}
-% \end{figure}
-
-% \subsubsection{Etage de commande des GPIO}
-% Le Raspberry Pi ne peut pas piloter directement les actionneurs (laser et moteur)
-% en raison de leurs exigences en tension et en courant.
-% Un étage de commande est donc nécessaire pour faire l’interface entre les signaux logiques du Raspberry Pi et les composants à piloter.
-
-% En effet, le laser ainsi que le moteur nécessitent une alimentation en 5\,V, tandis que les GPIO du Raspberry Pi fonctionnent en 3{,}3\,V et ne peuvent fournir que quelques milliampères.
-% Cela est insuffisant pour alimenter directement ces dispositifs, et pourrait même endommager le Raspberry Pi.
-
-% Pour résoudre ce problème, nous utilisons un étage de commande à base de transistors MOSFET.
-% Le principe de fonctionnement est le suivant : la sortie GPIO du Raspberry Pi est reliée à la grille du MOSFET.
-% Lorsque le GPIO est à l’état haut (3{,}3\,V), une tension est appliquée entre la grille et la source, ce qui rend le MOSFET passant.
-% Le transistor se comporte alors comme un interrupteur fermé.
-
-% Dans cet état, le courant peut circuler entre le drain et la source du MOSFET.
-% La charge (laser ou entrée de commande du contrôleur moteur), alimentée en 5\,V, est alors reliée à la masse à travers le MOSFET.
-% On parle de commande en \textit{low-side switching} (commutation côté masse).
-
-% Lorsque le GPIO est à l’état bas (0\,V), la tension grille-source devient nulle, le MOSFET se bloque et agit comme un interrupteur ouvert.
-% Le courant ne circule plus, ce qui désactive la charge.
-
-% Ce montage permet ainsi de piloter des charges en 5\,V à partir d’un signal logique 3{,}3\,V, tout en protégeant le Raspberry Pi et en fournissant le courant nécessaire aux actionneurs.
-% Des résistances sont également ajoutées pour assurer un fonctionnement stable, notamment pour éviter les états flottants et limiter les courants parasites.
-
-
-% \subsubsection{Pilotage du laser et signaux logiques}
-
-% Le laser est commandé électroniquement et peut être allumé ou éteint
-% volontairement pendant les essais. Le logiciel impose l'extinction du
-% laser en cas d'erreur de scan et le laser reste désactivé par défaut au
-% démarrage, conformément aux règles de sécurité du projet.
-
-% La validation intermédiaire montre que la commande fonctionne, mais la
-% sécurité finale ne peut pas se limiter au logiciel. L'interlock de capot
-% doit encore être intégré afin que l'ouverture de la boîte coupe ou
-% interdise l'activation du laser.
-
-% \subsubsection{Pilotage du moteur}
-
-% Le driver \texttt{DM320T} reçoit les signaux \emph{Ena}, \emph{Dir} et \emph{Pull}
-% du Raspberry Pi. Le moteur entraîne le plateau pendant les scans réels
-% et ne constitue pas, à ce stade, le blocage principal. Les améliorations
-% attendues concernent plutôt le maintien mécanique de la pièce et le
-% centrage sur le plateau.
-
-% \subsubsection{Affichage}
-
-% L'écran est fonctionnel et permet
-% d'afficher l'état du système. Ce dernier sert d'interface locale pour
-% l'utilisation sans ordinateur externe. L'interface web et répond à 
-% l'exigence de retour utilisateur (\textbf{E5}).
-% La version finale devra afficher sur l'écran tous les états de la 
-% machine d'états logicielle : attente, scan, traitement, fin et erreur.
-
-% \subsubsection{Capteur de porte}
-
-% Le capteur de porte prévu n'est pas encore intégré au prototype utilisé
-% pour les essais. Il reste donc à câbler et valider le comportement
-% suivant : ouverture du capot pendant ou avant un scan, désactivation immédiate du
-% laser et passage dans un état sûr.
-
-% \subsection{Justification des choix}
-
-% \begin{itemize}
-%   \item \textbf{Raspberry Pi 4} : capacité CPU suffisante pour le
-%         traitement Python, interface réseau intégrée et compatibilité
-%         avec la caméra Pi.
-%   \item \textbf{Pi Camera Module 3} : bonne sensibilité au 520\,nm sur le
-%         canal vert, ce qui facilite l'extraction de la ligne laser.
-%   \item \textbf{Driver DM320T} : adapté au moteur \textbf{NEMA\,17}, il offre la
-%         précision de pilotage souhaitée. De plus, c'était le seul modèle disponible
-%         dans le stock du MakeLab conforme aux caractéristiques nécessaires.
-%   \item \textbf{Pi Touch Display 2} : retour utilisateur
-%         local même sans ordinateur connecté à l'interface web.
-% \end{itemize}
-
-% \subsection{Limites identifiées et actions prévues}
-
-% \begin{itemize}
-%   \item Intégrer le capteur de capot et vérifier la coupure du laser.
-%   \item Finaliser le câblage pour une utilisation durable et propre dans
-%         la boîte.
-%   \item Vérifier que toutes les ouvertures mécaniques ne permettent pas
-%         la sortie du faisceau laser.
-%   \item Prévoir l'intégration électrique d'une deuxième caméra USB si les
-%         essais de réduction des occultations confirment cette piste.
-% \end{itemize}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth,page=2]{assets/Schéma électrique Scan3D_V02.pdf}
+  \caption{Câblage du Raspberry Pi, des capteurs et des actionneurs.}
+  \label{fig:sch-rpi}
+\end{figure}
+
+\subsection{Mesures électriques}
+
+La sortie du convertisseur a été réglée à 5,5\,V en amont du câblage afin de
+compenser les chutes de tension qui provoquaient une alerte de sous-tension sur
+le Raspberry Pi. Cette valeur ne constitue pas la tension effectivement reçue
+par la carte: elle doit être mesurée directement sur ses broches, au repos et
+pendant un scan.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{@{}p{5.2cm}r r r@{}}
+    \toprule
+    \textbf{Point mesuré} & \textbf{Tension} & \textbf{Courant au repos} & \textbf{Maximum en scan} \\
+    \midrule
+    Sortie du convertisseur logique & 5,5\,V & 1,55\,A & 1,80\,A \\
+    Branche moteur                 & 23,5\,V & 0,12\,A & 0,45\,A \\
+    Alimentation 24\,V totale      & 23,5\,V & 0,55\,A & 0,91\,A \\
+    \bottomrule
+  \end{tabular}
+  \caption{Mesures électriques fournies par l'équipe.}
+  \label{tab:conso}
+\end{table}
+
+Le rendement mesuré du convertisseur est d'environ 82,8\,\%. À la pointe
+relevée, l'entrée consomme environ 21,4\,W, ce qui reste sous la puissance
+nominale de 24\,W, avec une marge limitée.
+
+\subsection{Commande et sécurité}
+
+Le moteur reçoit les signaux STEP, DIR et ENABLE. Avec 200 pas physiques par
+tour et un microstepping de 1/16, le logiciel dispose de 3200 micro-pas par
+tour. L'accélération et la décélération sont appliquées par le pilote moteur
+afin d'éviter les changements de vitesse brusques.
+
+Le laser est éteint lors de l'initialisation du GPIO. Le capteur de capot est
+configuré sur une entrée dédiée et interrogé avant puis juste après chaque
+activation. Lorsqu'une ouverture est détectée, une extinction d'urgence est
+demandée avant la remontée de l'erreur. L'interlock est monté et son
+fonctionnement a été testé sur le prototype. La surveillance n'étant pas
+asynchrone, le délai maximal de détection pendant une capture reste à mesurer.
+
+Le caisson comporte également des accès réseau et USB. Le logiciel détecte les
+supports USB montés et peut y copier le dernier résultat, après validation du
+chemin de destination.

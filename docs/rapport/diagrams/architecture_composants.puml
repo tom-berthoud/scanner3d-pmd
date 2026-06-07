@@ -12,8 +12,9 @@ actor "Utilisateur" as user
 
 package "Interface" {
   [Serveur web Flask\n+ SSE] as web
-  [Viewer 3D\n(Three.js)] as viewer
-  [Afficheur local\n(TFT SPI)] as display
+  [Viewer 3D\n(Three.js, PLY/STL)] as viewer
+  [Écran 7 pouces DSI\n(monté, affichage logiciel désactivé)] as display
+  [Export USB] as usb
 }
 
 package "Orchestration" {
@@ -26,14 +27,14 @@ package "Pipeline de traitement" {
   [Extraction ligne laser] as line
   [Triangulation\npar caméra] as tri
   [Fusion\n(2 caméras + demi-tour)] as fuse
-  [Reconstruction\n(Poisson + filtrage)] as recon
-  [Export STL/OBJ] as export
+  [Filtrage + caps\n+ plan supérieur] as recon
+  [Export PLY\n+ Poisson STL/OBJ] as export
 }
 
 package "Calibration" {
-  [Intrinsèque caméra] as calib_cam
-  [Plan laser] as calib_laser
-  [Extrinsèques\n(repère plateau)] as calib_ext
+  [Intrinsèques\npar caméra] as calib_cam
+  [Plan laser global\n(repère plateforme)] as calib_laser
+  [Extrinsèques + ajustement\n(repère plateforme)] as calib_ext
   [Plateforme] as calib_plat
 }
 
@@ -50,7 +51,8 @@ database "Configuration\n(YAML)" as cfg
 
 user --> web : HTTP
 user --> display
-web --> viewer : STL
+web --> viewer : PLY / STL
+web --> usb : copie résultat
 web --> scan : POST /scan/start
 web <-- fsm : état (SSE)
 scan --> fsm : transitions
@@ -64,7 +66,7 @@ line --> tri : pixels
 tri --> fuse : points 3D / caméra
 fuse --> recon : nuage fusionné
 recon --> export : maillage
-hw_door --> fsm : ouverture -> laser OFF
+hw_door --> scan : ouverture -> laser OFF / erreur
 calib_cam ..> cfg
 calib_laser ..> cfg
 calib_ext ..> cfg

@@ -1,142 +1,74 @@
 \section{Introduction}
 
-\subsection{Contexte}
+\subsection{Contexte et objectif}
 
-Ce projet s'inscrit dans le cadre de l'unité d'enseignement
-\filiere, HEIG-VD. Il consiste à concevoir et
-réaliser un scanner 3D destiné au \emph{MakeLab} de l'école, afin de
-mettre à disposition des étudiants, collaborateurs et enseignants un
-outil simple pour numériser des objets physiques en modèles 3D
-exploitables.
+Ce projet, réalisé dans le cadre de l'unité d'enseignement \filiere{} à la
+HEIG-VD, vise à fournir au MakeLab un scanner 3D pédagogique et modifiable.
+L'objet est posé sur un plateau rotatif dans un caisson fermé. Un laser ligne
+vert éclaire successivement ses profils, observés par deux caméras, puis le
+logiciel reconstruit un nuage de points et un maillage exportable.
 
-\subsection{État de l'art}
+Les scanners commerciaux à lumière structurée offrent de bonnes performances,
+mais dépassent le budget du projet ou reposent sur des logiciels propriétaires.
+FabScanPi~\cite{fabscanpi} et Ciclop/Horus~\cite{ciclop} démontrent qu'une
+triangulation laser à plateau rotatif est réalisable à faible coût. Le projet
+s'en distingue surtout par l'acquisition à deux caméras, choisie pour réduire
+les occultations, et par une interface web utilisable hors ligne.
 
-Les solutions de numérisation 3D du marché se répartissent en trois
-familles : les scanners professionnels à structure de lumière
-(EinScan, Revopoint) offrant une précision élevée mais dont le prix
-dépasse largement le budget d'un projet étudiant, les scanners grand
-public (par exemple Creality CR-Scan ou Matter and Form) plus abordables
-mais souvent liés à un écosystème logiciel constructeur, et les projets
-\emph{open-source} à triangulation laser ou photogrammétrie.
+\subsection{Objectifs}
 
-Dans cette dernière famille, deux projets servent de référence directe à notre
-travail : \textbf{FabScanPi}~\cite{fabscanpi}, scanner à triangulation laser
-piloté par un Raspberry Pi avec ligne laser et plateau rotatif, dont
-l'architecture est très proche de la nôtre, et \textbf{Ciclop} (logiciel
-\emph{Horus})~\cite{ciclop}, scanner laser à plateau tournant qui fait figure de
-classique du domaine. Ces projets démontrent la viabilité d'une numérisation
-laser à bas coût, mais reposent typiquement sur une \emph{seule} caméra et
-restent donc sensibles aux occultations sur les pièces anguleuses.
-Par ailleurs, les solutions logicielles associées sont souvent limitées à une
-reconstruction de surface par fusion de points, sans étapes de calibration
-d'exposition, de fusion calibrée ou de reconstruction de Poisson, qui sont pourtant des étapes clés pour garantir une qualité de mesure exploitable.
-
-La valeur ajoutée de l'approche retenue tient à trois points : un coût
-contenu sous 300\,CHF, une intégration pensée pour un usage pédagogique
-(interface web, retour écran, prise en main rapide) et une
-architecture ouverte permettant d'expliquer, modifier et améliorer chaque
-étape de la chaîne de mesure.
-
-\subsection{But et objectifs}
-
-\paragraph{Problématique.}
-
-Comment concevoir et intégrer, dans un budget de 300\,CHF, un scanner 3D
-suffisamment simple pour être utilisé en autonomie au MakeLab, tout en
-garantissant la sécurité de l'utilisateur et une qualité de mesure
-exploitable ?
-
-\paragraph{Objectifs SMART.}
-
-Les objectifs mesurables dérivés du cahier des charges~\cite{cdc} sont
-les suivants :
+Les objectifs issus du cahier des charges~\cite{cdc} sont résumés dans la
+table~\ref{tab:objectifs}. Un objectif n'est déclaré atteint dans ce rapport que
+s'il est démontré par le prototype ou par une mesure disponible.
 
 \begin{table}[H]
   \centering
+  \small
   \begin{tabular}{@{}p{1.2cm}p{12.5cm}@{}}
     \toprule
     \textbf{Réf.} & \textbf{Objectif} \\
     \midrule
-    O1 & Numériser de manière automatisée un objet de dimension maximale $150\times150\times150$\,mm (E1, E3). \\
-    O2 & Produire un fichier exportable au format STL ou OBJ (E6). \\
-    O3 & Réaliser un cycle de scan complet en moins de 10\,minutes (besoin utilisateur B4 du CDC). \\
-    O4 & Garantir une prise en main inférieure à 10\,minutes et un scan sans assistance dans au moins 90\,\% des cas sur 10 essais (E7). \\
-    O5 & Respecter un budget total inférieur ou égal à 300\,CHF (E16). \\
-    O6 & Assurer la protection de l'utilisateur : matériaux non toxiques, arêtes non tranchantes, isolation du rayon laser et des zones mobiles (E17, E18, E19). \\
-    O7 & Fournir un retour visuel de l'état du système (LEDs et écran) (E5). \\
-    O8 & Offrir une interface de commande USB et/ou web permettant de lancer un scan en au plus 5 actions (E10, E11). \\
-    O9 & Atteindre une erreur absolue moyenne $\leq 2$\,mm et une répétabilité (écart-type) $\leq 1$\,mm sur 3 scans successifs du même objet de référence (E24). \\
-    O10 & Respecter un encombrement $\leq 500\times500\times500$\,mm et une masse totale $\leq 15$\,kg (E21). \\
-    O11 & Se limiter aux objets sans cavité fermée et sans contre-dépouille supérieure à $45^\circ$ (E23). \\
+    O1 & Numériser automatiquement un objet jusqu'à $150\times150\times150$\,mm. \\
+    O2 & Produire un fichier STL ou OBJ. \\
+    O3 & Réaliser un cycle complet en moins de 10\,minutes. \\
+    O4 & Permettre une prise en main en moins de 10\,minutes et 90\,\% de scans sans assistance sur 10 essais. \\
+    O5 & Limiter les dépenses du projet à 300\,CHF. \\
+    O6 & Protéger l'utilisateur du laser et des parties mobiles. \\
+    O7 & Fournir un retour visuel de l'état du système. \\
+    O8 & Commander le scanner par interface web ou USB en cinq actions au plus. \\
+    O9 & Atteindre une erreur moyenne $\leq 2$\,mm et une répétabilité $\leq 1$\,mm. \\
+    O10 & Respecter un encombrement $\leq 500^3$\,mm et une masse $\leq 15$\,kg. \\
+    O11 & Traiter les objets sans cavité fermée ni contre-dépouille supérieure à $45^\circ$. \\
     \bottomrule
   \end{tabular}
-  \caption{Objectifs SMART du projet, alignés sur les exigences du cahier des charges.}
+  \caption{Objectifs mesurables du projet.}
   \label{tab:objectifs}
 \end{table}
 
-\subsection{Planification}
+\subsection{Organisation du projet}
 
-Le projet est structuré en quatre phases principales, réparties sur
-16 semaines pour un effort estimé à environ 357 heures, pour
-\textbf{361 heures effectivement consommées} (planning final,
-\autoref{annexe:planning}). La livraison du prototype fonctionnel est
-fixée au \textbf{7 juin 2026} (E22).
+Le projet a été conduit sur 16 semaines. Le planning final, reproduit en
+annexe~\ref{annexe:planning}, totalise 361 heures.
 
 \begin{table}[H]
   \centering
-  \begin{tabular}{@{}p{1cm}p{8.5cm}p{4cm}@{}}
-    \toprule
-    \textbf{Phase} & \textbf{Contenu} & \textbf{Fenêtre} \\
-    \midrule
-    T10 & Élaboration et vérification du concept (recherche, CDC, sélection des composants) & Semaines 1--8 \\
-    T20 & Prototype pour la démonstration de concept (mécanique, électronique, logiciel) & Semaines 5--10 \\
-    T30 & Mise au point et intégration finale (UI, intégration, tests système) & Semaines 9--14 \\
-    T40 & Préparation des livrables (rapport, vidéo, démonstration) & Semaines 13--16 \\
-    \bottomrule
-  \end{tabular}
-  \caption{Phases du projet.}
-  \label{tab:phases}
-\end{table}
-
-\paragraph{Répartition du travail.}
-L'équipe est composée de cinq membres. La table~\ref{tab:roles}
-synthétise les responsabilités principales ; le détail tâche par tâche
-figure dans le planning en annexe~(\ref{annexe:planning}).
-
-\begin{table}[H]
-  \centering
-  \begin{tabular}{@{}p{4.5cm}p{12cm}@{}}
+  \begin{tabular}{@{}p{4.5cm}p{10cm}@{}}
     \toprule
     \textbf{Membre} & \textbf{Responsabilité principale} \\
     \midrule
-    Tom Berthoud (EAI)    & Architecture logicielle, triangulation, coordination. \\
-    Jason Weber (EAI)     & Interface utilisateur, reconstruction, export. \\
-    Luc Marchand (EAI)    & Électronique, schéma, alimentation et sécurité. \\
-    Hadrien Fuentes (EAI) & Câblage, acquisition, mise en place et test. \\
-    Tim Stamm (ROCM)      & Conception mécanique, boîtier, plateau rotatif. \\
+    Tom Berthoud    & Architecture logicielle, triangulation et coordination. \\
+    Jason Weber     & Interface utilisateur, reconstruction et export. \\
+    Luc Marchand    & Électronique, alimentation et sécurité. \\
+    Hadrien Fuentes & Câblage, acquisition et essais. \\
+    Tim Stamm       & Conception mécanique, boîtier et plateau rotatif. \\
     \bottomrule
   \end{tabular}
-  \caption{Répartition du travail.}
+  \caption{Répartition principale du travail.}
   \label{tab:roles}
 \end{table}
 
-\paragraph{Livrables.}
-Rapport technique (ce document), prototype fonctionnel au MakeLab, vidéo
-de démonstration, présentation finale et jeu de scans d'objets de
-référence.
-
-\subsection{État du projet à la livraison}
-
-À la livraison, le scanner est un prototype complet et fonctionnel : boîte
-fermée découpée au laser, plateau motorisé, laser monté sur support imprimé
-en 3D, \textbf{deux caméras} inclinées de manière complémentaire,
-électronique d'alimentation et de commande sur PCB dédié, capteur de capot,
-écran tactile et interface web. Un cycle de scan complet peut être lancé
-depuis l'interface et produit un fichier STL exploitables.
-
-Par rapport au rapport intermédiaire, l'évolution majeure est le passage à une
-configuration à deux caméras, qui réduit fortement les occultations sur les
-pièces anguleuses, accompagnée d'une fiabilisation de la chaîne de traitement
-(calibration d'exposition, fusion calibrée, reconstruction de Poisson). Le
-présent rapport documente l'architecture, les choix techniques, les résultats
-obtenus, le budget et les limites résiduelles du système livré.
+Le livrable comprend le prototype, son logiciel, le présent rapport, les
+schémas et fichiers de fabrication, ainsi que des exemples de scans. Les
+chapitres suivants décrivent l'état effectivement livré; les mesures encore
+manquantes sont explicitement signalées et regroupées dans le fichier
+\texttt{rapport/TODO.md}.

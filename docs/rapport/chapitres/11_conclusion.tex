@@ -1,86 +1,44 @@
 \section{Conclusion}
 
-\subsection{Bilan}
+Le projet livre un scanner à triangulation laser intégré: acquisition réelle à
+deux caméras, plateau motorisé, interlock, traitement 3D, export STL/OBJ et
+interface web hors ligne. Le cycle complet mesuré à environ 8 minutes et les
+dépenses de 133,83\,CHF respectent les objectifs correspondants.
 
-Le projet aboutit à un scanner 3D à triangulation laser \textbf{fonctionnel de
-bout en bout}. À partir d'un objet posé sur le plateau, le système réalise un
-cycle complet automatisé et produit un fichier STL ou OBJ livrable, en
-respectant le budget et le temps de scan visés. La chaîne complète — caisson,
-plateau motorisé, double caméra, laser, électronique sur PCB, écran et
-interface web — est intégrée et démontrable au MakeLab.
-
-L'évolution la plus structurante depuis le rapport intermédiaire est le
-\textbf{passage à deux caméras}. Elle répond directement à la limite physique
-identifiée à mi-parcours : sur les pièces anguleuses, une caméra unique ne
-peut pas voir certaines zones éclairées par le laser. Avec deux points de vue
-complémentaires fusionnés dans un repère commun, la couverture du modèle est
-nettement améliorée. En parallèle, la chaîne de traitement a été fiabilisée
-(calibration d'exposition automatique, fusion calibrée, reconstruction de
-Poisson avec nettoyage géométrique), ce qui a permis de corriger les
-déformations de maillage observées précédemment.
-
-\subsection{Revue des objectifs}
+La principale amélioration par rapport au prototype intermédiaire est la
+seconde caméra, qui réduit les occultations. Le logiciel transforme les deux
+séries d'images en profils dans un repère commun, fusionne les nuages et
+reconstruit un maillage Poisson. L'ajustement automatique des extrinsèques
+reste toutefois nécessaire dans la configuration active.
 
 \begin{table}[H]
-\hspace*{-1cm}
-  \begin{tabular}{@{}p{1cm}p{8cm}p{8cm}@{}}
+  \centering
+  \small
+  \begin{tabular}{@{}p{1cm}p{8.2cm}p{5.2cm}@{}}
     \toprule
-    \textbf{Réf.} & \textbf{Objectif} & \textbf{Statut final} \\
+    \textbf{Réf.} & \textbf{Objectif} & \textbf{Statut} \\
     \midrule
-    O1  & Numériser un objet $\leq 150^3$\,mm, automatisé          & Atteint sur formes rondes et anguleuses \\
-    O2  & Export STL ou OBJ                                         & Atteint \\
-    O3  & Cycle de scan $\leq 10$\,min                              & Atteint ($\approx$\,8\,min) \\
-    O4  & Prise en main $\leq 10$\,min, autonomie $\geq 90$\,\%     & Interface aboutie, autonomie à valider sur utilisateurs \\
-    O5  & Budget $\leq 300$\,CHF                                    & Atteint (coût réel 133.83\,CHF) \\
-    O6  & Sécurité utilisateur                                      & Caisson fermé + coupure laser sur capot/erreur \\
-    O7  & Retour visuel écran                                       & Fonctionnel \\
-    O8  & Interface web, scan en $\leq 5$ actions                   & Atteint \\
-    O9  & Erreur $\leq 2$\,mm, répétabilité $\leq 1$\,mm            & Dimensions cohérentes ; à quantifier formellement \\
-    O10 & Encombrement $\leq 500^3$\,mm, masse $\leq 15$\,kg        & Respecté \\
-    O11 & Objets sans cavité fermée, contre-dépouille $\leq 45^\circ$ & Périmètre maintenu \\
+    O1 & Scan automatisé d'un objet jusqu'à $150^3$\,mm & Pipeline démontré; volume maximal non mesuré \\
+    O2 & Export STL ou OBJ & Atteint \\
+    O3 & Cycle inférieur à 10\,min & Atteint, environ 8\,min \\
+    O4 & Prise en main et autonomie & Non validé hors équipe \\
+    O5 & Dépenses inférieures à 300\,CHF & Atteint, 133,83\,CHF \\
+    O6 & Sécurité utilisateur & Caisson et interlock testés; contrôle final requis \\
+    O7 & Retour visuel & Interface web opérationnelle; écran local non activé dans la configuration \\
+    O8 & Commande web ou USB & Atteint \\
+    O9 & Précision et répétabilité & Non mesurées \\
+    O10 & Encombrement et masse & Non mesurés \\
+    O11 & Périmètre géométrique défini & Maintenu \\
     \bottomrule
   \end{tabular}
-  \caption{Revue finale des objectifs.}
+  \caption{Bilan des objectifs sans extrapolation des mesures manquantes.}
   \label{tab:revue-obj}
 \end{table}
 
-\subsection{Résultats principaux}
-
-\begin{itemize}
-  \item Prototype réel complet, capable de produire un scan automatisé de bout
-        en bout.
-  \item Passage à deux caméras et fusion calibrée : occultations fortement
-        réduites sur les formes anguleuses.
-  \item Reconstruction de maillage fermé (Poisson + nettoyage), corrigeant les
-        déformations observées à mi-parcours.
-  \item Temps de scan ($\approx$\,8\,min) et budget réel (133.83\,CHF)
-        conformes aux objectifs.
-  \item Interface web aboutie : lancement, suivi temps réel, viewer 3D,
-        fonctionnement hors-ligne et mode ingénierie.
-\end{itemize}
-
-\subsection{Limites et perspectives}
-
-Le scanner est livrable et améliorable. Les axes de progression identifiés
-sont :
-
-\begin{enumerate}
-  \item \textbf{Validation métrique} : établir un protocole avec pièces étalon
-        pour quantifier précision absolue et répétabilité (O9).
-  \item \textbf{Calibration extrinsèque} : fiabiliser et protocoliser la
-        calibration des deux caméras, principal levier de qualité géométrique.
-  \item \textbf{Robustesse de la reconstruction} : poursuivre le réglage de la
-        reconstruction et du nettoyage sur une plus grande variété de formes.
-  \item \textbf{Ergonomie} : simplifier encore le parcours utilisateur pour un
-        usage en pleine autonomie au MakeLab.
-  \item \textbf{Optimisation du coût matériel} : mutualiser ou alléger l'écran
-        et le calculateur pour rapprocher le coût « prix de marché » de
-        l'objectif.
-\end{enumerate}
-
-Le projet valide la faisabilité d'un scanner 3D à triangulation laser
-pédagogique, à bas coût et open-source, et livre une base fonctionnelle sur
-laquelle les améliorations futures pourront s'appuyer.
+Les priorités suivantes sont la validation métrologique, un test utilisateur
+extérieur à l'équipe, la mesure de la tension reçue par le Raspberry Pi et le
+relevé des dimensions du prototype. Elles sont détaillées dans
+\texttt{rapport/TODO.md}.
 
 % ---- Signatures -----------------------------------------------
 \subsection*{Signatures}
