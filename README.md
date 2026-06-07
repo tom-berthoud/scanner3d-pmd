@@ -2,7 +2,7 @@
 
 Scanner 3D à triangulation laser — Projet étudiant HEIG-VD, semestre 4, module PMD.
 
-Le système capture des profils d'un objet en rotation sous un laser ligne, reconstruit un nuage de points 3D, et exporte un fichier STL ou OBJ. Tout se passe dans une boîte fermée pilotée par un Raspberry Pi, accessible via une interface web ou un petit écran local.
+Le système capture des profils d'un objet en rotation sous un laser ligne, vu par deux caméras, reconstruit un nuage de points 3D, et exporte un fichier STL ou OBJ. Tout se passe dans une boîte fermée pilotée par un Raspberry Pi, accessible via une interface web ou un petit écran local.
 
 ## Rapport
 
@@ -17,18 +17,19 @@ push :
 ```
 1. L'utilisateur pose l'objet sur le plateau et lance un scan
 2. Le plateau tourne par pas réguliers sur 360° (nombre de photos = `scan.n_steps`, défaut 100)
-3. À chaque pas : laser allumé → photo → laser éteint
+3. À chaque pas : laser allumé → photo (les deux caméras) → laser éteint
 4. Chaque image est analysée pour extraire la ligne laser verte
-5. La triangulation géométrique convertit chaque ligne en profil 3D
+5. La triangulation géométrique convertit chaque ligne en profil 3D ; les deux
+   vues réduisent les zones éclairées mais masquées
 6. Tous les profils sont fusionnés en un nuage de points complet
 7. Export en fichier STL ou OBJ, téléchargeable via l'interface web
 ```
 
-**Géométrie de triangulation :**
-- Angle laser/caméra : 30° (cible)
-- Plan laser : `0.5·x + 0.866·z = 259.8` (repère caméra, mm)
-- Centre plateau : Z = 300 mm depuis la caméra
-- Intrinsèques de référence : fx = fy = 800 px @ 640×480
+**Géométrie de triangulation (deux caméras) :**
+- Azimuts caméra/laser : ≈ −25° (caméra `right`) et +33° (caméra `left`)
+- Élévations par rapport au plan XZ : ≈ −20° / +20°
+- Plateau : centre à ≈ 400 mm des caméras (repère mm)
+- Intrinsèques approximées (mode sans damier) : fx = fy ≈ 800 px @ 640×480 (facteur 1.25)
 
 **Contraintes du projet :**
 - Objets jusqu'à 150 × 150 × 150 mm
@@ -74,7 +75,8 @@ scanner3d-pmd/
 ### Prérequis
 
 - Python 3.11+
-- Sur Raspberry Pi : Raspberry Pi OS 64-bit, Pi Camera Module 3 (+ caméra USB en option)
+- Sur Raspberry Pi : Raspberry Pi OS 64-bit, deux caméras pour l'acquisition à
+  double vue (Pi Camera Module 3 via CSI + caméra USB)
 
 ### Installation
 
@@ -97,13 +99,14 @@ tout. Le Pi cible est `admin@192.168.55.1` (surchargeable :
 
 | Catégorie | Commande | Effet |
 |---|---|---|
-| Local | `make install` / `make test` | venv + deps / lancer les tests |
+| Local | `make install` / `make test` / `make test-fast` | venv + deps / tous les tests / tests rapides |
 | Local | `make run` | lancer l'UI en **mode scan seul** (= prod) + navigateur |
 | Local | `make run-full` | lancer l'UI avec **toutes les pages** (déverrouillé) + navigateur |
+| Local | `make unlock-local` / `make lock-local` | (dé)verrouiller les pages techniques **en local** |
 | Réseau | `make ping` / `make net-check` | Pi joignable / diagnostic réseau du Pi |
-| Connexion | `make ssh` | session SSH interactive |
-| Déploiement | `make pull` / `make pi-run` | `git pull` sur le Pi / lancer l'UI sur le Pi |
-| Interfaces | `make open` | ouvrir l'UI du Pi dans le navigateur |
+| Connexion | `make ssh` / `make open` | session SSH interactive / ouvrir l'UI du Pi dans le navigateur |
+| Déploiement | `make pull` / `make pi-install` / `make pi-run` / `make pi-restart` | `git pull` / installer / lancer / redémarrer l'UI sur le Pi |
+| Supervision | `make pi-status` / `make pi-logs` | état du service / logs sur le Pi |
 | Ingénierie | `make unlock` / `make lock` / `make eng-status` | (dé)verrouiller les pages techniques **sur le Pi** (SSH) |
 
 ---
@@ -165,7 +168,9 @@ pytest tests/ -m integration           # tests nécessitant le vrai hardware
 
 ### Lancer automatiquement au démarrage (exemple systemd recommandé)
 
-Le projet ne fournit pas de service ; voici un exemple à adapter
+Le dépôt ne fournit pas de fichier de service, mais les cibles
+`make pi-restart` / `pi-status` / `pi-logs` pilotent un service systemd nommé
+**`scanner`**. Voici un exemple à créer sur le Pi
 (`/etc/systemd/system/scanner.service`) :
 
 ```ini
@@ -174,9 +179,9 @@ Description=Scanner 3D web interface
 After=network.target
 
 [Service]
-User=pi
-WorkingDirectory=/home/pi/scanner3d-pmd
-ExecStart=/home/pi/scanner3d-pmd/.venv/bin/python -m scanner.interface.web
+User=admin
+WorkingDirectory=/home/admin/scanner3d-pmd
+ExecStart=/home/admin/scanner3d-pmd/.venv/bin/python -m scanner.interface.web
 Restart=on-failure
 
 [Install]
@@ -203,10 +208,10 @@ Un développeur, déjà connecté en SSH au Pi, les déverrouille avec le script
 fourni :
 
 ```bash
-# Depuis le PC, en une commande :
-ssh pi@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh on'     # déverrouille
-ssh pi@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh off'    # reverrouille
-ssh pi@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh status' # état courant
+# Depuis le PC, en une commande (équivalents : make unlock / lock / eng-status) :
+ssh admin@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh on'     # déverrouille
+ssh admin@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh off'    # reverrouille
+ssh admin@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh status' # état courant
 ```
 
 - Le déverrouillage est pris en compte **immédiatement** (pas de redémarrage).
@@ -221,7 +226,8 @@ ssh pi@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh status' # état couran
 ## Interface web — caractéristiques
 
 - **Thème clair** responsive, lisible sur PC comme sur le petit écran tactile du
-  Pi. Trois rendus selon la largeur : desktop, mobile et **kiosk** (`?mode=kiosk`).
+  Pi. La page de scan est pensée comme une console plein écran ; la mise en page
+  s'adapte à la largeur (desktop, mobile, petit écran tactile).
 - **Hors-ligne** : tous les assets (Bootstrap, icônes, polices, Three.js) sont
   servis localement depuis `static/vendor/` et mis en cache long par le
   navigateur — démarrage rapide même sans internet.
@@ -238,8 +244,11 @@ ssh pi@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh status' # état couran
 |---|---|---|
 | `/` | GET | Page principale — statut + viewer 3D |
 | `/scan/start` | POST | Démarre un scan (thread background) |
+| `/scan/reset` | POST | Réinitialise l'état du scan (retour à `IDLE`) |
 | `/scan/status` | GET | JSON : état, progression, dernier fichier |
 | `/scan/stream` | GET | Server-Sent Events pour mises à jour en temps réel |
+| `/scan/artifacts` | GET | Liste les fichiers produits (nuage, maillage…) |
+| `/scan/artifact/<kind>` | GET | Récupère un artefact précis par type |
 | `/scan/download` | GET | Télécharge le dernier fichier STL/OBJ |
 | `/scan/frame/latest` | GET | Dernière image capturée (JPEG, avec overlay) |
 | `/scan/frame/<n>` | GET | Image du pas n |
@@ -247,53 +256,60 @@ ssh pi@<ip-du-pi> '~/scanner3d-pmd/scripts/scanner-eng.sh status' # état couran
 | `/preview/frame?angle=<rad>` | GET | Image brute à l'angle donné |
 | `/preview/extraction?angle=<rad>` | GET | Image avec ligne laser détectée |
 | `/usb/drives`, `/usb/export` | GET/POST | Liste / copie des fichiers vers une clé USB |
-| 🔒 `/calibration` | GET | Page de calibration |
-| 🔒 `/calibration/camera` | POST | Lance la calibration intrinsèque caméra |
-| 🔒 `/calibration/laser` | POST | Lance la calibration du plan laser |
+| 🔒 `/calibration` | GET | Page de calibration (caméra + plan laser, par caméra) |
+| 🔒 `/calibration/camera/run` | POST | Calcule la calibration intrinsèque (après captures) |
+| 🔒 `/calibration/laser/run` | POST | Calcule le plan laser (après captures) |
 | 🔒 `/extrinsics` | GET | Réglage de la pose caméra (extrinsèques) |
 | 🔒 `/camera-config` | GET | Configuration caméra (format, exposition…) |
 | 🔒 `/manual` | GET | Commande manuelle (laser, moteur) |
 | 🔒 `/manual/laser` | POST | Active/désactive le laser |
 | 🔒 `/manual/motor` | POST | Fait avancer le moteur manuellement |
+| 🔒 `/manual/safe-off` | POST | Coupe laser + moteur (arrêt sécurisé) |
+
+> Les pages techniques (`/calibration`, `/extrinsics`, `/camera-config`,
+> `/manual`) exposent aussi des sous-routes de session, capture et application
+> non listées ici.
 
 ---
 
 ## Calibration
 
-Avant le premier scan sur le vrai hardware, deux calibrations sont nécessaires :
+Le montage utilise **deux caméras** (`left` et `right`). Avant le premier scan
+sur le vrai hardware, chacune doit être calibrée :
 
-1. **Caméra** (intrinsèques) — via l'interface web `/calibration` ou :
-   ```bash
-   python -m scanner.calibration.camera
-   ```
-2. **Plan laser** — via l'interface web `/calibration` ou :
-   ```bash
-   python -m scanner.calibration.laser_plane
-   ```
+1. **Caméra** (intrinsèques) — matrice et distorsion, par caméra.
+2. **Plan laser** — équation du plan laser dans le repère de chaque caméra.
 
-Mode sans damier:
-- Si vous voulez desactiver la calibration camera par damier, mettez
-  `calibration.use_checkerboard: false` dans `config/settings.yaml`.
-- Le systeme utilisera alors des intrinsèques approximees basees sur la
-  resolution et `calibration.approx_focal_scale`.
+Tout se fait depuis l'interface web **`/calibration`** (en mode ingénierie), qui
+guide chaque étape (session, captures, calcul). Les résultats sont écrits dans
+`config/`.
 
-Les résultats sont stockés dans `config/`. Voir `docs/calibration.md` pour la procédure complète.
+**Mode sans damier** : pour se passer de la calibration caméra par damier, mettez
+`calibration.use_checkerboard: false` dans `config/settings.yaml`. Le système
+utilise alors des intrinsèques approximées, déduites de la résolution et de
+`calibration.approx_focal_scale`.
 
 **Fichiers de configuration clés :**
 
 | Fichier | Contenu |
 |---|---|
-| `config/settings.yaml` | Paramètres de scan (résolution, pas moteur, seuils...) |
-| `config/camera_intrinsics.yaml` | Matrice caméra + distorsion (**ne pas committer**) |
-| `config/laser_plane.yaml` | Équation du plan laser `[a, b, c, d]` (**ne pas committer**) |
-| `config/platform.yaml` | Point d'axe de rotation, pas/tour (**ne pas committer**) |
+| `config/settings.yaml` | Configuration globale : caméras, scan, calibration, interface |
+| `config/camera_intrinsics_{left,right}.yaml` | Matrice caméra + distorsion, par caméra |
+| `config/laser_plane_{left,right}.yaml` | Plan laser par caméra (gitignorés : propres au montage) |
+| `config/platform.yaml` | Axe de rotation et pas/tour du plateau |
+| `config/*.example.yaml` | Gabarits d'exemple versionnés (à copier puis calibrer) |
 
 ---
 
 ## Documentation technique
 
-- **[agents.md](agents.md)** — Architecture complète, décisions techniques, conventions de code, machine d'états, interfaces contractuelles entre modules. Document de référence pour l'équipe.
-- `docs/` — Images de référence des formes mock, procédures
+- **[`docs/rapport/`](docs/rapport/)** — Rapport complet : architecture, conception
+  mécanique et électronique, chaîne logicielle, résultats. Document de référence.
+- **[`docs/connection_procedure.md`](docs/connection_procedure.md)** — Connexion
+  PC ↔ Raspberry Pi (Ethernet, SSH, HTTP).
+- **`docs/schema/`** — Schéma et PCB KiCad (+ export `Schema connecteurs PCB.png`).
+- **`docs/conception mécanique/CAD/`** — Modèles SolidWorks, DXF de découpe laser
+  et STL d'impression 3D.
 
 ---
 
