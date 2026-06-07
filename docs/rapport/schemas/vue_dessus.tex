@@ -1,6 +1,5 @@
 % Vue de dessus de la géométrie caméra / laser / plateau.
-% Adapté de la présentation intermédiaire (schemas/deux_cameras.tex) à la
-% configuration finale : deux caméras présentes, aux azimuts réels mesurés.
+% Les azimuts proviennent de la calibration et des essais de regroupement.
 \begin{tikzpicture}[scale=0.72, every node/.style={font=\scriptsize}]
   \draw[fill=softblue,draw=linegray] (0,0) rectangle (7.0,5.0);
   \node[deepblue,font=\small\bfseries] at (3.5,4.65) {vue de dessus};
@@ -28,7 +27,7 @@
   \draw[deepblue,very thick,opacity=0.55] (O) -- (cam1);
   \fill[deepblue] (cam1) circle (0.14);
   \draw[deepblue,very thick] (cam1) circle (0.21);
-  \node[deepblue,font=\scriptsize\bfseries,anchor=south east] at ($(cam1)+(-0.18,0.05)$) {Caméra Arducam};
+  \node[deepblue,font=\scriptsize\bfseries,anchor=south east] at ($(cam1)+(-0.18,0.05)$) {Caméra Pi};
   \draw[deepblue,thick] ($(O)+(180:0.95)$) arc (180:155:0.95);
   \node[deepblue,font=\tiny] at ($(O)+(168:1.36)$) {$25^\circ$};
 
@@ -36,7 +35,7 @@
   \draw[heigred,very thick,opacity=0.55] (O) -- (cam2);
   \fill[heigred] (cam2) circle (0.14);
   \draw[heigred,very thick] (cam2) circle (0.21);
-  \node[heigred,font=\scriptsize\bfseries,anchor=north east] at ($(cam2)+(-0.18,-0.05)$) {Caméra PI };
+  \node[heigred,font=\scriptsize\bfseries,anchor=north east] at ($(cam2)+(-0.18,-0.05)$) {Caméra Arducam};
   \draw[heigred,thick] ($(O)+(180:0.95)$) arc (180:213:0.95);
   \node[heigred,font=\tiny] at ($(O)+(201:1.42)$) {$33^\circ$};
 \end{tikzpicture}

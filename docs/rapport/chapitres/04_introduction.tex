@@ -1,12 +1,45 @@
 \section{Introduction}
 
-\subsection{Contexte et objectif}
+\subsection{Contexte}
 
 Ce projet, réalisé dans le cadre de l'unité d'enseignement \filiere{} à la
-HEIG-VD, vise à fournir au MakeLab un scanner 3D pédagogique et modifiable.
-L'objet est posé sur un plateau rotatif dans un caisson fermé. Un laser ligne
-vert éclaire successivement ses profils, observés par deux caméras, puis le
-logiciel reconstruit un nuage de points et un maillage exportable.
+HEIG-VD, répond à un besoin du MakeLab: disposer d'un scanner 3D pédagogique,
+modifiable et reproductible avec les moyens de fabrication disponibles sur
+place. Un tel équipement complète les imprimantes 3D et les outils de
+conception assistée par ordinateur. Il permet notamment de numériser une forme
+existante, d'en conserver une représentation numérique ou de produire une
+base géométrique pour une nouvelle conception.
+
+Le projet porte sur l'ensemble de la chaîne, depuis le dispositif mécanique
+jusqu'au fichier exploitable. Il comprend le caisson, le plateau rotatif,
+l'éclairage laser, les caméras, l'électronique de commande, le logiciel de
+calibration, l'acquisition, la reconstruction et l'interface utilisateur. Le
+prototype doit rester compréhensible par de futurs utilisateurs du MakeLab et
+modifiable par une équipe qui reprendrait le projet.
+
+\subsection{Principe de mesure}
+
+L'objet à numériser est placé sur un plateau rotatif dans un caisson fermé. Un
+laser ligne vert projette un plan lumineux sur sa surface. La déformation de
+la ligne observée dans une image dépend de la position du point éclairé. Après
+calibration des caméras et du plan laser, l'intersection entre le rayon associé
+à un pixel et ce plan fournit un point tridimensionnel.
+
+Le plateau présente successivement les différentes faces de l'objet. À chaque
+position, deux caméras situées de part et d'autre du laser capturent un profil.
+Les points sont ramenés dans le repère du plateau en tenant compte de l'angle
+de rotation, puis fusionnés. Un filtrage limite les points aberrants et une
+reconstruction de surface produit le maillage exporté. La seconde caméra a été
+ajoutée après les premiers essais à une caméra afin de réduire les zones
+éclairées mais masquées depuis un seul point de vue.
+
+Cette méthode reste soumise à des limites géométriques. Une surface doit être
+éclairée par le laser et visible par une caméra; une cavité fermée ou une forte
+contre-dépouille ne peut donc pas être reconstruite. Les matériaux
+transparents, très réfléchissants ou fortement absorbants peuvent également
+dégrader la détection de la ligne.
+
+\subsection{État de l'art}
 
 Les scanners commerciaux à lumière structurée offrent de bonnes performances,
 mais dépassent le budget du projet ou reposent sur des logiciels propriétaires.
@@ -15,11 +48,37 @@ triangulation laser à plateau rotatif est réalisable à faible coût. Le proje
 s'en distingue surtout par l'acquisition à deux caméras, choisie pour réduire
 les occultations, et par une interface web utilisable hors ligne.
 
-\subsection{Objectifs}
+Plusieurs familles de techniques sont couramment utilisées pour numériser un
+objet. La photogrammétrie reconstruit sa géométrie à partir de nombreuses
+photographies et de points visuels communs. Elle demande peu de matériel
+spécialisé, mais dépend fortement de la texture de la surface et du calcul de
+mise en correspondance. La lumière structurée projette un motif connu et
+mesure sa déformation; elle permet une acquisition dense, au prix d'une
+optique et d'une calibration plus complexes. Les capteurs de profondeur
+intègrent directement la mesure, mais offrent moins de liberté sur la
+géométrie et la chaîne de traitement.
+
+La triangulation par laser ligne constitue un compromis adapté au projet. Son
+principe est observable, ses composants sont accessibles et chaque étape peut
+être étudiée séparément. Le caisson réduit l'influence de la lumière ambiante
+et protège l'utilisateur, tandis que le plateau permet de couvrir le pourtour
+de l'objet sans déplacer les caméras. Le choix de deux caméras ne supprime pas
+les limitations optiques, mais augmente les chances qu'une zone éclairée soit
+vue par au moins l'un des capteurs.
+
+\subsection{Cahier des charges et objectifs}
 
 Les objectifs issus du cahier des charges~\cite{cdc} sont résumés dans la
 table~\ref{tab:objectifs}. Un objectif n'est déclaré atteint dans ce rapport que
 s'il est démontré par le prototype ou par une mesure disponible.
+
+Le cahier des charges impose un volume utile de
+$150\times150\times150$\,mm, un cycle inférieur à 10 minutes et une prise en
+main inférieure à 10 minutes. Le résultat doit être exportable au minimum au
+format STL ou OBJ. Le système doit fournir un retour visuel, communiquer par
+USB ou par interface web, rester dans un budget cible de 300\,CHF et enfermer
+la zone de mesure. La sécurité vis-à-vis du laser et des parties mobiles est
+une exigence de conception, pas une option de performance.
 
 \begin{table}[H]
   \centering
@@ -45,10 +104,15 @@ s'il est démontré par le prototype ou par une mesure disponible.
   \label{tab:objectifs}
 \end{table}
 
-\subsection{Organisation du projet}
+\subsection{Démarche et organisation}
 
 Le projet a été conduit sur 16 semaines. Le planning final, reproduit en
-annexe~\ref{annexe:planning}, totalise 361 heures.
+annexe~\ref{annexe:planning}, totalise 361 heures. Le travail a progressé par
+itérations: définition de l'architecture, réalisation des sous-systèmes,
+intégration, puis essais du cycle complet. Les premières acquisitions à une
+caméra ont mis en évidence les occultations et conduit au montage à deux
+caméras. Les calibrations et les paramètres de traitement ont ensuite été
+ajustés sur le prototype assemblé.
 
 \begin{table}[H]
   \centering
@@ -67,8 +131,18 @@ annexe~\ref{annexe:planning}, totalise 361 heures.
   \label{tab:roles}
 \end{table}
 
-Le livrable comprend le prototype, son logiciel, le présent rapport, les
-schémas et fichiers de fabrication, ainsi que des exemples de scans. Les
-chapitres suivants décrivent l'état effectivement livré; les mesures encore
-manquantes sont explicitement signalées et regroupées dans le fichier
+\subsection{Livrables et structure du rapport}
+
+Le livrable comprend le prototype assemblé, son logiciel, les configurations
+de calibration, les schémas et fichiers de fabrication, le présent rapport et
+des exemples de scans. L'interface doit permettre d'exécuter le cycle sans
+manipuler directement le code, de suivre sa progression et de récupérer le
+résultat.
+
+La suite du rapport présente d'abord la conception mécanique, puis la
+conception électrique et électronique. Le chapitre logiciel décrit la
+calibration, l'acquisition, la triangulation, la fusion et l'export réellement
+utilisés. Le prototype et les résultats mesurés sont ensuite confrontés au
+cahier des charges. Les informations qui nécessitent encore une mesure, une
+preuve matérielle ou une nouvelle photographie sont regroupées dans
 \texttt{rapport/TODO.md}.
