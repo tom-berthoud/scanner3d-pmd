@@ -1,16 +1,28 @@
 \section{Conclusion}
 
-Le projet livre un scanner à triangulation laser intégré: acquisition réelle à
-deux caméras, plateau motorisé, interlock, traitement 3D, export STL et
-interface web hors ligne. Le cycle complet mesuré à environ 8 minutes et les
-dépenses de 133,83\,CHF respectent les objectifs correspondants.
+Ce projet aboutit à un scanner 3D autonome capable d'enchaîner les opérations
+qui étaient initialement étudiées séparément: rotation de la pièce, acquisition
+de la ligne laser, triangulation, fusion des profils et génération d'un
+maillage exploitable. L'intérêt principal du prototype ne réside donc pas
+uniquement dans la reconstruction d'une forme, mais dans l'intégration d'une
+chaîne complète autour d'un Raspberry Pi, avec une interface accessible hors
+ligne et des mécanismes de sécurité actifs.
 
-Le passage du montage initial à une caméra au système actuel à deux caméras
-réduit les occultations. Le logiciel transforme les deux séries d'images en
-profils dans un repère commun, fusionne les nuages et reconstruit un maillage
-Poisson. Dans la configuration active, l'ajustement automatique des
-extrinsèques affine les poses calibrées afin d'améliorer le regroupement des
-deux nuages.
+Le cycle complet dure environ 8 minutes et le coût réellement engagé est de
+133,83\,CHF. Ces résultats montrent qu'une solution de numérisation à bas coût
+peut être réalisée avec des composants accessibles tout en respectant les
+contraintes principales du cahier des charges. Le caisson fermé, l'interlock et
+l'arrêt logiciel du laser participent directement à la fiabilité d'utilisation
+du système.
+
+Le passage d'une à deux caméras a constitué l'évolution technique la plus
+importante du projet. Il améliore la couverture des pièces complexes, mais
+introduit aussi une dépendance plus forte à la calibration extrinsèque et au
+regroupement des nuages. Le pipeline répond à ce compromis par une calibration
+commune et un ajustement automatique des poses. Les résultats obtenus
+restituent les géométries générales et donnent des dimensions proches des
+références sur les axes $X$ et $Y$, avec des écarts généralement de l'ordre de
+$\pm 2$\,mm.
 
 \begin{table}[H]
   \centering
@@ -27,7 +39,7 @@ deux nuages.
     O6 (E17--E19) & Sécurité utilisateur & Boîte fermée, laser classe 1M et interlock testés \\
     O7 (E5) & Retour visuel & Interface web opérationnelle; écran local non activé dans la configuration \\
     O8 (E10, E11) & Commande web ou USB & Atteint \\
-    O9 (E24) & Précision et répétabilité & Non quantifiées \\
+    O9 (E24) & Précision et répétabilité & Environ $\pm 2$\,mm sur $X$ et $Y$; axe $Z$ non validé \\
     O10 (E21) & Encombrement et masse & Encombrement atteint; masse non relevée \\
     O11 (E23) & Périmètre géométrique défini & Maintenu \\
     \bottomrule
@@ -36,12 +48,25 @@ deux nuages.
   \label{tab:revue-obj}
 \end{table}
 
-Les essais ont été concentrés sur le fonctionnement complet du scanner et sur
-la fiabilité de la reconstruction avec plusieurs pièces de géométries
-différentes. La prise en main, la précision dimensionnelle, la répétabilité et
-la masse n'ont donc pas été quantifiées dans le temps disponible. La priorité
-a été donnée à la robustesse du cycle complet plutôt qu'à l'optimisation
-métrologique des dimensions reconstruites.
+Les essais ont volontairement privilégié le fonctionnement et la robustesse du
+cycle sur plusieurs géométries plutôt qu'une validation métrologique complète.
+La précision suivant l'axe $Z$ reste moins satisfaisante et la répétabilité
+doit encore être caractérisée sur des pièces étalons. L'étude de la propagation
+des erreurs entre le plan laser, les poses des caméras et la triangulation
+constitue ainsi la prochaine étape logique du développement.
+
+Une autre évolution pertinente serait de proposer deux stratégies
+d'acquisition. Un mode utilisant uniquement la caméra supérieure simplifierait
+le traitement des pièces entièrement visibles et éviterait une fusion inutile.
+Le mode à deux caméras resterait réservé aux géométries présentant davantage
+d'occultations. Ce choix adaptatif permettrait de rechercher la meilleure
+qualité de reconstruction sans imposer systématiquement la complexité maximale
+du pipeline.
+
+Le prototype constitue finalement une base fonctionnelle et évolutive plutôt
+qu'une simple démonstration de triangulation. Il valide l'architecture générale
+du scanner et identifie clairement le travail restant pour passer d'un système
+capable de reconstruire des objets à un véritable instrument de mesure.
 
 % ---- Signatures -----------------------------------------------
 \subsection*{Signatures}

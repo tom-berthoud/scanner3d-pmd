@@ -46,7 +46,7 @@ plateau.
 \begin{figure}[H]
   \centering
   \resizebox{0.62\linewidth}{!}{\input{schemas/vue_dessus.tex}}
-  \caption{Disposition des caméras autour du plan laser, vue de dessus.}
+  \caption{Schéma de principe de la disposition des caméras autour du plan laser, vue de dessus.}
   \label{fig:geo-triangulation}
 \end{figure}
 
@@ -59,6 +59,15 @@ Les paramètres utilisés par le code sont:
   \item l'axe de rotation et son origine dans le repère plateforme.
 \end{itemize}
 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\linewidth]{images/calibration_intr.png}
+  \caption{Images du damier utilisées pour la calibration intrinsèque. Les
+  positions et orientations variées permettent d'estimer les paramètres
+  optiques et la distorsion de la caméra.}
+  \label{fig:calibration-intrinseque}
+\end{figure}
+
 Les azimuts retenus, environ $-25^\circ$ pour la caméra Pi et $+33^\circ$ pour
 l'Arducam, sont issus de la calibration et d'essais visant un bon regroupement
 des deux nuages de points. Ils définissent les poses initiales. Lors du
@@ -69,19 +78,11 @@ le pipeline.
 
 \begin{figure}[H]
   \centering
-  \begin{minipage}{0.48\linewidth}
-    \centering
-    \includegraphics[width=\linewidth]{images/ui_calibration_intrinseque_laser.png}
-    \\\small (a) Calibration intrinsèque et laser.
-  \end{minipage}\hfill
-  \begin{minipage}{0.48\linewidth}
-    \centering
-    \includegraphics[width=\linewidth]{images/ui_calibration_extrinseque.png}
-    \\\small (b) Réglage extrinsèque.
-  \end{minipage}
-  \caption{Pages de calibration de l'interface finale: intrinsèques, plan laser
-  et réglage extrinsèque.}
-  \label{fig:ui-calibration}
+  \includegraphics[width=0.92\linewidth]{images/calibration_ext.png}
+  \caption{Interface de calibration extrinsèque. Le nuage reconstruit permet
+  d'observer l'effet des paramètres de pose et de contrôler le regroupement
+  des profils dans le repère plateforme.}
+  \label{fig:calibration-extrinseque}
 \end{figure}
 
 \subsection{Acquisition}
@@ -94,7 +95,7 @@ $3{,}6^\circ$.
 Les résolutions de capture sont configurables et correspondent aux images
 natives demandées aux pilotes. La configuration active utilise
 $640\times480$ pour la Pi Camera et $1920\times1080$ en YUYV pour l'Arducam
-USB. L'image Arducam n'est pas redimensionnée en 480p.
+USB. 
 
 Avant le scan, une boucle ajuste séparément l'exposition des caméras. Elle
 capture trois angles par itération, mesure la largeur médiane des pixels verts
@@ -121,6 +122,15 @@ retirées par des masques rectangulaires ou polygonaux. Le traitement inspecte
 une colonne sur une et une ligne sur deux pour la Pi Camera; pour l'Arducam, il
 inspecte une colonne sur trois et une ligne sur quatre. Cet échantillonnage
 réduit le nombre de pixels testés sans redimensionner les images.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.72\linewidth]{images/vue_camera.png}
+  \caption{Vue réelle d'une caméra pendant l'acquisition. La ligne laser verte
+  apparaît sur les arêtes successives de la pièce et constitue le signal
+  extrait par le traitement.}
+  \label{fig:vue-camera-laser}
+\end{figure}
 
 Pour chaque ligne échantillonnée qui contient des pixels actifs, l'algorithme
 calcule la moyenne de leurs colonnes. Les pas et les décalages
@@ -160,6 +170,15 @@ Le maillage final est produit par Open3D:
   \item ajout de caps plats et nettoyage du maillage;
   \item export STL selon la configuration.
 \end{enumerate}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth]{images/procede.png}
+  \caption{Étapes principales de la reconstruction: pièce réelle, nuage de
+  points obtenu après triangulation et fusion, puis maillage de surface
+  exportable.}
+  \label{fig:procede-reconstruction}
+\end{figure}
 
 Ces opérations améliorent la fermeture du maillage.
 
