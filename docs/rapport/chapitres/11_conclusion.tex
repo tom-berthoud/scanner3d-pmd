@@ -85,12 +85,12 @@ laquelle les améliorations futures pourront s'appuyer.
 % ---- Signatures -----------------------------------------------
 \subsection*{Signatures}
 
-\newcommand{\signature}[2]{%
+\newcommand{\signature}[3][2cm]{%
   \begin{minipage}[b]{0.3\textwidth}
     \centering
-    \includegraphics[height=2cm]{images/#1}\\[-10pt]
+    \includegraphics[height=#1]{images/#2}\\[-10pt]
     \rule{0.85\textwidth}{0.4pt}\\[2pt]
-    {\small #2}
+    {\small #3}
   \end{minipage}%
 }
 \newcommand{\signaturevide}[1]{%
@@ -105,7 +105,7 @@ laquelle les améliorations futures pourront s'appuyer.
 \vspace{1cm}
 \noindent
 \signaturevide{Luc Marchand}\hfill
-\signaturevide{Tim Stamm}\hfill
+\signature[1.15cm]{signatureTim.jpeg}{Tim Stamm}\hfill
 \signaturevide{Jason Weber}
 
 \vspace{1.6cm}
