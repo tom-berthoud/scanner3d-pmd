@@ -26,7 +26,7 @@ développement.
     \texttt{calibration} & Intrinsèques, plan laser global et extrinsèques. \\
     \texttt{processing} & Extraction de ligne et triangulation vers le repère plateforme. \\
     \texttt{reconstruction} & Fusion, filtrage, détection de plan et caps. \\
-    \texttt{export} & Nuages PLY et maillages Poisson STL/OBJ. \\
+    \texttt{export} & Nuages PLY et maillages Poisson STL. \\
     \texttt{orchestration} & Pipeline complet et machine d'états. \\
     \texttt{interface} & Flask, SSE, viewer Three.js, calibration et export USB. \\
     \bottomrule
@@ -146,7 +146,7 @@ Le maillage final est produit par Open3D:
   \item détection éventuelle du plan supérieur depuis la caméra droite;
   \item découpe du maillage par ce plan et fermeture de la coupe;
   \item ajout de caps plats et nettoyage du maillage;
-  \item export STL ou OBJ selon la configuration.
+  \item export STL selon la configuration.
 \end{enumerate}
 
 Ces opérations améliorent la fermeture du maillage, mais ne constituent pas
