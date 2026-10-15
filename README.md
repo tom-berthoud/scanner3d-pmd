@@ -88,7 +88,7 @@ Les raccourcis de déploiement, la calibration, le lancement sur Raspberry Pi et
 
 Projet multidisciplinaire PMD — HEIG-VD, 2026
 
-**Tom Berthoud · Jason Weber · Luc Marchand · Tim Stamm · Hadrien Fuentes**
+**[Tom Berthoud](https://github.com/tom-berthoud) · [Jason Weber](https://github.com/Jzn-wbr) · [Luc Marchand](https://github.com/luc-marchand) · [Tim Stamm](https://github.com/timstamm19) · [Hadrien Fuentes](https://github.com/hadrien-fuentes)**
 
 Sous la responsabilité de **Cédric Bornand**.
 

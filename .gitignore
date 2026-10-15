@@ -62,3 +62,6 @@ CLAUDE.md
 *.gbr
 *.drl
 *.gbrjob
+
+# macOS
+.DS_Store
